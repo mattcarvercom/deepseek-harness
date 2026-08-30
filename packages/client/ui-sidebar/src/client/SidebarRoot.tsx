@@ -122,9 +122,10 @@ export function SidebarRoot({
   }, [pointerInside])
 
   const buildVersion = localBuildVersion()
-  // The reached address, not a build-time value: each dev-branch checkout
-  // shows its own machine here with no per-host source change needed.
-  const host = window.location.hostname
+  // The reached address's leading label, not a build-time value: each
+  // dev-branch checkout shows its own short machine name here (not the full
+  // Tailscale MagicDNS FQDN) with no per-host source change needed.
+  const host = window.location.hostname.split('.')[0]
 
   return (
     <div

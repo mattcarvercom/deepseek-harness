@@ -30,7 +30,7 @@ export const en = {
   'collapse': 'Collapse',
   'expand': 'Expand',
   'back': 'Back',
-  'brand.localBuild': '(DSH {host})',
+  'brand.localBuild': 'DSH ({host})',
   'unknown': 'Unknown',
   'none': 'None',
   'truncated': 'Truncated',

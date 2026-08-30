@@ -28,7 +28,7 @@ export const zh = {
   'collapse': '收起',
   'expand': '展开',
   'back': '返回',
-  'brand.localBuild': '(DSH {host})',
+  'brand.localBuild': 'DSH ({host})',
   'unknown': '未知',
   'none': '无',
   'truncated': '已截断',
