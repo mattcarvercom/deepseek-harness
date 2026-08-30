@@ -122,6 +122,9 @@ export function SidebarRoot({
   }, [pointerInside])
 
   const buildVersion = localBuildVersion()
+  // The reached address, not a build-time value: each dev-branch checkout
+  // shows its own machine here with no per-host source change needed.
+  const host = window.location.hostname
 
   return (
     <div
@@ -154,10 +157,10 @@ export function SidebarRoot({
               <span className={css.brandName}>
                 {renderSlot('sidebar.brand.name', {}, {
                   fallback: buildVersion === undefined
-                    ? <span className={css.fallbackBrandName}>{t('brand.localBuild')}</span>
+                    ? <span className={css.fallbackBrandName}>{t('brand.localBuild', { host })}</span>
                     : (
                       <span className={css.localBuildBrand}>
-                        <span className={css.localBuildTitle}>{t('brand.localBuild')}</span>
+                        <span className={css.localBuildTitle}>{t('brand.localBuild', { host })}</span>
                         <span className={css.buildVersion}>{buildVersion}</span>
                       </span>
                     ),
