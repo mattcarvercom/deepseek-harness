@@ -167,6 +167,11 @@
         # A deployment adding authorities keeps this expression and concatenates
         # its literals, for example: ['app.internal', ...ctx.webRuntime.trustedHosts].
         trustedHosts: !!js ctx.webRuntime.trustedHosts
+        # Default (30) forces a re-login too often for a phone reached only
+        # over Tailscale; single-operator deployment, so a longer-lived
+        # session cookie trades a bigger loss-of-device exposure window for
+        # not re-copying a token from the host every month.
+        cookieMaxAgeDays: 365
 
     - id: api-remotes
       name: '@deepseek-ai/dsh-api-remotes'
