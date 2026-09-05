@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import {
   Button, IconCheckOutline14, IconChevronDownOutline14, IconChevronLeftOutline14,
   IconChevronRightOutline14, IconChevronUpOutline14, IconCloseOutline16,
-  IconEditOutline16, MarkdownText,
+  IconEditOutline16, MarkdownText, markdownLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   planReviewOf,
@@ -131,10 +131,7 @@ type QuestionFlowProps =
 
 function QuestionFlow({ pending, t, useStore, actions }: QuestionFlowProps) {
   const questions = pending.questions
-  const markdownLabels = useMemo(() => ({
-    code: { copyLabel: t('copy'), copiedLabel: t('copied') },
-    footnotes: t('markdown.footnotes'),
-  }), [t])
+  const labels = useMemo(() => markdownLabels(t), [t])
   const initialProgress = useMemo<QuestionDraftProgress>(() => ({
     index: 0,
     drafts: questions.map(() => ({ selected: [], custom: '', skipped: false })),
@@ -313,7 +310,7 @@ function QuestionFlow({ pending, t, useStore, actions }: QuestionFlowProps) {
           <>
             <div className={css.body} data-question-scroll>
               {question.detail !== undefined && (
-                <div className={css.detail}><MarkdownText text={question.detail} labels={markdownLabels} /></div>
+                <div className={css.detail}><MarkdownText text={question.detail} labels={labels} /></div>
               )}
               <div className={css.options} role={question.multiSelect === true ? 'group' : 'radiogroup'}>
                 {(question.options ?? []).map((option, optionIndex) => {

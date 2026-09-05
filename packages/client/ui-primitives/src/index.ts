@@ -56,7 +56,11 @@ export { CodeBlock } from './markdown/CodeBlock.tsx'
 export type { CodeBlockProps } from './markdown/CodeBlock.tsx'
 export { JsonBlock } from './markdown/JsonBlock.tsx'
 export { MarkdownText } from './markdown/MarkdownText.tsx'
-export type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels } from './markdown/MarkdownText.tsx'
+export type {
+  MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, MarkdownMermaidLabels,
+} from './markdown/MarkdownText.tsx'
+export { markdownLabels } from './markdown/labels.ts'
+export type { MarkdownLabelKey } from './markdown/labels.ts'
 export { MessageText } from './markdown/MessageText.tsx'
 export { extractMarkdownPlainText } from './markdown/plain-text.ts'
 export type { MarkdownPlainTextMode, MarkdownPlainTextOptions } from './markdown/plain-text.ts'

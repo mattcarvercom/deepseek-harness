@@ -23,6 +23,7 @@ import type * as Md from 'mdast'
 import type {} from 'mdast-util-math'
 import { normalizeUri } from 'micromark-util-sanitize-uri'
 import { CodeBlock } from './CodeBlock.tsx'
+import { MermaidDiagram } from './MermaidDiagram.tsx'
 import { renderTexToReact } from './katex.tsx'
 import type { PositionedBlock } from './incremental.ts'
 import css from './MarkdownText.module.css'
@@ -35,9 +36,20 @@ export interface MarkdownCodeLabels {
   copiedLabel: string
 }
 
+/** Localized chrome for mermaid fences (this package is cordis-free, so copy arrives via props). */
+export interface MarkdownMermaidLabels {
+  /** Line shown above the source when a settled fence's diagram fails to render. */
+  renderError: string
+  /** Copy-image-button idle label on the drawn diagram card. */
+  copyImage: string
+  /** Copy-image-button label during the post-copy confirmation window. */
+  copiedImage: string
+}
+
 /** Localized chrome for a Markdown document. */
 export interface MarkdownLabels {
   code: MarkdownCodeLabels
+  mermaid: MarkdownMermaidLabels
   footnotes: string
 }
 
@@ -326,6 +338,22 @@ function renderCode(node: Md.Code, key: Key, context: MarkdownRenderContext): Re
     // ```math fences render as display TeX once settled (rehype-katex parity);
     // its text extraction saw the code block's trailing newline.
     return <Fragment key={key}>{renderTexToReact(`${node.value}\n`, true)}</Fragment>
+  }
+  if (!context.streaming && lang === 'mermaid') {
+    // ```mermaid fences draw as an SVG once settled; while a fence streams it
+    // stays the plain CodeBlock below, so a half-arrived diagram never flashes
+    // a parse error mid-stream.
+    return (
+      <MermaidDiagram
+        key={key}
+        code={node.value}
+        errorLabel={context.labels.mermaid.renderError}
+        copyLabel={context.labels.code.copyLabel}
+        copiedLabel={context.labels.code.copiedLabel}
+        copyImageLabel={context.labels.mermaid.copyImage}
+        copiedImageLabel={context.labels.mermaid.copiedImage}
+      />
+    )
   }
   return (
     <CodeBlock

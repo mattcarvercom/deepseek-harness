@@ -23,7 +23,9 @@ import type { MarkdownFileMentions, MarkdownLabels, MarkdownRenderContext, Refer
 import 'katex/dist/katex.min.css'
 import css from './MarkdownText.module.css'
 
-export type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels } from './render.tsx'
+export type {
+  MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, MarkdownMermaidLabels,
+} from './render.tsx'
 
 /** One settled full render: parse with math, resolve references, append the footnote section. */
 function renderSettled(

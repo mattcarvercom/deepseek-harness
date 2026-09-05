@@ -1,0 +1,47 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Mermaid rendering" [disabled]
+  - button "Session log":
+    - text: Session log
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: Draw this flow as a diagram. {{clock}}
+- button "Copy":
+  - img
+- heading "Mermaid diagrams" [level=2]
+- paragraph: "A valid flowchart:"
+- document:
+  - paragraph: "yes"
+  - paragraph: Start
+  - paragraph: Decision
+  - paragraph: Done
+- button "Copy"
+- button "Copy image"
+- paragraph: "This one does not parse:"
+- text: "Could not render the Mermaid diagram: Parse error on line 3: ...lowchart LR A --> ---------------------^ Expecting 'AMP', 'COLON', 'PIPE', 'TESTSTR', 'DOWN', 'DEFAULT', 'NUM', 'COMMA', 'NODE_STRING', 'BRKT', 'MINUS', 'MULT', 'UNICODE_TEXT', got 'EOF' mermaid"
+- button "Copy"
+- code: flowchart LR A -->
+- paragraph: MERMAID_RENDERING_DONE
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
+- textbox "Message or run a task... / commands, @ files or sessions"
+- button "Commands":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "Send message" [disabled]
+- text: 1 turns · 1 steps LLM {{duration}}
