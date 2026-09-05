@@ -75,6 +75,7 @@
     "tests/markdown-inline-code-links.e2e.ts",
     "tests/clickable-links-gallery.e2e.ts",
     "tests/markdown-mermaid.e2e.ts",
+    "tests/markdown-mermaid-live.e2e.ts",
     "tests/queue-actions.e2e.ts",
     "tests/queue-image.e2e.ts",
     "tests/skill-invocation-policy.e2e.ts",
