@@ -1903,6 +1903,7 @@ export function TrajectoryTable({
     overscan: VIRTUAL_OVERSCAN_ROWS,
     scrollMargin: virtualScrollMargin,
     scrollEndThreshold: BOTTOM_FOLLOW_THRESHOLD_PX,
+    followOnAppend: 'auto',
   })
   const virtualIndexByRecordId = useMemo(() => {
     const indexes = new Map<string, number>()
@@ -2278,8 +2279,7 @@ export function TrajectoryTable({
       return
     }
     if (!followsTableTail.current) return
-    if (virtualizationEnabled) rowVirtualizer.scrollToEnd({ behavior: 'auto' })
-    else pane.scrollTop = pane.scrollHeight
+    if (!virtualizationEnabled) pane.scrollTop = pane.scrollHeight
   }, [
     historyLoading,
     historyStartSeq,
