@@ -5,12 +5,14 @@
 // trip over the real wire (workspace.rename RPC + durable registry), the
 // duplicate-name pre-check, the
 // flat "In one list" view with its persisted group-by preference, the session
-// hover card and row action menu, and the session archive round trip (row
-// menu → workspace.archiveSession RPC → durable global set → row hidden
-// across reload). Zero model calls: workspace.create/rename/archiveSession
-// are host RPCs with no model involvement, and the one session row the
-// flat/hover/menu/archive scenarios need comes from a seeded fixture (the
-// seeded-history seed reused verbatim — no new recording).
+// hover card and row action menu, and the session archive and unarchive
+// round trips (row menu → workspace.archiveSession/unarchiveSession RPC →
+// durable global set → row hidden across reload / lifted back through the
+// view-options archived filter with the inverse row menu). Zero model
+// calls: workspace.create/rename/archiveSession/unarchiveSession are host
+// RPCs with no model involvement, and the one session row the
+// flat/hover/menu/archive/unarchive scenarios need comes from a seeded
+// fixture (the seeded-history seed reused verbatim — no new recording).
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join, sep } from 'node:path'
@@ -595,6 +597,36 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     // reappear if selection restore lands on another stray — not this test's
     // concern).
     expect(await page.getByText(rowTitle, { exact: true }).count()).toBe(0)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 90_000)
+
+  it('unarchives the hidden session through the archived filter and the row menu', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-unarchive'))
+    // The previous test archived the seeded session durably; the page is
+    // reloaded and back in grouped browsing, so the row is hidden again.
+    await expect.poll(() => page.getByText('Workspaces', { exact: true }).count(), { timeout: 10_000 }).toBe(1)
+    // The filter is the view-options menu's archived section row.
+    await page.getByRole('button', { name: 'View options' }).click()
+    await page.getByRole('menuitem', { name: 'Show archived sessions' }).click()
+    // The lifted row renders in its retained Ungrouped position, dimmed.
+    const sessionRow = await seededSessionRow()
+    const rowTitle = await sessionRow.locator('[class*="title"]').innerText()
+    await expect.poll(() => sessionRow.locator('[class*="archivedTitle"]').count(), { timeout: 10_000 }).toBe(1)
+    // The row menu offers the inverse action while the filter is on. Role-name
+    // matching is a case-insensitive substring, so 'Archive session' would
+    // match the 'Unarchive session' label: pin exact names on both sides.
+    await clickHoverAction(sessionRow, `Session actions for ${rowTitle}`)
+    expect(await page.getByRole('menuitem', { name: 'Unarchive session', exact: true }).count()).toBe(1)
+    expect(await page.getByRole('menuitem', { name: 'Archive session', exact: true }).count()).toBe(0)
+    // Unarchive commits without a dialog; the echo lifts the dimmed marker.
+    await page.getByRole('menuitem', { name: 'Unarchive session', exact: true }).click()
+    await expect.poll(() => sessionRow.locator('[class*="archivedTitle"]').count(), { timeout: 10_000 }).toBe(0)
+    expect([...scaffold.ctx.workspaceRegistry.archivedSessionIds]).toEqual([])
+    // The restored row is an ordinary session now: turning the filter off
+    // keeps it visible, because the filter only governs archived rows.
+    await page.getByRole('button', { name: 'View options' }).click()
+    await page.getByRole('menuitem', { name: 'Show archived sessions' }).click()
+    await expect.poll(() => page.getByText(rowTitle, { exact: true }).count(), { timeout: 10_000 }).toBe(1)
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
