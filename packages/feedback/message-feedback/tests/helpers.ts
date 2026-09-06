@@ -146,6 +146,10 @@ class TestPersistence extends SessionPersistence {
     }))
   }
 
+  async delete(id: SessionId): Promise<boolean> {
+    return this.durable.delete(id)
+  }
+
   private handle(stored: StoredSession, access: SessionAccess): SessionHandle {
     let closed = false
     const handle: SessionHandle = {

@@ -432,6 +432,20 @@ export class JsonlBackendTracker {
   }
 
   /**
+   * Whether any handle (read or write) for one session is open on this
+   * backend, for operations that require the session to be unreferenced
+   * here (deletion).
+   * @param id - the session to test.
+   * @returns true while a handle for the session is open.
+   */
+  hasOpenHandle(id: SessionId): boolean {
+    for (const handle of this.openHandles) {
+      if (handle.id === id) return true
+    }
+    return false
+  }
+
+  /**
    * Drop a pending entry once the session materialized durably.
    * @param id - the session that reached durable storage.
    */

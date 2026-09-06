@@ -1501,6 +1501,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the new Session identity.',
       },
       {
+        signature: '@Remote(\'delete\') delete(request: SessionDeleteRequest): Promise<SessionDeleteValue>',
+        description: 'Permanently delete one Session: its live Agent is disposed, its stored log is destroyed, and its cache and workspace accounting are removed. The operation is not recoverable.',
+        parameters: [{ name: 'request', description: 'the Session to delete.' }],
+        returns: 'the deletion receipt once every durable step committed.',
+      },
+      {
         signature: '@Remote(\'prompt\') prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue>',
         description: 'Admit one prompt after explicitly resuming its Session.',
         parameters: [{ name: 'request', description: 'Session identity, prompt content, source metadata, and delivery mode.' }, { name: 'signal', description: 'caller cancellation before prompt admission begins.' }],
@@ -1595,6 +1601,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'options', description: 'optional cancellation.' }],
         returns: 'one snapshot per stored session.',
       },
+      {
+        signature: 'abstract delete(id: SessionId, options?: SessionPersistenceDeleteOptions): Promise<boolean>',
+        description: 'Permanently delete one stored session: its event log, its stored metadata, and every other artifact the backend holds for the id are destroyed. The deletion is not recoverable.\n\nThe session must not be referenced by any handle open on this service instance; dispose the owning agent (which closes its write handle and settles the session\'s final durability) before deleting.',
+        parameters: [{ name: 'id', description: 'the stored session to delete.' }, { name: 'options', description: 'optional cancellation.' }],
+        returns: '`true` when a session existed and was deleted, `false` when nothing stored for the id remained (idempotent no-op).',
+        throws: ['{SessionAlreadyOwnedError} when any handle for the session is open on this service instance.'],
+      },
     ],
   },
   {
@@ -1631,6 +1644,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Cold-read one session\'s projections from its complete log. Each unit is seeded from the identity-checked cached rows — the registry skips `apply` for the already-folded prefix (events at or below the row\'s `seq`) — and the refreshed checkpoint is written back (fail-soft, fire-and-forget), so the first cold read creates the cache row and later ones seed from it. The caller supplies the complete log in seq order: this service never consults the persistence layer.',
         parameters: [{ name: 'meta', description: 'the stored session header (identity witness).' }, { name: 'inheritedEventCount', description: 'exact inherited prefix length for projection initialization and identity.' }, { name: 'events', description: 'the session\'s complete log, in seq order.' }],
         returns: 'the projection cut at the log end.',
+      },
+      {
+        signature: 'async remove(id: SessionId): Promise<void>',
+        description: 'Permanently delete one session\'s stored checkpoint row.\n\nAwaits every row replacement already enqueued for the session (throttled, mandatory, or cold-read write-back) and drops any pending write-behind state, so no later put can resurrect the row. Callers dispose the owning agent before removing the row; a still-live session\'s row reappears only through the ordinary write path.',
+        parameters: [{ name: 'id', description: 'the session whose row is deleted.' }],
       },
     ],
   },
@@ -2924,6 +2942,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Archive one session durably. The session must exist (live or in session persistence); its workspace accounting — or lack of one — is irrelevant. An already archived id resolves without writing.',
         parameters: [{ name: 'sessionId', description: 'The session to archive.' }],
         returns: 'resolution after durability.',
+      },
+      {
+        signature: 'removeSession(sessionId: SessionId): Promise<boolean>',
+        description: 'Remove one session from every workspace record and from the registry archive set, and drop it from the header index. Callers delete the session\'s persistence artifact first; the index drop keeps a later listing refresh from resurrecting the id in any membership projection. An unaccounted id is an idempotent no-op.',
+        parameters: [{ name: 'sessionId', description: 'The session to remove from workspace accounting.' }],
+        returns: '`true` when a record or the archive set changed, `false` when the session was accounted nowhere.',
       },
       {
         signature: 'async resolveByPath(path: string): Promise<Workspace | undefined>',
@@ -4990,6 +5014,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionCreateValue {\n    readonly sessionId: SessionId;\n    readonly agentPreset?: string;\n}',
   },
   {
+    name: 'SessionDeleteRequest',
+    declaration: 'export interface SessionDeleteRequest {\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'SessionDeleteValue',
+    declaration: 'export interface SessionDeleteValue {\n    readonly deleted: true;\n}',
+  },
+  {
     name: 'SessionEvent',
     declaration: 'export type SessionEvent<T extends SessionEventType = SessionEventType> = {\n    [K in SessionEventType]: {\n        type: K;\n        seq: SessionSeq;\n        time: number;\n        data: SessionEventMap[K];\n        ignorable?: true;\n    } & (K extends SurfaceEventType ? {\n        sourceEventSeqs?: SessionSeq[];\n        surfaceOp?: SurfaceOp;\n    } : object);\n}[T];',
   },
@@ -5164,6 +5196,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionPersistenceCreateOptions',
     declaration: 'export interface SessionPersistenceCreateOptions {\n    readonly signal?: AbortSignal;\n    readonly inheritedEventCount?: SessionLogOffset;\n}',
+  },
+  {
+    name: 'SessionPersistenceDeleteOptions',
+    declaration: 'export interface SessionPersistenceDeleteOptions {\n    readonly signal?: AbortSignal;\n}',
   },
   {
     name: 'SessionPersistenceListOptions',

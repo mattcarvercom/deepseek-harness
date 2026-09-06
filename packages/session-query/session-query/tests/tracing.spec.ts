@@ -124,6 +124,10 @@ class TracePersistence extends SessionPersistence {
     TracePersistence.afterList?.()
     return Promise.resolve(result)
   }
+
+  async delete(id: SessionIdType): Promise<boolean> {
+    return TracePersistence.entries.delete(id)
+  }
 }
 
 async function queryContext(): Promise<Context> {

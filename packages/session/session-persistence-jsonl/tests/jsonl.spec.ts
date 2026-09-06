@@ -1629,6 +1629,99 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
   })
 })
 
+describe('JsonlSessionPersistence: delete', () => {
+  let ctx: Context
+  beforeEach(async () => {
+    root = await freshRoot()
+    ctx = new Context()
+    await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+  })
+  afterEach(async () => { await ctx.fiber.dispose() })
+
+  it('destroys the session directory and leaves every other session intact', async () => {
+    const keep = meta('keep', '/work')
+    const doomed = meta('doomed', '/work')
+    await writeLog(ctx.sessionPersistence, keep, oneTurnLog())
+    await writeLog(ctx.sessionPersistence, doomed, oneTurnLog())
+
+    const dir = sessionDir(root, '/work', doomed.id)
+    expect((await stat(dir)).isDirectory()).toBe(true)
+    // A prior stat memoizes the cold log; the delete must drop it.
+    expect((await ctx.sessionPersistence.stat(doomed.id))?.revision).toBeDefined()
+    // A live (non-aborted) signal walks every cancellation check unscathed.
+    expect(await ctx.sessionPersistence.delete(doomed.id, { signal: new AbortController().signal })).toBe(true)
+    await expect(stat(dir)).rejects.toThrow()
+    // The sibling log still round-trips; the deleted one is gone from stat and list.
+    expect((await readAll(ctx.sessionPersistence, keep.id)).events).toEqual(oneTurnLog())
+    expect(await ctx.sessionPersistence.stat(doomed.id)).toBeUndefined()
+    expect((await ctx.sessionPersistence.list()).map(s => s.header.id)).toEqual([keep.id])
+  })
+
+  it('deletes an obsolete flat zstd artifact straight under its project directory', async () => {
+    const m = meta('flat-zstd')
+    const flat = join(projectDir(root, undefined), `${encodeSegment(m.id)}.jsonl.zstd`)
+    await mkdir(projectDir(root, undefined), { recursive: true })
+    await writeFile(flat, Buffer.from([0x28, 0xb5, 0x2f, 0xfd]))
+    expect(await ctx.sessionPersistence.delete(m.id, { signal: new AbortController().signal })).toBe(true)
+    await expect(stat(flat)).rejects.toThrow()
+    expect(await ctx.sessionPersistence.stat(m.id)).toBeUndefined()
+  })
+
+  it('deletes an obsolete flat jsonl artifact and reports a no-op when nothing is stored', async () => {
+    const m = meta('flat-none')
+    const flat = join(projectDir(root, undefined), `${encodeSegment(m.id)}.jsonl`)
+    await mkdir(projectDir(root, undefined), { recursive: true })
+    await writeFile(flat, `${JSON.stringify(toHeaderLine(m))}\n${eventLines(oneTurnLog())}\n`)
+    expect(await ctx.sessionPersistence.delete(m.id, { signal: new AbortController().signal })).toBe(true)
+    await expect(stat(flat)).rejects.toThrow()
+    // No project directory, no flat artifact: nothing stored for the id.
+    expect(await ctx.sessionPersistence.delete(m.id)).toBe(false)
+  })
+
+  it('honors an already-aborted cancellation signal without deleting anything', async () => {
+    const m = meta('aborted-delete')
+    await writeLog(ctx.sessionPersistence, m, oneTurnLog())
+    const reason = new Error('delete cancelled')
+    const controller = new AbortController()
+    controller.abort(reason)
+    await expect(ctx.sessionPersistence.delete(m.id, { signal: controller.signal })).rejects.toBe(reason)
+    // The refusal deleted nothing.
+    expect((await stat(sessionDir(root, undefined, m.id))).isDirectory()).toBe(true)
+    expect((await readAll(ctx.sessionPersistence, m.id)).events).toEqual(oneTurnLog())
+  })
+
+  it('deletes one session while a sibling handle stays open and unharmed', async () => {
+    const keep = meta('sibling-keep', '/work')
+    const doomed = meta('sibling-doomed', '/work')
+    await writeLog(ctx.sessionPersistence, keep, oneTurnLog())
+    await writeLog(ctx.sessionPersistence, doomed, oneTurnLog())
+    const open = await ctx.sessionPersistence.open(keep.id, 'write')
+    expect(open.inheritedEventCount).toBe(SessionLogOffset(0))
+
+    expect(await ctx.sessionPersistence.delete(doomed.id)).toBe(true)
+    // The open sibling handle is untouched: still readable, still closeable.
+    expect(await open.read()).toEqual(oneTurnLog())
+    await open.close()
+    expect((await readAll(ctx.sessionPersistence, keep.id)).events).toEqual(oneTurnLog())
+    await expect(stat(sessionDir(root, '/work', doomed.id))).rejects.toThrow()
+  })
+
+  it('rethrows a non-ENOENT stat failure while probing the session directory', async () => {
+    const m = meta('stat-down')
+    await writeLog(ctx.sessionPersistence, m, oneTurnLog())
+    const dir = sessionDir(root, undefined, m.id)
+    const failure = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' })
+    statFailure.path = dir
+    statFailure.error = failure
+    await expect(ctx.sessionPersistence.delete(m.id)).rejects.toBe(failure)
+    // The failed probe deleted nothing.
+    statFailure.path = undefined
+    statFailure.error = undefined
+    expect((await stat(dir)).isDirectory()).toBe(true)
+    expect((await readAll(ctx.sessionPersistence, m.id)).events).toEqual(oneTurnLog())
+  })
+})
+
 describe('JsonlSessionPersistence: scanLog unit', () => {
   it('requires exactly one newline-terminated header record', () => {
     const header = JSON.stringify(toHeaderLine(meta('scanner-header')))

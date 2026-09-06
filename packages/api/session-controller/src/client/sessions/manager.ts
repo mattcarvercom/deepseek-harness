@@ -615,6 +615,17 @@ export class SessionManager {
   }
 
   /**
+   * Delete one Session on the Host. Resolution means the durable deletion
+   * committed and the Host published the removal; the caller clears the local
+   * row.
+   * @param sessionId - Session to delete.
+   * @returns the Host deletion receipt, or the business failure.
+   */
+  async deleteSession(sessionId: SessionId): Promise<RemoteResult<{ deleted: true }>> {
+    return await this.remote.session.delete({ sessionId })
+  }
+
+  /**
    * Insert-or-enrich a locally synthesized summary: a new id prepends; an
    * existing entry only gains fields it lacks (the session-added frame and the
    * create() echo race — whichever lands second must fill the placeholder's

@@ -192,9 +192,21 @@ async write(session: Session): Promise<void>
  * @returns the projection cut at the log end.
  */
 coldSnapshot( meta: SessionHeader, inheritedEventCount: SessionLogOffset, events: readonly SessionEvent[], ): ProjectionSnapshot
+
+/**
+ * Permanently delete one session's stored checkpoint row.
+ *
+ * Awaits every row replacement already enqueued for the session (throttled,
+ * mandatory, or cold-read write-back) and drops any pending write-behind
+ * state, so no later put can resurrect the row. Callers dispose the owning
+ * agent before removing the row; a still-live session's row reappears only
+ * through the ordinary write path.
+ * @param id - the session whose row is deleted.
+ */
+async remove(id: SessionId): Promise<void>
 ```
 
-Types: [Session](session.zh.md) · [SessionEvent](session.zh.md) · [SessionHeader](persistence.zh.md) · [SessionLogOffset](session.zh.md)
+Types: [Session](session.zh.md) · [SessionEvent](session.zh.md) · [SessionHeader](persistence.zh.md) · [SessionId](core.zh.md) · [SessionLogOffset](session.zh.md)
 
 Source: [`packages/session/session-projection-cache/src/index.ts`](../../packages/session/session-projection-cache/src/index.ts)
 

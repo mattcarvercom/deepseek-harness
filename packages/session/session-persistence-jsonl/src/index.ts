@@ -21,12 +21,13 @@ import { randomBytes } from 'node:crypto'
 import {
   SessionPersistence, SessionPersistenceRevision, SessionFormatUnsupportedError,
   SessionPersistenceCorruptionError,
-  SessionAlreadyExistsError, SessionPersistenceNotFoundError,
+  SessionAlreadyExistsError, SessionAlreadyOwnedError, SessionPersistenceNotFoundError,
   assertStoredId, materializeCreateHeader, sessionFormatVersionRefusal, validateStoredEvents,
   type SessionAccess, type SessionHandle,
   type SessionLocation, type SessionPersistenceCreateOptions,
-  type SessionPersistenceListOptions, type SessionPersistenceOpenOptions,
-  type SessionPersistenceSnapshot, type SessionPersistenceStatOptions,
+  type SessionPersistenceDeleteOptions, type SessionPersistenceListOptions,
+  type SessionPersistenceOpenOptions, type SessionPersistenceSnapshot,
+  type SessionPersistenceStatOptions,
   type SessionPersistenceRevision as PersistenceRevision,
 } from '@deepseek-ai/dsh-session-persistence'
 import { JsonlBackendTracker, JsonlSessionHandle } from './storage.ts'
@@ -379,6 +380,63 @@ class JsonlSessionPersistence extends SessionPersistence {
     }
     signal?.throwIfAborted()
     return snapshots
+  }
+
+  /**
+   * Permanently delete one stored session: its session directory (every
+   * generation plus lock residue) is destroyed, and the obsolete flat layout
+   * deletes its flat artifact. Encoding and layout are irrelevant to
+   * deletion; the directory is resolved by session name, not by generation
+   * parse.
+   * @param id - the stored session to delete.
+   * @param options - optional cancellation.
+   * @returns `true` when session data existed and was deleted, `false` when
+   *   nothing stored for the id remained.
+   * @throws {SessionAlreadyOwnedError} when a handle for the session is open
+   *   on this backend.
+   */
+  async delete(id: SessionId, options?: SessionPersistenceDeleteOptions): Promise<boolean> {
+    const signal = options?.signal
+    signal?.throwIfAborted()
+    // A never-materialized session is always behind its open creator (or
+    // pending-read) handle — registerCreated pairs with adopt before any
+    // await — so the open-handle probe covers it too.
+    if (this.tracker.hasOpenHandle(id)) {
+      throw new SessionAlreadyOwnedError(id)
+    }
+    const encoded = encodeSegment(id)
+    let removed = false
+    for (const project of await this.listProjectDirs(signal)) {
+      signal?.throwIfAborted()
+      const dir = join(project, encoded)
+      if (await this.dirExists(dir)) {
+        await rm(dir, { recursive: true, force: true })
+        signal?.throwIfAborted()
+        removed = true
+        continue
+      }
+      for (const compression of ['zstd', 'none'] as const) {
+        const flat = join(project, encoded + logSuffix(compression))
+        if (await this.exists(flat)) {
+          signal?.throwIfAborted()
+          await rm(flat)
+          removed = true
+        }
+      }
+    }
+    signal?.throwIfAborted()
+    this.coldLogMemo.delete(id)
+    return removed
+  }
+
+  /** Whether a path is an existing directory, for deletion's session-dir probe. */
+  private async dirExists(dir: string): Promise<boolean> {
+    try {
+      return (await stat(dir)).isDirectory()
+    } catch (error: unknown) {
+      if (isENOENT(error)) return false
+      throw error
+    }
   }
 
   // --- handle-facing storage internals (package-private via the handle class below) ---

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-session-persistence` 持久存储会话的事件日志，并通过一个逐会话句柄寻址每个已存储会话：后端无关服务（`ctx.sessionPersistence`）暴露 `create`/`open`/`stat`/`list`，`create`/`open` 返回承载全部日志读写与单写者所有权的 `SessionHandle`。持久化单元就是现有 `SessionEvent` 日志——不存在另一套并行的存储消息类型——不可回放的元数据（格式版本、工作目录、血缘、种子边界）作为 `SessionHeader` 单独传输。后端拥有自己的存储，seam 拥有语义：仅追加的连续日志、以显式 `flush` 持久性屏障托底的尽力而为 append、绝不到达读取方的撕裂物理尾部、失败即关闭的存储记录校验，以及进程内排除第二个写入方。挂载随产品交付的 [JSONL 后端](../session-persistence-jsonl/README.zh.md)（每个会话一份产物），agent-loop 就会持久化并恢复会话，loop 与模型无需知道下面是哪个后端。
+`dsh-session-persistence` 持久存储会话的事件日志，并通过一个逐会话句柄寻址每个已存储会话：后端无关服务（`ctx.sessionPersistence`）暴露 `create`/`open`/`stat`/`list`/`delete`，`create`/`open` 返回承载全部日志读写与单写者所有权的 `SessionHandle`。持久化单元就是现有 `SessionEvent` 日志——不存在另一套并行的存储消息类型——不可回放的元数据（格式版本、工作目录、血缘、种子边界）作为 `SessionHeader` 单独传输。后端拥有自己的存储，seam 拥有语义：仅追加的连续日志、以显式 `flush` 持久性屏障托底的尽力而为 append、绝不到达读取方的撕裂物理尾部、失败即关闭的存储记录校验，以及进程内排除第二个写入方。挂载随产品交付的 [JSONL 后端](../session-persistence-jsonl/README.zh.md)（每个会话一份产物），agent-loop 就会持久化并恢复会话，loop 与模型无需知道下面是哪个后端。
 
 ## 目录
 
@@ -41,10 +41,13 @@ const handle = await ctx.sessionPersistence.open(id, 'write')  // claim single-w
 const reader = await ctx.sessionPersistence.open(id, 'read')   // observe without ownership
 const snap = await ctx.sessionPersistence.stat(id)             // header + revision (+ eventCount / sizeBytes) without a log read
 const all = await ctx.sessionPersistence.list()                // one snapshot per visible stored session
+const removed = await ctx.sessionPersistence.delete(id)        // destroy a stored session; unrecoverable
 await ctx.sessionPersistence.flush()                           // backend-wide durability barrier over every active write handle
 ```
 
 服务级 `flush()` 排空每个活跃写句柄已路由的事件并把其会话实体化，效果与各句柄自己的 `flush` 完全相同；失败按会话聚合为一个 `AggregateError` 而不中途放弃清扫，清扫途中被关闭的句柄视同已 flush，因为 close 本身会持久排空。
+
+`delete(id)` 永久销毁一个已存储会话——其事件日志、已存储元数据，以及后端为该 id 持有的其他一切产物。删除不可恢复。该会话不得被本服务实例上任何已打开句柄引用：持有已打开句柄时执行删除会以 `SessionAlreadyOwnedError` 拒绝（先处置持有者 agent）；从未实体化产物的会话仍位于其已打开创建者句柄之后，因此同样被拒绝覆盖。`delete` 在数据存在且已被销毁时返回 `true`，在该 id 已无任何已存储数据时返回 `false`（幂等空操作），存储故障按自身传播。
 
 每一次日志读写都流经返回的 `SessionHandle`；不存在按 id 寻址的 append 或 load 方法。`handle.read(offset?, length?)` 返回经过验证的连续前缀切片——绝不返回撕裂尾部，且同一句柄上的重复读取绝不会观察到比先前读取更旧的状态；写句柄能读到自己成功的 append。`handle.append(events)` 追加一个连续批次，其第一个 `seq` 等于已存储 next-seq；完成时的持久化是尽力而为的——批次被接受、有序，并对同一后端实例上的读取可见，只有完成的 `flush` 才承诺它在崩溃后依然存在（交付的 JSONL 后端恰好会立即持久化每个批次）。`handle.flush()` 是持久性屏障，同时把空的已创建会话实体化，使其可被持久列出。`handle.close()` 幂等且不可取消：读句柄释放本地资源，写句柄完成待处理的持久化并释放写所有权。一旦某次 `append` 或 `flush` 完成，其后在同一后端实例上开始的读取——无论经由任何句柄，还是经由 `stat`/`list`——至少能观察到该前缀。
 

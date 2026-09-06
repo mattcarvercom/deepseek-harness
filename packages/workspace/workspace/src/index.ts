@@ -254,6 +254,41 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Remove one session from every workspace record and from the registry
+   * archive set, and drop it from the header index. Callers delete the
+   * session's persistence artifact first; the index drop keeps a later
+   * listing refresh from resurrecting the id in any membership projection.
+   * An unaccounted id is an idempotent no-op.
+   * @param sessionId - The session to remove from workspace accounting.
+   * @returns `true` when a record or the archive set changed, `false` when
+   *   the session was accounted nowhere.
+   */
+  removeSession(sessionId: SessionId): Promise<boolean> {
+    return this.enqueueOperation(async () => {
+      let changed = false
+      for (const [id, record] of [...this.requireTable().entries()]) {
+        if (!record.sessionIds.includes(sessionId)) continue
+        const entity = this.entities.get(id)
+        if (entity === undefined) continue
+        await entity.detachSession(sessionId)
+        changed = true
+      }
+      const state = this.requireState()
+      if (state.archivedSessionIds.includes(sessionId)) {
+        await this.setState({
+          ...state,
+          archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+        })
+        changed = true
+      }
+      this.headers.delete(sessionId)
+      this.sessionPaths.delete(sessionId)
+      this.invalidSessionPaths.delete(sessionId)
+      return changed
+    })
+  }
+
+  /**
    * Whether a session is live, header-indexed, or present in a fresh
    * persistence listing. Only a definite miss returns false — a failing
    * `sessionPersistence.list()` propagates so storage faults never

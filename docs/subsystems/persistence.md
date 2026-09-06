@@ -387,6 +387,23 @@ abstract stat(id: SessionId, options?: SessionPersistenceStatOptions): Promise<S
  * @returns one snapshot per stored session.
  */
 abstract list(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]>
+
+/**
+ * Permanently delete one stored session: its event log, its stored
+ * metadata, and every other artifact the backend holds for the id are
+ * destroyed. The deletion is not recoverable.
+ *
+ * The session must not be referenced by any handle open on this service
+ * instance; dispose the owning agent (which closes its write handle and
+ * settles the session's final durability) before deleting.
+ * @param id - the stored session to delete.
+ * @param options - optional cancellation.
+ * @returns `true` when a session existed and was deleted, `false` when
+ *   nothing stored for the id remained (idempotent no-op).
+ * @throws {SessionAlreadyOwnedError} when any handle for the session is
+ *   open on this service instance.
+ */
+abstract delete(id: SessionId, options?: SessionPersistenceDeleteOptions): Promise<boolean>
 ```
 
 Types: [SessionId](core.md)

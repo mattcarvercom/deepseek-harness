@@ -108,6 +108,7 @@ class FakeSessions {
   readonly create: ReturnType<typeof vi.fn<ISessions['create']>>
   readonly open: ReturnType<typeof vi.fn<(id: SessionId) => void>>
   readonly clear: ReturnType<typeof vi.fn<() => void>>
+  readonly delete: ReturnType<typeof vi.fn<ISessions['delete']>>
 
   constructor(initial: SessionListState) {
     this.list = new MutableSource(initial)
@@ -119,6 +120,7 @@ class FakeSessions {
     this.clear = vi.fn(() => {
       this.list.update(state => ({ ...state, current: undefined }))
     })
+    this.delete = vi.fn<ISessions['delete']>(async () => {})
   }
 }
 
@@ -420,6 +422,18 @@ describe('UiWorkspaceService', () => {
     b.workspaces.onArchive = () => Promise.reject(new Error('archive rejected'))
     await expect(b.uiWorkspace.archiveSession(idle)).rejects.toThrow('archive rejected')
     expect(b.workspaces.archiveCalls).toEqual([idle, idle])
+  })
+
+  it('forwards session deletion to the sessions service and preserves failures', async () => {
+    const idle = sid('idle')
+    const b = bench()
+
+    await b.uiWorkspace.deleteSession(idle)
+    expect(b.sessions.delete).toHaveBeenCalledWith(idle)
+
+    b.sessions.delete.mockImplementation(() => Promise.reject(new Error('delete rejected')))
+    await expect(b.uiWorkspace.deleteSession(idle)).rejects.toThrow('delete rejected')
+    expect(b.sessions.delete).toHaveBeenCalledTimes(2)
   })
 
   it('passes directory operations to the Host and preserves structured browse failures', async () => {

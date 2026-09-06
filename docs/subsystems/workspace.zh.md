@@ -306,6 +306,18 @@ insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly Workspac
 archiveSession(sessionId: SessionId): Promise<void>
 
 /**
+ * Remove one session from every workspace record and from the registry
+ * archive set, and drop it from the header index. Callers delete the
+ * session's persistence artifact first; the index drop keeps a later
+ * listing refresh from resurrecting the id in any membership projection.
+ * An unaccounted id is an idempotent no-op.
+ * @param sessionId - The session to remove from workspace accounting.
+ * @returns `true` when a record or the archive set changed, `false` when
+ *   the session was accounted nowhere.
+ */
+removeSession(sessionId: SessionId): Promise<boolean>
+
+/**
  * Resolve by canonical directory path without creating or mutating a
  * workspace. A missing path rejects during `realpath`; an existing unowned
  * directory returns `undefined`.

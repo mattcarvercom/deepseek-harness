@@ -761,6 +761,15 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<SessionInspectio
 @Remote('fork') fork(request: SessionForkRequest): Promise<SessionForkValue>
 
 /**
+ * Permanently delete one Session: its live Agent is disposed, its stored
+ * log is destroyed, and its cache and workspace accounting are removed.
+ * The operation is not recoverable.
+ * @param request - the Session to delete.
+ * @returns the deletion receipt once every durable step committed.
+ */
+@Remote('delete') delete(request: SessionDeleteRequest): Promise<SessionDeleteValue>
+
+/**
  * Admit one prompt after explicitly resuming its Session.
  * @param request - Session identity, prompt content, source metadata, and delivery mode.
  * @param signal - caller cancellation before prompt admission begins.

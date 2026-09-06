@@ -302,6 +302,16 @@ export interface SessionForkValue {
   readonly sessionId: SessionId
 }
 
+/** Session deletion request. */
+export interface SessionDeleteRequest {
+  readonly sessionId: SessionId
+}
+
+/** Receipt after one Session is deleted durably and unrecoverably. */
+export interface SessionDeleteValue {
+  readonly deleted: true
+}
+
 /** Session prompt request. */
 export interface SessionPromptRequest {
   /** Client-minted identity persisted on the exact accepted user message. */

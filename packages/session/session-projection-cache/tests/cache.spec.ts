@@ -722,3 +722,73 @@ describe('SessionProjectionCache cold-read seeding', () => {
     }, { timeout: 5_000 })
   })
 })
+
+describe('SessionProjectionCache row deletion', () => {
+  it('remove destroys the stored row of a cold session and is a no-op for an unknown id', async () => {
+    const { ctx, root } = await harness()
+    const session = ctx.sessions.create(SessionId('cold-remove'))
+    mark(session, ['a'])
+    endTurn(session)
+    await vi.waitFor(async () => {
+      expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['a'] })
+    }, { timeout: 5_000 })
+
+    await ctx.sessionProjectionCache.remove(session.id)
+    expect(await storedRecord(root, session.id)).toBeUndefined()
+    // A repeat remove of the now-absent id is a plain no-op.
+    await ctx.sessionProjectionCache.remove(session.id)
+    // An id that never had a row is one too.
+    await ctx.sessionProjectionCache.remove(SessionId('never-existed'))
+  })
+
+  it('remove awaits an in-flight row replacement, which therefore lands before the row deletion', async () => {
+    const { ctx, root } = await harness()
+    const cache = ctx.sessionProjectionCache
+    const session = ctx.sessions.create(SessionId('chain-remove'))
+    // Let the creation write settle so the gate installed below only sees
+    // the explicit write's put.
+    await vi.waitFor(async () => {
+      expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1)
+    }, { timeout: 5_000 })
+    const internals = cache as unknown as {
+      put: (id: SessionId, identity: CheckpointRecord['identity'], rows: CheckpointRecord['rows']) => Promise<void>
+    }
+    const originalPut = internals.put.bind(internals)
+    const gate = Promise.withResolvers<undefined>()
+    const put = vi.spyOn(internals, 'put').mockImplementation(async (...args) => {
+      await gate.promise
+      return originalPut(...args)
+    })
+
+    mark(session, ['a'])
+    const writing = cache.write(session)
+    await vi.waitFor(() => { expect(put).toHaveBeenCalled() })
+    // The remove must await the gated put before its table delete; release
+    // the gate, then settle both. If the remove had skipped the chain tail,
+    // the put would land AFTER the delete and resurrect the row.
+    const removing = cache.remove(session.id)
+    gate.resolve(undefined)
+    await removing
+    await writing
+    expect(await storedRecord(root, session.id)).toBeUndefined()
+  })
+
+  it('remove of a live session kills its pending write-behind state; the next mandatory point re-lands the row', async () => {
+    const { ctx, root } = await harness({ config: { writeEveryEvents: 100, writeIntervalMs: 25 } })
+    const session = ctx.sessions.create(SessionId('live-remove'))
+    await vi.waitFor(async () => {
+      expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1)
+    }, { timeout: 5_000 })
+    mark(session, ['pending']) // dirty state with an armed interval timer
+    await ctx.sessionProjectionCache.remove(session.id)
+    // The armed timer died with the remove: the row stays deleted, no
+    // interval write lands the mark.
+    await new Promise((resolve) => { setTimeout(resolve, 100) })
+    expect(await storedRows(root, session.id)).toBeUndefined()
+    // A later mandatory point re-lands the row through the ordinary path.
+    endTurn(session)
+    await vi.waitFor(async () => {
+      expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['pending'] })
+    }, { timeout: 5_000 })
+  })
+})

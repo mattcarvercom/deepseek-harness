@@ -606,5 +606,59 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
         await dispose()
       }
     })
+
+    it('delete destroys a materialized session and reports a no-op for the repeat', async () => {
+      const { persistence, dispose } = await make()
+      try {
+        const m = meta('deleted', '/work')
+        const writer = await persistence.create(m)
+        await writer.append(oneTurnLog())
+        await writer.close()
+
+        expect(await persistence.delete(m.id)).toBe(true)
+        expect(await persistence.stat(m.id)).toBeUndefined()
+        expect((await persistence.list()).map(s => s.header.id)).not.toContain(m.id)
+        await expect(persistence.open(m.id, 'read')).rejects.toBeInstanceOf(SessionPersistenceNotFoundError)
+        // A repeat delete finds nothing stored for the id.
+        expect(await persistence.delete(m.id)).toBe(false)
+      } finally {
+        await dispose()
+      }
+    })
+
+    it('delete refuses while any handle is open and proceeds after every close', async () => {
+      const { persistence, dispose } = await make()
+      try {
+        const m = meta('delete-owned')
+        const writer = await persistence.create(m)
+        await writer.append(oneTurnLog())
+        await expect(persistence.delete(m.id)).rejects.toBeInstanceOf(SessionAlreadyOwnedError)
+        // A read handle alone is still an open reference.
+        const reader = await persistence.open(m.id, 'read')
+        await expect(persistence.delete(m.id)).rejects.toBeInstanceOf(SessionAlreadyOwnedError)
+        // The refusals destroyed nothing.
+        expect(await persistence.stat(m.id)).toBeDefined()
+        expect((await reader.read()).map(e => e.seq)).toEqual([0, 1, 2, 3, 4, 5])
+        await reader.close()
+        await writer.close()
+        expect(await persistence.delete(m.id)).toBe(true)
+      } finally {
+        await dispose()
+      }
+    })
+
+    it('delete of a session that never materialized reports a no-op', async () => {
+      const { persistence, dispose } = await make()
+      try {
+        const m = meta('never-materialized')
+        const creator = await persistence.create(m)
+        await expect(persistence.delete(m.id)).rejects.toBeInstanceOf(SessionAlreadyOwnedError)
+        // An unappended close erases the session, so the delete finds nothing.
+        await creator.close()
+        expect(await persistence.delete(m.id)).toBe(false)
+      } finally {
+        await dispose()
+      }
+    })
   })
 }

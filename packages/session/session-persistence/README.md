@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-session-persistence` stores a session's event log durably and addresses each stored session through one per-session handle: the backend-neutral service (`ctx.sessionPersistence`) exposes `create`/`open`/`stat`/`list`, and `create`/`open` return a `SessionHandle` that carries every log read and write plus single-writer ownership. The persisted unit is the existing `SessionEvent` log — there is no parallel stored message type — and non-replayable metadata (format version, working directory, lineage, seed boundary) travels separately as `SessionHeader`. Backends own their storage, the seam owns the semantics: append-only contiguous logs, best-effort appends behind an explicit `flush` durability barrier, a torn physical tail that never reaches a reader, fail-closed validation of stored records, and in-process exclusion of a second writer. Mount the shipped [JSONL backend](../session-persistence-jsonl/README.md) (one artifact per session) and agent-loop persists and resumes sessions without the loop or the model knowing which backend is underneath.
+`dsh-session-persistence` stores a session's event log durably and addresses each stored session through one per-session handle: the backend-neutral service (`ctx.sessionPersistence`) exposes `create`/`open`/`stat`/`list`/`delete`, and `create`/`open` return a `SessionHandle` that carries every log read and write plus single-writer ownership. The persisted unit is the existing `SessionEvent` log — there is no parallel stored message type — and non-replayable metadata (format version, working directory, lineage, seed boundary) travels separately as `SessionHeader`. Backends own their storage, the seam owns the semantics: append-only contiguous logs, best-effort appends behind an explicit `flush` durability barrier, a torn physical tail that never reaches a reader, fail-closed validation of stored records, and in-process exclusion of a second writer. Mount the shipped [JSONL backend](../session-persistence-jsonl/README.md) (one artifact per session) and agent-loop persists and resumes sessions without the loop or the model knowing which backend is underneath.
 
 ## Table of Contents
 
@@ -33,7 +33,7 @@ The seam ships the [JSONL](../session-persistence-jsonl/README.md) backend: one 
 
 ### What the service provides
 
-With a backend mounted, five service methods address stored sessions:
+With a backend mounted, six service methods address stored sessions:
 
 ```text
 const handle = await ctx.sessionPersistence.create(header)     // store a new session, take write ownership
@@ -41,10 +41,13 @@ const handle = await ctx.sessionPersistence.open(id, 'write')  // claim single-w
 const reader = await ctx.sessionPersistence.open(id, 'read')   // observe without ownership
 const snap = await ctx.sessionPersistence.stat(id)             // header + revision (+ eventCount / sizeBytes) without a log read
 const all = await ctx.sessionPersistence.list()                // one snapshot per visible stored session
+const removed = await ctx.sessionPersistence.delete(id)        // destroy a stored session; unrecoverable
 await ctx.sessionPersistence.flush()                           // backend-wide durability barrier over every active write handle
 ```
 
 Service-level `flush()` drains every active write handle's routed events and materializes its session, exactly as each handle's own `flush` would; failures aggregate per session as an `AggregateError` without abandoning the sweep, and a handle closed mid-sweep counts as flushed because close itself drains durably.
+
+`delete(id)` permanently destroys one stored session — its event log, stored metadata, and every other artifact the backend holds for the id. The deletion is not recoverable. The session must not be referenced by any handle open on this service instance: a delete while a handle is open rejects with `SessionAlreadyOwnedError` (dispose the owning agent first); a session that never materialized an artifact is still behind its open creator handle, so the refusal covers it too. `delete` returns `true` when data existed and was destroyed and `false` when nothing stored for the id remained (idempotent no-op), and storage faults propagate as themselves.
 
 Every log read and write flows through the returned `SessionHandle`; there are no id-addressed append or load methods. `handle.read(offset?, length?)` returns validated contiguous prefix slices — never a torn tail, and repeated reads on one handle never observe an older state than a prior read; a write handle reads its own successful appends. `handle.append(events)` appends a contiguous batch whose first `seq` equals the stored next-seq; persistence is best-effort on resolution — the batch is accepted, ordered, and visible to reads on this backend instance, and only a resolved `flush` promises it survives a crash (the shipped JSONL backend happens to persist each batch immediately). `handle.flush()` is the durability barrier and also materializes an empty created session so it becomes durably listable. `handle.close()` is idempotent and uncancellable: a read handle frees local resources, a write handle completes pending durability and releases write ownership. Once an `append` or `flush` resolves, reads started afterwards on the same backend instance — on any handle, or through `stat`/`list` — observe at least that prefix.
 

@@ -180,6 +180,7 @@ describe('sessions', () => {
     await expect(runtime.sessions.fork({
       sessionId: 's1' as SessionId, atSeq: 7, increaseTitle: true,
     })).resolves.toBe('s1')
+    await expect(runtime.sessions.delete('s2' as SessionId)).resolves.toBeUndefined()
     expect(runtime.sessions.calls).toEqual([
       { method: 'openSubagent', args: [address] },
       { method: 'setSubagentCatalogOpen', args: ['s2', true] },
@@ -187,6 +188,7 @@ describe('sessions', () => {
       { method: 'open', args: ['s1'] },
       { method: 'clear', args: [] },
       { method: 'fork', args: [{ sessionId: 's1', atSeq: 7, increaseTitle: true }] },
+      { method: 'delete', args: ['s2'] },
     ])
     await runtime.dispose()
   })

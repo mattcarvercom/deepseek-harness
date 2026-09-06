@@ -67,6 +67,8 @@ A session joins the project of the directory it runs in: create a session in a p
 
 Hide a session from the grouping when it should stop appearing there: it disappears from the visible list, while its session, history, and place in the project stay intact. Remove a project when it is no longer needed: it leaves the list, and its folder, files, and session histories are never touched — those sessions become ungrouped. Adding the same directory again afterwards starts a fresh project without the old sessions.
 
+Strip a session from the accounting entirely when its log is destroyed: `removeSession(id)` detaches it from every project record, clears it from the archive set, and drops its header-index entry so a later listing refresh cannot resurrect the id in any membership projection. It returns whether a record or the archive set changed, and an id accounted nowhere is an idempotent no-op (the index entry is still dropped). Hiding and stripping compose: a hidden session can be stripped, and stripping clears its hidden state too.
+
 -----
 
 <a id="understand-the-implementation"></a>

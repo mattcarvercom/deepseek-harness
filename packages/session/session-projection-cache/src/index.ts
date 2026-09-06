@@ -96,6 +96,13 @@ export class SessionProjectionCache extends Service {
 
   private table?: KvTable<SessionId, CheckpointRecord>
   private readonly dirty = new Map<Session, DirtyState>()
+  /**
+   * Per-session FIFO write chains: every durable row replacement (throttled,
+   * mandatory, cold-read write-back) enqueues here, so {@link remove} can
+   * await the chain tail before deleting the row and no late put resurrects
+   * it.
+   */
+  private readonly writeChains = new Map<SessionId, Promise<void>>()
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'sessionProjectionCache')
@@ -254,11 +261,11 @@ export class SessionProjectionCache extends Service {
     // already gone; persistence's own retirement drain covers that path and
     // any residual overreach is caught by the cold read's anchored floor.
     if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
-    await this.put(
+    await this.enqueuePut(session.id, () => this.put(
       session.id,
       identityOf(session.header, session.inheritedEventCount),
       rows,
-    )
+    ))
   }
 
   /**
@@ -289,10 +296,31 @@ export class SessionProjectionCache extends Service {
     )
     // Refresh the row so the next cold read seeds from it; fail-soft and
     // fire-and-forget — a failed write-back only costs a longer tail replay.
-    void this.put(meta.id, identity, restored.checkpoint).catch((error: unknown) => {
+    void this.enqueuePut(meta.id, () => this.put(meta.id, identity, restored.checkpoint)).catch((error: unknown) => {
       this.ctx.logger.warn(`session projection cache: cold-read write-back for "${meta.id}" failed (cache stays stale): ${String(error)}`)
     })
     return restored.snapshot
+  }
+
+  /**
+   * Permanently delete one session's stored checkpoint row.
+   *
+   * Awaits every row replacement already enqueued for the session (throttled,
+   * mandatory, or cold-read write-back) and drops any pending write-behind
+   * state, so no later put can resurrect the row. Callers dispose the owning
+   * agent before removing the row; a still-live session's row reappears only
+   * through the ordinary write path.
+   * @param id - the session whose row is deleted.
+   */
+  async remove(id: SessionId): Promise<void> {
+    const live = this.ctx.sessions.get(id)
+    if (live !== undefined) {
+      this.markClean(live)
+      this.dirty.delete(live)
+    }
+    const tail = this.writeChains.get(id)
+    if (tail !== undefined) await tail
+    await this.requireTable().delete(id)
   }
 
 
@@ -382,6 +410,22 @@ export class SessionProjectionCache extends Service {
       throw new TypeError('projection checkpoint is not losslessly JSON-serializable (a unit state violates the plain-JSON contract)')
     }
     await this.requireTable().put(id, { identity, rows: detached as CheckpointRecord['rows'] })
+  }
+
+  /**
+   * Enqueue one session's row replacement on its per-id FIFO chain (see
+   * {@link writeChains}). A failed step rejects for its own caller (the
+   * fail-soft paths contain it) but never wedges the chain for later puts.
+   * @param id - the session whose row is replaced.
+   * @param work - the durable row replacement.
+   * @returns the step's own result, which may reject.
+   */
+  private enqueuePut(id: SessionId, work: () => Promise<void>): Promise<void> {
+    const prior = this.writeChains.get(id)
+    const step = (prior === undefined ? Promise.resolve() : prior).then(work)
+    const tracked = step.catch(() => undefined)
+    this.writeChains.set(id, tracked)
+    return step
   }
 
   private requireTable(): KvTable<SessionId, CheckpointRecord> {
