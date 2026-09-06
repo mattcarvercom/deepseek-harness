@@ -203,7 +203,7 @@ Source: [`packages/api/gateway/src/index.ts:119`](../packages/api/gateway/src/in
 
 ## `@deepseek-ai/dsh-api-session-controller`
 
-Requires: `agentDefaultModel` · `agents` · `attachments` · `fileUploads` · `llm` · `sessions` · `sessionProjections` · `sessionProjectionCache` · `sessionQuery` · `typert` · `workspaceRegistry`
+Requires: `agentDefaultModel` · `agents` · `attachments` · `fileUploads` · `llm` · `sessions` · `sessionPersistence` · `sessionProjections` · `sessionProjectionCache` · `sessionQuery` · `typert` · `workspaceRegistry`
 
 ```ts config-catalog
 /** Session Controller deployment policy. */

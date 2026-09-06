@@ -176,6 +176,12 @@
   line-height: 20px;
 }
 
+/* A lifted archived row: the dimmed label marks the hidden state the
+   menu's inverse action restores. */
+.archivedTitle {
+  color: var(--dsw-alias-label-dimmed);
+}
+
 .renameInput {
   min-width: 0;
   font-size: 14px;

@@ -151,6 +151,11 @@ describe('WorkspaceController commands', () => {
     vi.spyOn(ctx.workspaceRegistry, 'archiveSession').mockRejectedValueOnce(archiveFailure)
     await expect(controller.archiveSession({ sessionId: SessionId('session') }))
       .rejects.toBe(archiveFailure)
+
+    const unarchiveFailure = new Error('unarchive storage failed')
+    vi.spyOn(ctx.workspaceRegistry, 'unarchiveSession').mockRejectedValueOnce(unarchiveFailure)
+    await expect(controller.unarchiveSession({ sessionId: SessionId('session') }))
+      .rejects.toBe(unarchiveFailure)
   })
 
   it('resolves queued Workspace identities when their operation starts', async () => {
@@ -221,6 +226,14 @@ describe('WorkspaceController commands', () => {
       .resolves.toEqual({ archivedSessionIds: [session.id] })
     await expect(controller.archiveSession({ sessionId: SessionId('unknown') }))
       .rejects.toMatchObject({ code: 'session/not-found' })
+
+    // Unarchive is a pure set removal: known, unknown, and repeat all resolve.
+    await expect(controller.unarchiveSession({ sessionId: session.id }))
+      .resolves.toEqual({ archivedSessionIds: [] })
+    await expect(controller.unarchiveSession({ sessionId: session.id }))
+      .resolves.toEqual({ archivedSessionIds: [] })
+    await expect(controller.unarchiveSession({ sessionId: SessionId('unknown') }))
+      .resolves.toEqual({ archivedSessionIds: [] })
   })
 })
 

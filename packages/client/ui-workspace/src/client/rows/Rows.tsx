@@ -377,7 +377,7 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRename, onFork, onArchive, onDelete, onReveal, drag, flat = false, t,
+  node, currentId, now, onOpen, onRename, onFork, onArchive, onUnarchive, onDelete, onReveal, drag, flat = false, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -389,6 +389,8 @@ export function SessionNodeItem({
   onFork: (id: SessionNode['id']) => void
   /** Archive this session (row menu action; commits without a dialog). */
   onArchive: (id: SessionNode['id']) => void
+  /** Unarchive this session (row menu action; commits without a dialog). */
+  onUnarchive: (id: SessionNode['id']) => void
   /** Open the browser-owned delete confirmation (row menu action; the modal commits). */
   onDelete: (id: SessionNode['id'], currentTitle: string) => void
   /** Scroll this row into view after search navigation, then acknowledge it. */
@@ -414,12 +416,15 @@ export function SessionNodeItem({
   }, [onReveal])
   // Archive hides the row through the registry-global archive set and never
   // touches the session log, so it is not styled as destructive and needs no
-  // confirmation dialog.
+  // confirmation dialog. While the archived filter is on, the lifted row
+  // offers the inverse action in the same slot.
   const sessionMenuItems = [
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
     { id: 'fork', label: t('menu.fork'), icon: <IconBranchOutline16 /> },
     // 20-native glyph in the menu's 16px icon slot (Menu.module.css .itemIcon).
-    { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} /> },
+    row.archived
+      ? { id: 'unarchive', label: t('menu.unarchiveSession'), icon: <IconArchiveOutline20 size={16} /> }
+      : { id: 'archive', label: t('menu.archiveSession'), icon: <IconArchiveOutline20 size={16} /> },
     { id: 'delete', label: t('menu.deleteSession'), icon: <IconTrashOutline16 /> },
   ]
   // Figma session cell: pad 8, status slot 16, then a 4px title gap.
@@ -467,7 +472,7 @@ export function SessionNodeItem({
           {showStatus && <SessionStatusDots statuses={statuses} />}
         </span>
       )}
-      <span className={css.title}>{title}</span>
+      <span className={clsx(css.title, row.archived && css.archivedTitle)}>{title}</span>
       {row.hasActiveSchedule && <ActiveScheduleIndicator t={t} />}
       {/* A blank New Session row is a provisional placeholder: nothing has
           happened in it yet, so a "now" timestamp and the row verbs
@@ -485,6 +490,7 @@ export function SessionNodeItem({
               if (id === 'rename') onRename(node.id, row.title)
               if (id === 'fork') onFork(node.id)
               if (id === 'archive') onArchive(node.id)
+              if (id === 'unarchive') onUnarchive(node.id)
               if (id === 'delete') onDelete(node.id, row.title)
             }}
             portal

@@ -254,6 +254,25 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Remove one session from the registry-global archive set, restoring it
+   * to every grouping surface. Archiving never touches workspace accounting,
+   * so the retained slot makes unarchiving a pure set removal. An id that is
+   * not archived resolves without writing.
+   * @param sessionId - The session to unarchive.
+   * @returns resolution after durability.
+   */
+  unarchiveSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (!state.archivedSessionIds.includes(sessionId)) return
+      await this.setState({
+        ...state,
+        archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+      })
+    })
+  }
+
+  /**
    * Remove one session from every workspace record and from the registry
    * archive set, and drop it from the header index. Callers delete the
    * session's persistence artifact first; the index drop keeps a later

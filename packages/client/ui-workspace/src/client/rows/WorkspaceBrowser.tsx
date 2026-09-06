@@ -163,11 +163,13 @@ function nextSessionOrderAccount({
 }
 
 /** Grouping and ordering menu; own open state so it resets with the wide chrome. */
-function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
+function ViewOptionsMenu({ groupBy, orderBy, showArchived, onGroupPick, onOrderPick, onShowArchivedPick, t }: {
   groupBy: 'workspace' | 'flat'
   orderBy: SessionOrderBy
+  showArchived: boolean
   onGroupPick: (mode: 'workspace' | 'flat') => void
   onOrderPick: (mode: SessionOrderBy) => void
+  onShowArchivedPick: (shown: boolean) => void
   t: WorkspaceBrowserProps['t']
 }) {
   const [open, setOpen] = useState(false)
@@ -183,11 +185,15 @@ function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
         { type: 'label' as const, id: 'order-by', text: t('orderBy.label') },
         { id: 'manual', label: t('orderBy.manual') },
         { id: 'updated', label: t('orderBy.updated') },
+        { type: 'separator' as const, id: 'archived-separator' },
+        { type: 'label' as const, id: 'archived', text: t('archived.label') },
+        { id: 'showArchived', label: t('archived.show') },
       ]}
-      selectedIds={[groupBy, orderBy]}
+      selectedIds={[groupBy, orderBy, ...(showArchived ? ['showArchived'] : [])]}
       onSelect={(id) => {
         if (id === 'workspace' || id === 'flat') onGroupPick(id)
         else if (id === 'manual' || id === 'updated') onOrderPick(id)
+        else if (id === 'showArchived') onShowArchivedPick(!showArchived)
         setOpen(false)
       }}
       align="end"
@@ -256,6 +262,8 @@ type SessionTreeProps = Pick<
   setSessionOrder: (accountKey: string, order: string[]) => void
   /** Registry-global archive set (hidden rows). */
   archivedSessionIds: readonly SessionNode['id'][]
+  /** Render archived sessions in place of hiding them. */
+  showArchived: boolean
   /** Open the browser-owned rename dialog for a real Workspace group. */
   onRenameRequest: (workspaceId: WorkspaceId, currentTitle: string) => void
   /** Open the browser-owned delete-confirmation dialog for a real Workspace group. */
@@ -264,6 +272,8 @@ type SessionTreeProps = Pick<
   onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Archive a session (row menu action; the row disappears on the state echo). */
   onSessionArchive: (sessionId: SessionNode['id']) => void
+  /** Unarchive a session (row menu action; the row stays on the state echo). */
+  onSessionUnarchive: (sessionId: SessionNode['id']) => void
   /** Open the browser-owned session delete confirmation (row menu action). */
   onSessionDelete: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
@@ -277,8 +287,8 @@ type SessionTreeProps = Pick<
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
 function SessionTree({
   useSessions, useSessionPendingInteraction, startSession, open, forkSession, workspaces, archivedSessionIds,
-  workspaceReady,
-  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionDelete,
+  workspaceReady, showArchived,
+  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionUnarchive, onSessionDelete,
   insertWorkspaceBefore, insertSessionBefore, orderBy,
   groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, t,
@@ -358,8 +368,8 @@ function SessionTree({
       ...(sessionOrderByAccount[UNGROUPED_KEY] === undefined
         ? {}
         : { ungroupedOrder: sessionOrderByAccount[UNGROUPED_KEY] }),
-    }),
-    [list, orderedWorkspaces, archivedSessionIds, pendingInteractions, expandedGroups, sessionOrderByAccount],
+    }, showArchived),
+    [list, orderedWorkspaces, archivedSessionIds, pendingInteractions, expandedGroups, sessionOrderByAccount, showArchived],
   )
   useEffect(() => {
     if (revealGroup === undefined || groupExpansion[revealGroup] === true) return
@@ -589,6 +599,7 @@ function SessionTree({
                     onRename={onSessionRename}
                     onFork={forkSession}
                     onArchive={onSessionArchive}
+                    onUnarchive={onSessionUnarchive}
                     onDelete={onSessionDelete}
                     onReveal={node.id === revealSessionId && group.key === revealGroup
                       ? () => { onSessionRevealed(node.id) }
@@ -621,8 +632,9 @@ function SessionTree({
 
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
-  useSessions, useSessionPendingInteraction, open, forkSession, onSessionRename, onSessionArchive, onSessionDelete,
-  archivedSessionIds,
+  useSessions, useSessionPendingInteraction, open, forkSession, onSessionRename, onSessionArchive,
+  onSessionUnarchive, onSessionDelete,
+  archivedSessionIds, showArchived,
   orderBy, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder,
   revealSessionId, onSessionRevealed, t,
 }: Pick<
@@ -633,8 +645,10 @@ function FlatList({
   | 'forkSession'
   | 'onSessionRename'
   | 'onSessionArchive'
+  | 'onSessionUnarchive'
   | 'onSessionDelete'
   | 'archivedSessionIds'
+  | 'showArchived'
   | 'orderBy'
   | 'sessionOrderByAccount'
   | 'sessionUpdatedAtByAccount'
@@ -647,8 +661,8 @@ function FlatList({
   const list = useSessions(s => s)
   const pendingInteractions = useSessionPendingInteraction(s => s)
   const baseRows = useMemo(
-    () => deriveFlat(list, archivedSessionIds, pendingInteractions),
-    [list, archivedSessionIds, pendingInteractions],
+    () => deriveFlat(list, archivedSessionIds, pendingInteractions, showArchived),
+    [list, archivedSessionIds, pendingInteractions, showArchived],
   )
   const sessionIds = useMemo(() => baseRows.map(row => row.id), [baseRows])
   const previousOrderBy = useRef(orderBy)
@@ -716,6 +730,7 @@ function FlatList({
               onRename={onSessionRename}
               onFork={forkSession}
               onArchive={onSessionArchive}
+              onUnarchive={onSessionUnarchive}
               onDelete={onSessionDelete}
               onReveal={node.id === revealSessionId
                 ? () => { onSessionRevealed(node.id) }
@@ -764,6 +779,7 @@ function SearchResults({
   open,
   workspaces,
   archivedSessionIds,
+  showArchived,
   query,
   remote,
   resultLimit,
@@ -771,6 +787,7 @@ function SearchResults({
 }: Pick<SessionTreeProps, 'useSessions' | 'useSessionPendingInteraction' | 'open' | 't'> & {
   workspaces: readonly WorkspaceView[]
   archivedSessionIds: readonly SessionNode['id'][]
+  showArchived: boolean
   query: string
   remote: RemoteSearchState
   resultLimit: number
@@ -789,8 +806,9 @@ function SearchResults({
       pendingInteractions,
       currentRemote,
       resultLimit,
+      showArchived,
     ),
-    [list, workspaces, query, archivedSessionIds, pendingInteractions, currentRemote, resultLimit],
+    [list, workspaces, query, archivedSessionIds, showArchived, pendingInteractions, currentRemote, resultLimit],
   )
   const pending = currentRemote.status === 'loading'
   const failed = currentRemote.status === 'error'
@@ -852,6 +870,7 @@ export function WorkspaceBrowser({
   deleteWorkspace,
   insertWorkspaceBefore,
   archiveSession,
+  unarchiveSession,
   deleteSession,
   insertSessionBefore,
   createWorkspace,
@@ -872,6 +891,7 @@ export function WorkspaceBrowser({
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
   const groupBy = useStore(s => s.groupBy)
   const orderBy = useStore(s => s.orderBy)
+  const showArchived = useStore(s => s.showArchived)
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
   const sessionUpdatedAtByAccount = useStore(s => s.sessionUpdatedAtByAccount)
@@ -1084,6 +1104,11 @@ export function WorkspaceBrowser({
       console.warn('session archive rejected:', reason)
     })
   }
+  const onSessionUnarchive = (sessionId: SessionNode['id']) => {
+    unarchiveSession(sessionId).catch((reason: unknown) => {
+      console.warn('session unarchive rejected:', reason)
+    })
+  }
 
   // Session delete is destructive (the stored log is destroyed; nothing is
   // recoverable), so the row menu opens a confirmation instead of committing.
@@ -1231,8 +1256,10 @@ export function WorkspaceBrowser({
             <ViewOptionsMenu
               groupBy={groupBy}
               orderBy={orderBy}
+              showArchived={showArchived}
               onGroupPick={(mode) => { actions.setGroupBy(mode) }}
               onOrderPick={(mode) => { actions.setOrderBy(mode) }}
+              onShowArchivedPick={(shown) => { actions.setShowArchived(shown) }}
               t={t}
             />
           )}
@@ -1303,6 +1330,7 @@ export function WorkspaceBrowser({
               open={openSearchResult}
               workspaces={workspaces}
               archivedSessionIds={archivedSessionIds}
+              showArchived={showArchived}
               query={normalizedQuery}
               remote={remoteSearch}
               resultLimit={searchResultLimit}
@@ -1315,8 +1343,10 @@ export function WorkspaceBrowser({
                 useSessions={useSessions} useSessionPendingInteraction={useSessionPendingInteraction}
                 open={open} forkSession={forkSession}
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
+                onSessionUnarchive={onSessionUnarchive}
                 onSessionDelete={onSessionDelete}
                 archivedSessionIds={archivedSessionIds}
+                showArchived={showArchived}
                 orderBy={orderBy}
                 sessionOrderByAccount={sessionOrderByAccount}
                 sessionUpdatedAtByAccount={sessionUpdatedAtByAccount}
@@ -1333,6 +1363,7 @@ export function WorkspaceBrowser({
                 useSessionPendingInteraction={useSessionPendingInteraction}
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
+                onSessionUnarchive={onSessionUnarchive}
                 onSessionDelete={onSessionDelete}
                 forkSession={forkSession}
                 workspaces={workspaces}
@@ -1344,6 +1375,7 @@ export function WorkspaceBrowser({
                 syncSessionOrderAccount={actions.syncSessionOrderAccount}
                 setSessionOrder={actions.setSessionOrder}
                 archivedSessionIds={archivedSessionIds}
+                showArchived={showArchived}
                 startSession={startSession}
                 open={open}
                 insertWorkspaceBefore={insertWorkspaceBefore}

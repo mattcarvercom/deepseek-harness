@@ -2895,6 +2895,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the complete resulting archive set.',
       },
       {
+        signature: '@Remote(\'unarchiveSession\') unarchiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue>',
+        description: 'Restore one Session to the Workspace grouping surfaces.',
+        parameters: [{ name: 'request', description: 'Session identity to unarchive.' }],
+        returns: 'the complete resulting archive set.',
+      },
+      {
         signature: '@Remote({ mode: \'stream\' }) follow(signal: AbortSignal): AsyncIterable<WorkspaceFollowFrame>',
         description: 'Stream a complete Workspace baseline followed by ordered increments.',
         parameters: [{ name: 'signal', description: 'generation cancellation.' }],
@@ -2941,6 +2947,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'archiveSession(sessionId: SessionId): Promise<void>',
         description: 'Archive one session durably. The session must exist (live or in session persistence); its workspace accounting — or lack of one — is irrelevant. An already archived id resolves without writing.',
         parameters: [{ name: 'sessionId', description: 'The session to archive.' }],
+        returns: 'resolution after durability.',
+      },
+      {
+        signature: 'unarchiveSession(sessionId: SessionId): Promise<void>',
+        description: 'Remove one session from the registry-global archive set, restoring it to every grouping surface. Archiving never touches workspace accounting, so the retained slot makes unarchiving a pure set removal. An id that is not archived resolves without writing.',
+        parameters: [{ name: 'sessionId', description: 'The session to unarchive.' }],
         returns: 'resolution after durability.',
       },
       {

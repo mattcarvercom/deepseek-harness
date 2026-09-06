@@ -65,7 +65,7 @@ A session joins the project of the directory it runs in: create a session in a p
 
 ### Hiding sessions and removing projects
 
-Hide a session from the grouping when it should stop appearing there: it disappears from the visible list, while its session, history, and place in the project stay intact. Remove a project when it is no longer needed: it leaves the list, and its folder, files, and session histories are never touched — those sessions become ungrouped. Adding the same directory again afterwards starts a fresh project without the old sessions.
+Hide a session from the grouping when it should stop appearing there: it disappears from the visible list, while its session, history, and place in the project stay intact. `unarchiveSession(id)` lifts a hidden session back: it leaves the archive set, and the retained accounting slot puts it back in its original project position. It is a pure set removal — an id outside the archive set is an idempotent no-op, and a session whose log has since vanished still unarchives cleanly. Remove a project when it is no longer needed: it leaves the list, and its folder, files, and session histories are never touched — those sessions become ungrouped. Adding the same directory again afterwards starts a fresh project without the old sessions.
 
 Strip a session from the accounting entirely when its log is destroyed: `removeSession(id)` detaches it from every project record, clears it from the archive set, and drops its header-index entry so a later listing refresh cannot resurrect the id in any membership projection. It returns whether a record or the archive set changed, and an id accounted nowhere is an idempotent no-op (the index entry is still dropped). Hiding and stripping compose: a hidden session can be stripped, and stripping clears its hidden state too.
 
@@ -162,7 +162,7 @@ These limits define when the project list is a poor fit or needs special operati
 - **Removal never deletes data** — removing a project leaves its folder, files, and session histories in place; those sessions become ungrouped, and session deletion or folder removal are separate, absent capabilities ([decision](../../../.agents/notes/implemented/feature/2026-07-27-workspace-registration-deletion.md)).
 - **A session joins only with a recorded directory** — a session belongs to a project only when its record carries a directory that resolves to the project's path; sessions without one stay ungrouped, and a session from another directory cannot be moved in.
 - **External changes are seen late** — if another process deletes or damages a directory, the project reflects it only at the next refresh or restart.
-- **Archiving is one-way** — a hidden session keeps its history and its place, but no unarchive action exists yet; the archive set is a durable display filter.
+- **The archive set holds ids only** — the registry stores the archived Session ids as a durable display filter with no per-session archive metadata; `archiveSession` hides and `unarchiveSession` lifts, and a hidden session's history and retained place stay intact throughout.
 - **Re-adding a directory starts fresh** — after removal, adding the same directory again creates a new project with an empty session list; the old sessions do not come back automatically.
 
 <a id="dev-note"></a>

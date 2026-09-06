@@ -54,6 +54,8 @@ export interface SessionNode {
   completed: boolean
   /** The current list projection contains at least one active Schedule record. */
   hasActiveSchedule: boolean
+  /** The registry archive set contains this session (rendered only while the archived filter is on). */
+  archived: boolean
   updatedAt: number
 }
 
@@ -138,9 +140,10 @@ function byRecency(a: SessionSummary, b: SessionSummary): number {
 
 /**
  * Ordinary sessions are visible; among blank sessions, only the current one
- * is visible. Subagent children use their parent header catalog; archived
- * sessions are visible nowhere, while their accounting slots remain so
- * unarchiving restores position.
+ * is visible. Subagent children use their parent header catalog. The archive
+ * set argument is the *hidden* set: the browser passes it empty while the
+ * archived filter is on, so lifted sessions are judged like ordinary ones
+ * while their accounting slots remain and unarchiving restores position.
  */
 function sessionVisible(session: SessionSummary, current: SessionId | undefined, archived: ReadonlySet<SessionId>): boolean {
   return session.origin !== 'subagent'
@@ -257,6 +260,7 @@ function visiblePendingKind(kind: string | undefined): SessionPendingInteraction
 
 function sessionNode(
   s: SessionSummary,
+  archived: boolean,
   descendants: ReadonlyMap<SessionId, SubagentDescendantSummary>,
   pendingInteractions: SessionPendingInteractions,
 ): SessionNode {
@@ -269,6 +273,7 @@ function sessionNode(
     runningSubagentCount: descendants.get(s.id)?.runningCount ?? 0,
     completed: s.completed === true,
     hasActiveSchedule: hasActiveSchedule(s),
+    archived,
     updatedAt: s.updatedAt,
     ...(pendingInteraction === undefined ? {} : { pendingInteraction }),
   }
@@ -279,7 +284,8 @@ function sessionNode(
  *
  * Every group shows; sessions populate under expanded groups in the selected
  * local order. Blank sessions are excluded except for the selected
- * provisional New Session row; archived sessions are excluded everywhere.
+ * provisional New Session row; archived sessions are excluded everywhere
+ * unless `showArchived` lifts them back into their retained positions.
  * Content search lives outside this derivation
  * (see {@link deriveSearchResults}).
  * @param list - sessions list snapshot (`current` feeds containsCurrent).
@@ -287,6 +293,7 @@ function sessionNode(
  * @param archivedSessionIds - registry-global archive set.
  * @param pendingInteractions - pending UI interactions by Session.
  * @param view - local expansion arrays.
+ * @param showArchived - render archived sessions in place of hiding them.
  * @returns group sections in render order.
  */
 export function deriveGroups(
@@ -295,15 +302,19 @@ export function deriveGroups(
   archivedSessionIds: readonly SessionId[],
   pendingInteractions: SessionPendingInteractions,
   view: TreeView,
+  showArchived: boolean,
 ): GroupNode[] {
-  const archived = new Set(archivedSessionIds)
+  const flagged = new Set(archivedSessionIds)
+  // Visibility consults the archive set only while the filter is off; the
+  // retained accounting slots then place lifted rows in their old position.
+  const hidden = showArchived ? new Set<SessionId>() : flagged
   const expandedGroups = new Set(view.expandedGroups)
   const descendants = indexSubagentDescendants(list.byId)
   const currentGroup = list.current === undefined
     ? undefined
     : owningGroupKey(workspaces, list.current)
   const groups: GroupNode[] = []
-  for (const g of groupByWorkspace(list, workspaces, archived, view.ungroupedOrder)) {
+  for (const g of groupByWorkspace(list, workspaces, hidden, view.ungroupedOrder)) {
     const expanded = expandedGroups.has(g.key)
     groups.push({
       key: g.key,
@@ -315,7 +326,7 @@ export function deriveGroups(
       expanded,
       containsCurrent: g.key === currentGroup,
       sessions: expanded
-        ? g.sessions.map(session => sessionNode(session, descendants, pendingInteractions))
+        ? g.sessions.map(session => sessionNode(session, flagged.has(session.id), descendants, pendingInteractions))
         : [],
     })
   }
@@ -330,23 +341,26 @@ export function deriveGroups(
  * @param list - sessions list snapshot.
  * @param archivedSessionIds - registry-global archive set.
  * @param pendingInteractions - pending UI interactions by Session.
+ * @param showArchived - render archived sessions instead of hiding them.
  * @returns flat rows in render order.
  */
 export function deriveFlat(
   list: SessionListState,
   archivedSessionIds: readonly SessionId[],
   pendingInteractions: SessionPendingInteractions,
+  showArchived: boolean,
 ): SessionNode[] {
-  const archived = new Set(archivedSessionIds)
+  const flagged = new Set(archivedSessionIds)
+  const hidden = showArchived ? new Set<SessionId>() : flagged
   const descendants = indexSubagentDescendants(list.byId)
   const rows: SessionSummary[] = []
   for (const id of list.ids) {
     const s = list.byId[id]
-    if (s === undefined || !sessionVisible(s, list.current, archived)) continue
+    if (s === undefined || !sessionVisible(s, list.current, hidden)) continue
     rows.push(s)
   }
   rows.sort(byRecency)
-  return rows.map(session => sessionNode(session, descendants, pendingInteractions))
+  return rows.map(session => sessionNode(session, flagged.has(session.id), descendants, pendingInteractions))
 }
 
 /**
@@ -356,10 +370,12 @@ export function deriveFlat(
  * @param list - session metadata authority.
  * @param workspaces - Workspace membership and display labels.
  * @param query - caller text; surrounding whitespace is ignored.
- * @param archivedSessionIds - registry-global archive set (members never match).
+ * @param archivedSessionIds - registry-global archive set (members match
+ *   only while the archived filter is on).
  * @param pendingInteractions - pending UI interactions by Session.
  * @param content - ranked Host content-search page.
  * @param limit - protocol-owned maximum merged row count.
+ * @param showArchived - let archived sessions match instead of never matching.
  * @returns bounded deduplicated flat rows and a refine-query hint bit.
  */
 export function deriveSearchResults(
@@ -370,10 +386,11 @@ export function deriveSearchResults(
   pendingInteractions: SessionPendingInteractions,
   content: { items: readonly SessionSearchResultItem[]; hasMore: boolean },
   limit: number,
+  showArchived: boolean,
 ): SearchResultSet {
   const q = query.trim().toLowerCase()
   if (q === '') return { items: [], hasMore: false }
-  const archived = new Set(archivedSessionIds)
+  const hidden = showArchived ? new Set<SessionId>() : new Set(archivedSessionIds)
   const descendants = indexSubagentDescendants(list.byId)
 
   const workspaceBySession = new Map<SessionId, string>()
@@ -394,7 +411,7 @@ export function deriveSearchResults(
     const summary = list.byId[id]
     // Blank placeholders never match a query (their canonical title displays
     // localized, so matching it would tie search to one language).
-    if (summary === undefined || summary.blank || !sessionVisible(summary, list.current, archived)) continue
+    if (summary === undefined || summary.blank || !sessionVisible(summary, list.current, hidden)) continue
     if (
       sessionTitle(summary).toLowerCase().includes(q)
       || labelOf(summary).toLowerCase().includes(q)
@@ -414,7 +431,7 @@ export function deriveSearchResults(
   for (const summary of local) include(summary)
   for (const item of content.items) {
     const summary = list.byId[item.sessionId]
-    if (summary !== undefined && !summary.blank && sessionVisible(summary, list.current, archived)) include(summary)
+    if (summary !== undefined && !summary.blank && sessionVisible(summary, list.current, hidden)) include(summary)
   }
 
   return {

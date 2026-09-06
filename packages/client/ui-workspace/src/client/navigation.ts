@@ -30,6 +30,12 @@ export interface UiWorkspace {
    */
   archiveSession(sessionId: SessionId): Promise<void>
   /**
+   * Remove a Session from the registry-global archive set, restoring it to
+   * every grouping surface.
+   * @param sessionId - Session to unarchive.
+   */
+  unarchiveSession(sessionId: SessionId): Promise<void>
+  /**
    * Permanently delete a Session: the Host destroys its stored log and the
    * local row leaves the Session list. Not recoverable.
    * @param sessionId - Session to delete.
@@ -141,6 +147,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   async archiveSession(sessionId: SessionId): Promise<void> {
     await this.workspaces.archiveSession(sessionId)
+  }
+
+  async unarchiveSession(sessionId: SessionId): Promise<void> {
+    await this.workspaces.unarchiveSession(sessionId)
   }
 
   async deleteSession(sessionId: SessionId): Promise<void> {

@@ -135,6 +135,11 @@ export type WorkspaceBrowserInjected = {
    */
   archiveSession: (sessionId: SessionId) => Promise<void>
   /**
+   * Remove a Session from the registry-global archive set: visible in its
+   * retained position on every grouping surface again.
+   */
+  unarchiveSession: (sessionId: SessionId) => Promise<void>
+  /**
    * Permanently delete a Session: the Host disposes its live Agent, destroys
    * the stored log, and drops its cache and workspace accounting. Not
    * recoverable. The row leaves the list on resolution.

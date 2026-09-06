@@ -974,6 +974,39 @@ describe('registry-global session archive', () => {
   })
 })
 
+describe('registry-global session unarchive', () => {
+  it('removes durably, idempotently skips non-members, and keeps accounting untouched', async () => {
+    const dir = await makeDir('unarchive-home')
+    const result = await harness({ sessions: [header('gone', dir, 100), header('kept', dir, 200)] })
+    const workspace = result.registry.list()[0]!
+    await result.registry.archiveSession(SessionId('gone'))
+    await result.registry.archiveSession(SessionId('kept'))
+    expect(result.registry.archivedSessionIds).toEqual(['gone', 'kept'])
+
+    await result.registry.unarchiveSession(SessionId('gone'))
+    expect(result.registry.archivedSessionIds).toEqual(['kept'])
+    expect(storedState(result.pool).archivedSessionIds).toEqual(['kept'])
+    // The retained account slot makes unarchiving a display-set write only.
+    expect(workspace.sessionIds).toContain('gone')
+    const changesAfterFirst = result.changes.filter(change => change.table === '').length
+
+    // A non-member is an idempotent no-op: no rewrite, no change frame.
+    await result.registry.unarchiveSession(SessionId('gone'))
+    expect(result.registry.archivedSessionIds).toEqual(['kept'])
+    expect(result.changes.filter(change => change.table === '').length).toBe(changesAfterFirst)
+  })
+
+  it('does not require the session to be known: removing a logged-away id still resolves', async () => {
+    const dir = await makeDir('unarchive-ghost')
+    const result = await harness({ sessions: [header('stray', dir, 100)] })
+    await result.registry.archiveSession(SessionId('stray'))
+    // Simulate the log vanishing after archiving (e.g. a manual cleanup):
+    // the header index is the only thing the known-check would see now.
+    await result.registry.unarchiveSession(SessionId('stray'))
+    expect(result.registry.archivedSessionIds).toEqual([])
+  })
+})
+
 describe('registry-global session removal', () => {
   it('removes the session from every record and the archive set, idempotently on repeat', async () => {
     const dir = await makeDir('remove-home')

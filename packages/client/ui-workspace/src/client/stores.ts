@@ -19,6 +19,8 @@ export type SessionOrderBy = 'manual' | 'updated'
 type WorkspaceViewState = {
   groupBy: SessionGroupBy
   orderBy: SessionOrderBy
+  /** Registry-archived Sessions render in their groups instead of hiding. */
+  showArchived: boolean
   /** Explicit zero-or-five-session state keyed by Workspace group identity. */
   groupExpansion: Record<string, boolean>
   /** Shared editable order per Workspace group plus the browser-local flat-list account. */
@@ -34,6 +36,7 @@ type WorkspaceViewState = {
 type WorkspaceViewActions = {
   setGroupBy: (draft: WorkspaceViewState, mode: SessionGroupBy) => void
   setOrderBy: (draft: WorkspaceViewState, mode: SessionOrderBy) => void
+  setShowArchived: (draft: WorkspaceViewState, shown: boolean) => void
   setGroupExpanded: (draft: WorkspaceViewState, key: string, expanded: boolean) => void
   retainAccountKeys: (draft: WorkspaceViewState, workspaceKeys: readonly string[]) => void
   syncSessionOrderAccount: (
@@ -54,14 +57,16 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
     init: (): WorkspaceViewState => ({
       groupBy: 'workspace',
       orderBy: 'updated',
+      showArchived: false,
       groupExpansion: {},
       sessionOrderByAccount: {},
       sessionUpdatedAtByAccount: {},
     }),
-    persist: 'dsh.workspace.view.v5',
+    persist: 'dsh.workspace.view.v6',
     actions: {
       setGroupBy: (d, mode: SessionGroupBy) => { d.groupBy = mode },
       setOrderBy: (d, mode: SessionOrderBy) => { d.orderBy = mode },
+      setShowArchived: (d, shown: boolean) => { d.showArchived = shown },
       setGroupExpanded: (d, key: string, expanded: boolean) => { d.groupExpansion[key] = expanded },
       retainAccountKeys: (d, workspaceKeys: readonly string[]) => {
         const retained = new Set(workspaceKeys)

@@ -1,5 +1,5 @@
 ---
-description: "Shared Workspace browser and picker plugin for the dsh web client: grouped or flat session rows, add/rename/reorder, search, fork, archive, delete, and the directory-flow picking hole."
+description: "Shared Workspace browser and picker plugin for the dsh web client: grouped or flat session rows, add/rename/reorder, search, fork, archive and unarchive, delete, and the directory-flow picking hole."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-workspace` is the shared Workspace browser and picker of the dsh web client: users browse grouped or flat Session rows in the sidebar, pick a Workspace for a new session from the Session Intent hero, and manage Workspaces and Sessions with add, rename, reorder, search, fork, archive, and delete actions; the same Workspace menu and add flow serve both surfaces. Pending user interactions surface as amber warning dots, active Schedule projections surface as non-interactive alarm markers in ordinary and search rows, and the shared sidebar projection hides subagent-origin sessions. Distinct canonical paths remain separate id-keyed Workspaces, and adding a folder goes through a directory-flow child hole that a composed picker package's client half fills.
+`dsh-client-ui-workspace` is the shared Workspace browser and picker of the dsh web client: users browse grouped or flat Session rows in the sidebar, pick a Workspace for a new session from the Session Intent hero, and manage Workspaces and Sessions with add, rename, reorder, search, fork, archive and unarchive, and delete actions; the same Workspace menu and add flow serve both surfaces. Pending user interactions surface as amber warning dots, active Schedule projections surface as non-interactive alarm markers in ordinary and search rows, and the shared sidebar projection hides subagent-origin sessions. Distinct canonical paths remain separate id-keyed Workspaces, and adding a folder goes through a directory-flow child hole that a composed picker package's client half fills.
 
 ## Table of Contents
 
@@ -29,7 +29,7 @@ Use the sidebar to browse Workspaces and their Sessions, reorder them, and start
 
 ### Reordering and view options
 
-View options combine grouping with one browser-persisted Session order per account: **Manual** and **Last updated** apply in either presentation. Entering Last updated performs a complete recency sort and later user prompts or steers promote their Session once; entering Manual preserves every current position and disables later promotion. Dragging edits the current order in either mode; Manual-mode drags for real Workspaces also update the Host Session account, while Ungrouped and flat-list orders remain browser-local. In a collapsed group, drag boundaries follow rendered rows and place the source before intervening hidden rows, so a drag cannot hide its source. Workspace drag order is Host-durable in either Session order mode.
+View options combine grouping with one browser-persisted Session order per account and a **Show archived sessions** toggle: **Manual** and **Last updated** apply in either presentation, and the toggle lifts archived rows back into their retained positions in grouped, flat, and search surfaces at once, dimming their titles. Entering Last updated performs a complete recency sort and later user prompts or steers promote their Session once; entering Manual preserves every current position and disables later promotion. Dragging edits the current order in either mode; Manual-mode drags for real Workspaces also update the Host Session account, while Ungrouped and flat-list orders remain browser-local. In a collapsed group, drag boundaries follow rendered rows and place the source before intervening hidden rows, so a drag cannot hide its source. Workspace drag order is Host-durable in either Session order mode.
 
 ### Search
 
@@ -37,7 +37,7 @@ Collapsed search is one header action beside the view and add actions: activatin
 
 ### Managing sessions
 
-The Session row's Rename action opens a dialog prefilled with the row's display title; confirming an unchanged title is deliberately allowed — it pins the current automatic title against regeneration. Archive commits without a confirmation dialog and the row disappears from every grouping surface when the archive-set echo lands. Fork forks at the source's last completed turn, increments the inherited persisted title on the client, and then opens the child. Session Delete opens a confirmation that states the stored log and everything in it are destroyed and the operation cannot be undone; on confirm the row disappears from every surface once the Host has destroyed the log and the removal echo lands. Workspace Delete opens a confirmation that states the retention boundary; success removes the group while its Sessions remain under Ungrouped.
+The Session row's Rename action opens a dialog prefilled with the row's display title; confirming an unchanged title is deliberately allowed — it pins the current automatic title against regeneration. Archive commits without a confirmation dialog and the row disappears from every grouping surface when the archive-set echo lands; with **Show archived sessions** on, the lifted row instead renders dimmed in its retained position and its menu offers the inverse Unarchive action, which commits without a dialog and restores the normal row when the echo lands. Fork forks at the source's last completed turn, increments the inherited persisted title on the client, and then opens the child. Session Delete opens a confirmation that states the stored log and everything in it are destroyed and the operation cannot be undone; on confirm the row disappears from every surface once the Host has destroyed the log and the removal echo lands. Workspace Delete opens a confirmation that states the retention boundary; success removes the group while its Sessions remain under Ungrouped.
 
 ### Pending interactions
 
@@ -104,7 +104,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define the search depth, the Session lifecycle surface, and the picking carrier; they are current package constraints.
 
 - **No fuzzy content search or event deep links** — the content backend uses literal token/phrase matching, and selecting a result opens the Session rather than the matching event.
-- **No Session deletion or unarchive control** — sessions can be archived, but archived sessions have no viewing or unarchive surface, and Workspace registration deletion does not delete Sessions.
+- **Workspace registration deletion does not delete Sessions** — sessions can be archived and lifted back through the archived filter, but deleting a Workspace registration only ungroups its Sessions; their logs stay in place.
 - **Pending user interaction is not aggregated into collapsed groups** — a waiting row inside a collapsed group lights no group-header indicator and becomes visible only after that group is expanded.
 - **Native folder selection depends on the local Host carrier** — under the `-native` composition, in-process or remote browser deployments cannot open a local operating-system dialog; remote-capable picking is the `-browse` composition's in-app flow.
 
