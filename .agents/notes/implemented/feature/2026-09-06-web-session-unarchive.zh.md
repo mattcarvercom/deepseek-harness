@@ -34,4 +34,4 @@ Status: implemented
 
 ## 测试
 
-`packages/workspace/workspace` 的 registry 规格固定了移除、幂等空操作、持久化与日志已消失 id 的提回；workspace-controller 的 host/model/transport 规格固定了命令、回声安装与 facade 错误映射；`tree.client.spec.ts` 固定了被提回行在分组、单列表与搜索中带标记落在其保留槽位，以及隐藏集合的翻转；store 规格固定了开关默认值与动作；browser 与 rows 规格固定了开关行、被提回的暗淡行、菜单互换与两处失败告警。
+`packages/workspace/workspace` 的 registry 规格固定了移除、幂等空操作、持久化与日志已消失 id 的提回；workspace-controller 的 host/model/transport 规格固定了命令、回声安装与 facade 错误映射；`tree.client.spec.ts` 固定了被提回行在分组、单列表与搜索中带标记落在其保留槽位，以及隐藏集合的翻转；store 规格固定了开关默认值与动作；browser 与 rows 规格固定了开关行、被提回的暗淡行、菜单互换与两处失败告警。web e2e 通道（`apps/web/tests/workspace-management.e2e.ts`）固定了浏览器往返：过滤器把暗淡行提回其保留位置，行菜单换成反向动作，取消归档无需对话框即提交并清空集合，过滤器关闭后恢复的行仍然可见。
