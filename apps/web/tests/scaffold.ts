@@ -867,6 +867,26 @@ function mapJsonStringValues(value: unknown, map: (value: string) => string): un
   return value
 }
 
+/**
+ * Replace every `clientTimeZone` string value with its token: the value is a
+ * fact about the machine that wrote the session, so replay must not compare
+ * it literally.
+ * @param value - one parsed JSONL record or nested fragment.
+ * @returns the same structure with the source-zone strings tokenized.
+ */
+function tokenizeClientTimeZone(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(tokenizeClientTimeZone)
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+      key,
+      key === 'clientTimeZone' && typeof item === 'string'
+        ? '{{clientTimeZone}}'
+        : tokenizeClientTimeZone(item),
+    ]))
+  }
+  return value
+}
+
 const WEB_PATH_TEXT_BOUNDARY_RE = /[\s<>'"`()\[\]{},;:!?=]/
 const WEB_FILE_URI_PATH_PREFIX_RE = /(?:^|[^a-z0-9+.-])file:\/\/\/?$/i
 
@@ -904,7 +924,10 @@ function replaceWebCwd(value: string, cwd: string): string {
 }
 
 /**
- * Normalize Web-only volatile strings while preserving JSON structure and row framing.
+ * Normalize Web-only volatile strings while preserving JSON structure and row
+ * framing. The persisted `clientTimeZone` source value becomes
+ * `{{clientTimeZone}}` on both sides of every comparison, so a fixture
+ * recorded on one machine replays on any host zone.
  * @param log - raw Session JSONL.
  * @param workspaceCwd - optional scaffold parent used before a live Session selects its cwd.
  * @returns compact JSONL with run-local strings tokenized.
@@ -922,7 +945,7 @@ export function normalizeWebSessionVolatiles(log: string, workspaceCwd?: string)
     }))].sort((left, right) => right.length - left.length)
   return log.split(/\r?\n/).map((line) => {
     if (line.trim() === '') return line
-    const record = mapJsonStringValues(JSON.parse(line), (value) => {
+    const record = mapJsonStringValues(tokenizeClientTimeZone(JSON.parse(line)), (value) => {
       let normalized = value
         .replace(/Anonymous user: [^.]+(?=\. Session sharing)/g, 'Anonymous user: {{anonymousUserId}}')
       for (const cwd of cwdSpellings) normalized = replaceWebCwd(normalized, cwd)
