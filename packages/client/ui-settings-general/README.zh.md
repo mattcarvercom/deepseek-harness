@@ -63,7 +63,7 @@ kind: "package-reference"
 
 ### 宿主端
 
-宿主端在用户设置 seam 中注册 `ui-onboarding`。`ui-settings-models` 提供的欢迎步骤通过既有公开 settings 边界读写其中的 `welcomeNoticeVersion`；外壳本身仍不持有产品策略。
+宿主端在用户设置 seam 中注册 `ui-onboarding`，使仍带有已移除内测声明所存 `welcomeNoticeVersion` 的 settings 文档保持有效；外壳本身仍不持有产品策略。
 
 </details>
 
