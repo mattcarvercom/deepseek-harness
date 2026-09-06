@@ -50,7 +50,7 @@ ui-sidebar 缩为列几何壳：品牌行、折叠状态机、New Session、Sett
 
 ## 后果
 
-- 手动序是 Host workspace 账本的唯一顺序权威：活动绝不改动 `WorkspaceView.sessionIds`。后续加入的浏览器本地最近更新视图可以把活跃行提到最前，但不会改变该账本；其独立语义见 [Workspace 侧边栏顺序与折叠](2026-08-11-workspace-sidebar-order-and-folding.zh.md)。
+- 手动序是 Host workspace 账本的唯一顺序权威：活动绝不改动 `WorkspaceView.sessionIds`。后续加入的浏览器本地最近更新视图显示严格时间排序，但不改变该账本；其语义见[最近更新的严格时间排序](2026-09-06-last-updated-strict-recency-sort.zh.md)。
 - 壳/区域两事实约定把 workspace 域的后续功能（Delete 确认、跨组移动、Ungrouped 收编）全部收进 ui-workspace 单包；ui-sidebar 不再随 session 列表功能演进。
 - 平铺模式不支持重排，也没有在指定 workspace 中创建 session 的入口（需切回分组视图），是拍板接受的范围收窄。
 - session Delete 的功能接线与扩展 wire 状态枚举，留待后续迭代。

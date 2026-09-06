@@ -50,7 +50,7 @@ ui-sidebar shrinks to the column-geometry shell: brand row, fold state machine, 
 
 ## Consequences
 
-- Manual order is the sole authority over the Host workspace account: activity never mutates `WorkspaceView.sessionIds`. A later browser-local recent-update view may promote active rows without changing that account; its separate semantics are defined in [Workspace Sidebar Order and Folding](2026-08-11-workspace-sidebar-order-and-folding.md).
+- Manual order is the sole authority over the Host workspace account: activity never mutates `WorkspaceView.sessionIds`. A later browser-local recent-update view renders a strict recency sort without changing that account; its semantics are defined in [Last updated as a strict recency sort](2026-09-06-last-updated-strict-recency-sort.md).
 - The two-fact shell/region contract funnels every future workspace-domain feature (Delete confirmation, cross-group moves, Ungrouped adoption) into the single ui-workspace package; ui-sidebar no longer evolves with session-list features.
 - Flat mode supports neither reordering nor a create-in-workspace entry point (switching back to grouped view is required) — an accepted scope reduction.
 - Wiring session Delete and growing the wire status enum remain future iterations.
