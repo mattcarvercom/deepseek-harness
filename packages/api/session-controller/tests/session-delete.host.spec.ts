@@ -14,6 +14,7 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import SessionController from '../src/index.ts'
 import {
   createSessionTestRemote,
   testSessionPersistence,
@@ -90,6 +91,16 @@ async function composed(metas: SessionHeader[] = []): Promise<{ ctx: Context; do
 const remote = (ctx: Context) => createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
 describe('sessions.delete', () => {
+  it('declares the fiber services the deletion path reads by property', () => {
+    // Property reads inside the controller fiber require a matching `static
+    // inject` entry; a missing name throws `cannot get property "…" without
+    // inject` only in a real composition (docs/postmortem/0001).
+    const declared = SessionController.inject
+    for (const required of ['agents', 'sessions', 'sessionPersistence', 'sessionProjectionCache', 'workspaceRegistry']) {
+      expect(declared).toContain(required)
+    }
+  })
+
   it('destroys the stored log, drops the cache row and workspace accounting, and emits the removal once', async () => {
     const { ctx, doubles } = await composed([header('cold-delete', 100)])
     const id = sid('cold-delete')

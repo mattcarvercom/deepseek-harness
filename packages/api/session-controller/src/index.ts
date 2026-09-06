@@ -91,6 +91,7 @@ export class SessionController extends TypertRemoteService {
     'fileUploads',
     'llm',
     'sessions',
+    'sessionPersistence',
     'sessionProjections',
     'sessionProjectionCache',
     'sessionQuery',
