@@ -224,7 +224,9 @@ describe('web e2e: resident question composer round trip', () => {
     const custom = composer.getByRole('textbox')
     if (MODE !== 'record') {
       const oneLineHeight = await custom.evaluate(el => el.getBoundingClientRect().height)
-      await custom.fill('a'.repeat(120))
+      // 320 characters soft-wraps past one line in the full-width composer
+      // (its cap is six lines, so the field grows instead of scrolling).
+      await custom.fill('a'.repeat(320))
       const wrapped = await custom.evaluate(el => ({
         height: el.getBoundingClientRect().height,
         scrolls: el.scrollHeight > el.clientHeight,

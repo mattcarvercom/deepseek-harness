@@ -318,7 +318,7 @@ function mount(
   }
   const view = render(<ConversationRoot {...props} />)
   return {
-    view, store, wiring, sink, retargetWorkspace, session, conversation, slotCalls, lineageOwners, seatOwners, open,
+    view, store, wiring, sink, retargetWorkspace, session, conversation, slotCalls, lineageOwners, seatOwners, open, props,
     pickerOwner: () => pickerOwner,
     rerender: () => { view.rerender(<ConversationRoot {...props} />) },
   }
@@ -623,20 +623,23 @@ describe('ConversationRoot resident composer', () => {
     const b = mount(sessionSnapshotOf())
     const root = b.view.container.querySelector('[data-phase]') as HTMLElement
     // jsdom offsetWidth is 0 until faked: the observer publishes whatever the
-    // layout reports, and the CSS clamp() floors the axis at 680px either way.
+    // layout reports, and the CSS fallback floors the axis at 640px either way.
     Object.defineProperty(root, 'offsetWidth', { value: 1200, configurable: true })
     act(() => { fireResize(root) })
     expect(root.style.getPropertyValue('--dsh-conversation-column-width')).toBe('1200px')
-    // No dragged preference: the user-width override stays absent so the
-    // adaptive clamp term applies.
+    // No session drag: the user-width override stays absent so the
+    // full-width fallback applies.
     expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('')
   })
 
-  it('drag → persist → window clamp round-trip on a width handle', () => {
+  it('drag narrows per session on a width handle and resets on session switch', () => {
     const b = mount(sessionSnapshotOf())
     const root = b.view.container.querySelector('[data-phase]') as HTMLElement
     Object.defineProperty(root, 'offsetWidth', { value: 1600, configurable: true })
     act(() => { fireResize(root) })
+    // No session drag: the override stays absent, so the CSS fallback opens
+    // the transcript at the full column (1600 − 176 = 1424).
+    expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('')
     const handle = b.view.container.querySelector('[data-width-handle="right"]') as HTMLElement
     expect(handle).not.toBeNull()
     // jsdom lacks pointer capture: emulate per-element so hasPointerCapture
@@ -650,35 +653,47 @@ describe('ConversationRoot resident composer', () => {
     Element.prototype.releasePointerCapture = function () { captured.delete(this) }
     Element.prototype.hasPointerCapture = function () { return captured.has(this) }
     try {
-      // Base resolves from the adaptive clamp: min(1600*0.64, 920) = 920.
-      // Dragging the right handle outward by 25px widens by 2×25 = 50 → 970,
-      // inside both bounds (max = 1600 − 176 = 1424 keeps the handles on-column).
+      // Base resolves to the full column: max(640, 1600 − 176) = 1424. The
+      // column is already at its cap, so outward travel is a no-op — the
+      // commit clamps back to 1424 and nothing is written to storage.
       fireEvent.pointerDown(handle, { pointerId: 1, clientX: 800, clientY: 300 })
       fireEvent.pointerUp(handle, { pointerId: 1, clientX: 825, clientY: 300 })
-      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('970px')
-      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('970')
-      // Window shrinks: the displayed width re-clamps (900 − 176 = 724) but the
-      // preference stays.
+      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('1424px')
+      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBeNull()
+      // Dragging the right handle inward by 25px narrows by 2×25 = 50 → 1374,
+      // inside both bounds.
+      fireEvent.pointerDown(handle, { pointerId: 1, clientX: 800, clientY: 300 })
+      fireEvent.pointerUp(handle, { pointerId: 1, clientX: 775, clientY: 300 })
+      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('1374px')
+      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBeNull()
+      // Window shrinks: the displayed width re-clamps (900 − 176 = 724) but
+      // the session width survives — widening the window restores it.
       Object.defineProperty(root, 'offsetWidth', { value: 900, configurable: true })
       act(() => { fireResize(root) })
       expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('724px')
-      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('970')
+      Object.defineProperty(root, 'offsetWidth', { value: 1600, configurable: true })
+      act(() => { fireResize(root) })
+      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('1374px')
       // A press without travel (a real double-click delivers two such
       // press/release rounds) must not commit the clamped display value over
-      // the stored preference.
+      // the session width.
       fireEvent.pointerDown(handle, { pointerId: 1, clientX: 800, clientY: 300 })
       fireEvent.pointerUp(handle, { pointerId: 1, clientX: 800, clientY: 300 })
-      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('970')
-      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('724px')
-      // No reset affordance on the handle: double-click leaves the preference alone.
+      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('1374px')
+      // No reset affordance on the handle: double-click leaves the session width alone.
       fireEvent.doubleClick(handle)
-      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('970')
+      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('1374px')
     } finally {
       for (const [name, descriptor] of originals) {
         if (descriptor === undefined) Reflect.deleteProperty(Element.prototype, name)
         else Object.defineProperty(Element.prototype, name, descriptor)
       }
     }
+    // Switching sessions resets the transcript to the full column: the
+    // previous session's drag never leaks into the next one.
+    b.props.sessionId = sid('s2')
+    b.rerender()
+    expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('')
   })
 
   it('hero phase renders no width handles (no transcript to size)', () => {

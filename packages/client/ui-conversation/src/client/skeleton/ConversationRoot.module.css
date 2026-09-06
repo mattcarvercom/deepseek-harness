@@ -16,18 +16,18 @@
      content + 32px at every width. Declared on the root because the
      transcript and the composer seat are sibling subtrees.
 
-     W adapts to the column, not the viewport (a collapsed sidebar widens the
+     W fills the column, not the viewport (a collapsed sidebar widens the
      column without resizing the window): the component publishes the column's
      live width as --dsh-conversation-column-width (px, via ResizeObserver —
      container-type would re-anchor the subtree's portal-free position:fixed
-     descendants) and the clamp keeps a 680px floor (a step under the figma
-     748px — the full-width reading felt wide on every screen), takes 64% of
-     wider columns, and caps at 920px for line-length
-     readability. A dragged user preference (--dsh-chat-user-width, published
-     by the width handles) replaces the adaptive term wholesale. */
+     descendants) and the transcript opens at the full usable width,
+     max(640px, column − 176px) — 176px = 88px per side keeps the width
+     handles fully placeable at every width. A drag within the current
+     session (--dsh-chat-user-width, published by the width handles) replaces
+     that term until the session changes; it is not persisted. */
   --dsh-chat-content-width: var(
     --dsh-chat-user-width,
-    clamp(680px, calc(var(--dsh-conversation-column-width, 0px) * 0.64), 920px)
+    max(640px, calc(var(--dsh-conversation-column-width, 0px) - 176px))
   );
   --dsh-composer-card-max-width: calc(var(--dsh-chat-content-width) + 32px);
   --dsh-composer-side-clearance: 16px;
