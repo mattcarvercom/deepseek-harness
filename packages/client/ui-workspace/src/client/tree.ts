@@ -135,6 +135,8 @@ export function workspaceLabel(cwd: string | undefined): string {
 /** Recency comparator: newest first, id as the deterministic tiebreak (ids are unique per group). */
 function byRecency(a: SessionSummary, b: SessionSummary): number {
   if (b.updatedAt !== a.updatedAt) return b.updatedAt - a.updatedAt
+  /* v8 ignore next -- sort never compares an element to itself and group members carry unique ids. */
+  if (a.id === b.id) return 0
   return a.id < b.id ? -1 : 1
 }
 

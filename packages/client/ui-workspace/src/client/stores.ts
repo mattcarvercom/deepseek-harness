@@ -12,7 +12,7 @@ export const FLAT_SESSION_ORDER_KEY = '__flat_session_order__'
 
 /** Session-list grouping mode: workspace sections or one flat recency list. */
 export type SessionGroupBy = 'workspace' | 'flat'
-/** Session order: user-arranged only, or user-arranged plus activity promotion. */
+/** Session order: the user's manual arrangement, or a strict sort by last update. */
 export type SessionOrderBy = 'manual' | 'updated'
 
 /** Workspace browser viewing state persisted across surface remounts and reloads. */
@@ -23,10 +23,8 @@ type WorkspaceViewState = {
   showArchived: boolean
   /** Explicit zero-or-five-session state keyed by Workspace group identity. */
   groupExpansion: Record<string, boolean>
-  /** Shared editable order per Workspace group plus the browser-local flat-list account. */
+  /** Editable order per Workspace group plus the browser-local flat-list account, written only in Manual. */
   sessionOrderByAccount: Record<string, string[]>
-  /** Last observed update timestamps per order account for one-time promotion events. */
-  sessionUpdatedAtByAccount: Record<string, Record<string, number>>
 }
 
 /**
@@ -43,7 +41,6 @@ type WorkspaceViewActions = {
     draft: WorkspaceViewState,
     accountKey: string,
     order: string[],
-    updatedAt: Record<string, number>,
   ) => void
   setSessionOrder: (draft: WorkspaceViewState, accountKey: string, order: string[]) => void
 }
@@ -60,8 +57,9 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
       showArchived: false,
       groupExpansion: {},
       sessionOrderByAccount: {},
-      sessionUpdatedAtByAccount: {},
     }),
+    // The key stays v6: pre-removal v6 payloads rehydrate with an inert
+    // sessionUpdatedAtByAccount key that no code reads.
     persist: 'dsh.workspace.view.v6',
     actions: {
       setGroupBy: (d, mode: SessionGroupBy) => { d.groupBy = mode },
@@ -76,13 +74,9 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
         d.sessionOrderByAccount = Object.fromEntries(
           Object.entries(d.sessionOrderByAccount).filter(([key]) => retained.has(key)),
         )
-        d.sessionUpdatedAtByAccount = Object.fromEntries(
-          Object.entries(d.sessionUpdatedAtByAccount).filter(([key]) => retained.has(key)),
-        )
       },
-      syncSessionOrderAccount: (d, accountKey: string, order: string[], updatedAt: Record<string, number>) => {
+      syncSessionOrderAccount: (d, accountKey: string, order: string[]) => {
         d.sessionOrderByAccount[accountKey] = order
-        d.sessionUpdatedAtByAccount[accountKey] = updatedAt
       },
       setSessionOrder: (d, accountKey: string, order: string[]) => {
         d.sessionOrderByAccount[accountKey] = order

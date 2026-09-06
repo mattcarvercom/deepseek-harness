@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-workspace` is the shared Workspace browser and picker of the dsh web client: users browse grouped or flat Session rows in the sidebar, pick a Workspace for a new session from the Session Intent hero, and manage Workspaces and Sessions with add, rename, reorder, search, fork, archive and unarchive, and delete actions; the same Workspace menu and add flow serve both surfaces. Pending user interactions surface as amber warning dots, active Schedule projections surface as non-interactive alarm markers in ordinary and search rows, and the shared sidebar projection hides subagent-origin sessions. Distinct canonical paths remain separate id-keyed Workspaces, and adding a folder goes through a directory-flow child hole that a composed picker package's client half fills.
+`dsh-client-ui-workspace` is the shared Workspace browser and picker of the dsh web client: users browse grouped or flat Session rows, pick a Workspace for a new session from the Session Intent hero, and manage Workspaces and Sessions with add, rename, reorder, search, fork, archive and unarchive, and delete actions. Pending interactions show amber warning dots, active Schedule projections show non-interactive alarm markers, and subagent-origin sessions stay hidden. Distinct canonical paths remain separate id-keyed Workspaces. Adding a folder goes through a directory-flow child hole filled by a composed picker package's client half; without one, Workspace add is unavailable.
 
 ## Table of Contents
 
@@ -29,7 +29,7 @@ Use the sidebar to browse Workspaces and their Sessions, reorder them, and start
 
 ### Reordering and view options
 
-View options combine grouping with one browser-persisted Session order per account and a **Show archived sessions** toggle: **Manual** and **Last updated** apply in either presentation, and the toggle lifts archived rows back into their retained positions in grouped, flat, and search surfaces at once, dimming their titles. Entering Last updated performs a complete recency sort and later user prompts or steers promote their Session once; entering Manual preserves every current position and disables later promotion. Dragging edits the current order in either mode; Manual-mode drags for real Workspaces also update the Host Session account, while Ungrouped and flat-list orders remain browser-local. In a collapsed group, drag boundaries follow rendered rows and place the source before intervening hidden rows, so a drag cannot hide its source. Workspace drag order is Host-durable in either Session order mode.
+View options combine grouping with one browser-persisted Session order per account and a **Show archived sessions** toggle: **Manual** and **Last updated** apply in either presentation, and the toggle lifts archived rows back into their retained positions in grouped, flat, and search surfaces at once, dimming their titles. Last updated renders a strict recency sort computed at render time — newest update first, identical in every browser — and leaves the persisted order untouched; Manual renders the user's editable arrangement, which persists per account, so switching back to Manual restores that exact arrangement. Session dragging is Manual-only, because a drag in Last updated would never be visible behind the re-sort; Manual-mode drags for real Workspaces also update the Host Session account, while Ungrouped and flat-list orders remain browser-local. In a collapsed group, drag boundaries follow rendered rows and place the source before intervening hidden rows, so a drag cannot hide its source.
 
 ### Search
 
@@ -50,6 +50,8 @@ Grouped and flat Session rows, plus search results, show an outline alarm when `
 The value is intentionally best effort for cold Sessions. An identity-matching usable projection-cache row can prewarm the alarm without opening the Session; a missing or stale cache may briefly omit or retain it. The marker means only that the current list value contains an undispatched or undeleted Schedule record. It does not report whether a Schedule runtime is live or able to wake the Session.
 
 -----
+
+`ctx.uiWorkspace.openSession(id)` selects the Session and returns the main area to the Conversation as one UI navigation action, including when that Session was already current. `openWorkspace(id, beforeOpen?)` and `forkSession(id)` open their result only if no later navigation has superseded the request; New Session uses `openWorkspace`. The optional synchronous preparation callback runs only for a current Workspace request, so superseded requests do not move composer drafts. Navigation or owner disposal suppresses the late UI commit, not the underlying Session creation. Selection failure leaves a global panel visible. Session rows read `usePanelInfo` to suppress their selected appearance while a global panel is active; search and directory-picker focus alone do not leave that panel.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -118,4 +120,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. A pure-consumer plugin registering presentational components into two host-declared slots plus its locale dictionaries — its inject face is stateless RPC wrappers plus a create-and-open call; it emits no cordis events and owns no cross-plugin mutable state.
+**Runtime invariant:** No companion is published. This is a pure-consumer plugin that registers presentational components into two host-declared slots and registers its locale dictionaries; its inject face consists of stateless RPC wrappers plus a create-and-open call. It emits no Cordis events and owns no cross-plugin mutable state.
