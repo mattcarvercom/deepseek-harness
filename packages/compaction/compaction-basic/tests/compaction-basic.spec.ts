@@ -1764,7 +1764,12 @@ describe('automatic listener and loader composition', () => {
   })
 
   it('preserves the newest whole tool-call/result pair during forced overflow compaction', async () => {
-    const ctx = createContext()
+    // A window matching this fixture's sibling tests below (`toolConversation()`
+    // used at 10_000 elsewhere in this file): 1000 leaves the retained newest
+    // pair alone over threshold, which is a real, different scenario this
+    // suite pins separately — see "does not retry a request a compaction pass
+    // could not bring under threshold" in compaction-loop-repro.spec.ts.
+    const ctx = createContext(10_000)
     void new TestCompactionEngine(ctx, {
       thresholdRatio: 1,
       retainTokens: 90,
