@@ -121,6 +121,7 @@ SQLite 保存 thread 元数据、前驱关联的 Segment 元数据和帧：每�
 - 保留的 JSONL 文件只包含导入前缀，不包含后续 SQLite 事件；单靠它们无法恢复最新历史。
 - 所有写入已导入 Session 的进程都必须使用 SQLite 提供者。
 - SQLite 接受当前 Session 格式；未来事件格式升级需要独立的 SQLite 历史迁移。
+- 删除 Session 会移除其 Trace 以及未被其他 Trace 共享的分段；fork 共享的前缀会保留给其余持有者。
 
 <a id="dev-note"></a>
 ### 开发备注

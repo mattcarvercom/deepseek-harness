@@ -4,3 +4,4 @@ Mark as unread
 Fork session
 Copy Session ID
 Archive session
+Delete session

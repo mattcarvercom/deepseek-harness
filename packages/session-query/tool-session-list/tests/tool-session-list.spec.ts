@@ -45,6 +45,7 @@ class HeaderPersistence extends SessionPersistence {
 
   override create = vi.fn((): Promise<SessionHandle> => Promise.reject(new Error('listing must not create a stored Session')))
   override open = vi.fn((): Promise<SessionHandle> => Promise.reject(new Error('listing must not open an event log')))
+  override delete = vi.fn((): Promise<boolean> => Promise.reject(new Error('listing must not delete a stored Session')))
   override flush = vi.fn((): Promise<void> => Promise.resolve())
   override stat = vi.fn((): Promise<SessionPersistenceSnapshot | undefined> => Promise.reject(new Error('listing must not stat each Session')))
   override list = vi.fn((options?: SessionPersistenceListOptions): Promise<SessionPersistenceSnapshot[]> => {

@@ -9,7 +9,8 @@ import { z } from 'zod'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import { SessionPersistence, SessionAlreadyExistsError, SessionPersistenceNotFoundError, materializeCreateHeader } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionAccess, SessionPersistenceCreateOptions, SessionPersistenceOpenOptions,
-  SessionPersistenceStatOptions, SessionPersistenceListOptions, SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
+  SessionPersistenceDeleteOptions, SessionPersistenceStatOptions, SessionPersistenceListOptions,
+  SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import { publishNewFileWin32, ensureDurableDirectoryWin32 } from './win32.ts'
@@ -200,6 +201,31 @@ export class SqliteSessionPersistence extends SessionPersistence {
     }
     options?.signal?.throwIfAborted()
     return [...entries.filter(entry => !known.has(entry.header.id)), ...segmented]
+  }
+
+  /**
+   * Permanently destroy one stored Session: its legacy JSONL copy, its Trace
+   * and exclusive segments, and its routing record. Segments shared with a
+   * fork stay for their remaining owners.
+   * @param id - the stored Session to delete.
+   * @param options - optional cancellation.
+   * @returns `true` when stored data existed and was destroyed, `false` when
+   *   nothing stored for the id remained.
+   * @throws {SessionAlreadyOwnedError} when an open handle still owns the id.
+   */
+  async delete(id: SessionId, options?: SessionPersistenceDeleteOptions): Promise<boolean> {
+    options?.signal?.throwIfAborted()
+    this.sqlite.assertDeletable(id)
+    // Remove the redundant legacy copy first: a refused JSONL deletion must
+    // leave the primary store untouched.
+    const legacy = this.jsonl.delete === undefined ? false : await this.jsonl.delete(id, options)
+    const segmented = await this.sqlite.deleteSession(id, options?.signal)
+    if (!segmented && !legacy) return false
+    if (segmented) {
+      await rm(this.markerPath(id), { force: true })
+      this.publishedRoutes.delete(id)
+    }
+    return true
   }
 
   async flush(): Promise<void> { await this.sqlite.flush() }

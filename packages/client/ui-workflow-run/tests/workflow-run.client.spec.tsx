@@ -371,6 +371,8 @@ function panelProps(data: WorkflowRunChatData, sessions = listState(), openSessi
     inspectCall: () => {},
     forkAt: () => {},
     loadImage: () => Promise.reject(new Error('not used')),
+    textHighlight: undefined,
+    setTextHighlight: () => {},
     openSession,
     t: makeTranslate(zh),
   }

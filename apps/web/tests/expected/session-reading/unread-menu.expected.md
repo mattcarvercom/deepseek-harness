@@ -7,5 +7,6 @@
   - menuitem "Copy Session ID"
   - separator
   - menuitem "Archive session"
+  - menuitem "Delete session"
 Row state: done
 Title font weight: 400

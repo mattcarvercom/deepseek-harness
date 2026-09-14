@@ -1017,6 +1017,85 @@ export class SqliteStore {
     if (failures.length > 0) throw new AggregateError(failures, 'SQLite flush failed')
   }
 
+  /**
+   * Whether any read or write handle for the Session is open on this store.
+   * @param id - Session identity.
+   * @returns true while an open handle or in-flight create owns the identity.
+   */
+  hasOpenHandle(id: SessionId): boolean {
+    if (this.creating.has(id) || this.pendingCreates.has(id) || this.writers.has(id)) return true
+    for (const handle of this.handles) if (handle.header.id === id) return true
+    return false
+  }
+
+  /**
+   * Refuse deletion while any handle, writer, or in-flight create owns the id.
+   * @param id - Session identity.
+   * @throws {SessionAlreadyOwnedError} when the identity is still owned.
+   */
+  assertDeletable(id: SessionId): void {
+    if (this.hasOpenHandle(id)) throw new SessionAlreadyOwnedError(id)
+  }
+
+  /**
+   * Destroy one Session's Trace and the segments no other Trace shares, then
+   * drop its routing metadata. Fork prefixes survive for their other owners.
+   * @param id - Session identity.
+   * @param signal - optional cancellation.
+   * @returns true when a stored Trace existed, false for an absent id.
+   * @throws {SessionAlreadyOwnedError} when an open handle still owns the id.
+   */
+  async deleteSession(id: SessionId, signal?: AbortSignal): Promise<boolean> {
+    this.check(); signal?.throwIfAborted()
+    this.assertDeletable(id)
+    if (!await this.exists()) return false
+    const db = await this.database()
+    const trace = this.row(db, id)
+    if (trace === undefined) return false
+
+    // Segments reachable from another Trace stay: a fork shares its parent's prefix.
+    const shared = new Set<SegmentId>()
+    for (const row of this.statement(db, 'SELECT tail_segment_uuid FROM traces WHERE trace_uuid != ?').all(id)) {
+      this.collectChain(db, segmentId(String(row.tail_segment_uuid)), shared)
+    }
+    const own = new Set<SegmentId>()
+    this.collectChain(db, trace.tail_segment_uuid, own)
+    const exclusive = [...own].filter(segment => !shared.has(segment))
+      .sort((a, b) => this.segment(db, b).base_seq - this.segment(db, a).base_seq)
+
+    this.transaction(db, () => {
+      // Deletion is the one schema-authorized writer; the append-only guards
+      // return with the transaction (a failure rolls the DROP back too).
+      db.exec('DROP TRIGGER frames_no_delete')
+      db.exec('DROP TRIGGER ancestors_no_delete')
+      for (const segment of exclusive) {
+        this.statement(db, 'DELETE FROM segment_ancestors WHERE segment_uuid = ? OR ancestor_uuid = ?').run(segment, segment)
+        this.statement(db, 'DELETE FROM frames WHERE segment_uuid = ?').run(segment)
+      }
+      this.statement(db, 'DELETE FROM traces WHERE trace_uuid = ?').run(id)
+      for (const segment of exclusive) {
+        this.statement(db, 'DELETE FROM segments WHERE segment_uuid = ?').run(segment)
+      }
+      db.exec('CREATE TRIGGER frames_no_delete BEFORE DELETE ON frames BEGIN SELECT RAISE(ABORT, \'frames are append-only\'); END;')
+      db.exec('CREATE TRIGGER ancestors_no_delete BEFORE DELETE ON segment_ancestors BEGIN SELECT RAISE(ABORT, \'segment ancestry is immutable\'); END;')
+    })
+    this.chains.delete(id)
+    return true
+  }
+
+  /** Walk one Segment chain from its tail to the root, adding each identity. */
+  private collectChain(db: DatabaseSync, head: SegmentId, out: Set<SegmentId>): void {
+    let current: SegmentId | undefined = head
+    while (current !== undefined) {
+      if (out.has(current)) return
+      out.add(current)
+      const row = this.statement(db, 'SELECT parent_segment_uuid FROM segments WHERE segment_uuid = ?').get(current) as
+        { readonly parent_segment_uuid: string | null } | undefined
+      if (row === undefined) throw new HarnessError('Trace references a missing segment', 'SESSION_STORAGE_CORRUPT')
+      current = row.parent_segment_uuid === null ? undefined : segmentId(row.parent_segment_uuid)
+    }
+  }
+
   /** Drain admitted handles before closing the database connection. */
   close(): Promise<void> {
     return this.closing ??= (async () => {

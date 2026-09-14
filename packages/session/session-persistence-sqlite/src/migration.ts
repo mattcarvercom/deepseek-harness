@@ -8,7 +8,10 @@ import type { SessionAccess, SessionHandle, SessionPersistenceOpenOptions } from
 import type { SqliteStore } from './sqlite.ts'
 
 /** Historical reads used by the persistence service; no JSONL writes or live handles. */
-export type JsonlBackend = Pick<JsonlSessionPersistence, 'stat' | 'hasStoredJsonl' | 'prepare' | 'list'>
+export type JsonlBackend = Pick<JsonlSessionPersistence, 'stat' | 'hasStoredJsonl' | 'prepare' | 'list'> & {
+  /** Legacy deletion; production always supplies it, older test doubles may not. */
+  readonly delete?: JsonlSessionPersistence['delete']
+}
 
 /** Owns pending legacy opens until import, ownership handoff, and cleanup finish. */
 export class LegacySessionMigration {

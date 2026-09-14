@@ -121,6 +121,7 @@ These constraints apply when selecting this provider.
 - Retained JSONL files contain the imported prefix and exclude later SQLite events; they cannot restore the latest history on their own.
 - All processes writing imported Sessions must use the SQLite provider.
 - SQLite accepts the current Session format; a future event-format upgrade needs its own SQLite history migration.
+- Session deletion removes the Trace and the segments no other Trace shares; a fork's shared prefix stays for its remaining owners.
 
 <a id="dev-note"></a>
 ### Dev Note
