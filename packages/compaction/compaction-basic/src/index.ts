@@ -10,7 +10,7 @@ import { CompactionEngine, ManualCompactionError } from '@deepseek-ai/dsh-compac
 import type { CompactionResult, CompactionTrigger } from '@deepseek-ai/dsh-compaction'
 import type { Session, SessionSeq } from '@deepseek-ai/dsh-session'
 import { CONTEXT_WINDOW_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
-import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
+import type { LlmCallConfig, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
@@ -33,6 +33,7 @@ import type {
   BasicCompactionConfig,
   ModelCompactPolicyConfig,
   ResolvedConfig,
+  ResolvedTargetPolicy,
 } from './types.ts'
 
 export type {
@@ -206,10 +207,12 @@ export class BasicCompactionEngine extends CompactionEngine {
       } catch (recoveryError: unknown) {
         const message = recoveryError instanceof Error ? recoveryError.message : String(recoveryError)
         // A model-free prune can land before later summary work fails. That
-        // durable reduction is sufficient retry proof; do not discard it just
+        // durable reduction is sufficient retry proof only when it actually
+        // brought the surface back under threshold; do not discard it just
         // because the optional second phase threw. Cancellation still wins.
-        // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while recovery is awaited.
-        if (!signal.aborted && agent.session.surface.replaceGeneration > generation) {
+        // oxlint-disable-next-line typescript/no-unnecessary-condition -- the turn signal can abort while compactIfNeeded awaits.
+        if (!signal.aborted && agent.session.surface.replaceGeneration > generation
+          && await this.isUnderOverflowThreshold(agent, policy, target, signal)) {
           ctx.logger.warn(
             `context-overflow compaction failed after durable surface progress: ${message}; `
             + 'retrying from the replacement surface',
@@ -218,20 +221,72 @@ export class BasicCompactionEngine extends CompactionEngine {
           return { kind: 'retry' }
         }
         ctx.logger.warn(
-          // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while recovery is awaited.
+          // oxlint-disable-next-line typescript/no-unnecessary-condition -- the turn signal can abort while compactIfNeeded awaits.
           `context-overflow compaction failed: ${message}; ${signal.aborted
             ? 'cancellation prevents retry'
             : 'preserving the original request error'}`,
         )
         return next()
       }
-      // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while compaction is awaited.
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- the turn signal can abort while compactIfNeeded awaits.
       if (signal.aborted
         || agent.session.surface.replaceGeneration <= generation) return next()
+      // `selectCompactableRange` never shrinks the newest balanced surface
+      // unit, so a pass can durably advance the surface (real progress,
+      // worth logging and keeping) without bringing the next request back
+      // under the model's own threshold when that newest unit alone is the
+      // overflow's cause. Retrying an identically oversized request would
+      // just repeat the same provider error every time this recovery path
+      // gets re-armed by an intervening successful step — surface the
+      // original failure instead of looping.
+      if (!await this.isUnderOverflowThreshold(agent, policy, target, signal)) {
+        if (result !== null) logResult(result, 'context overflow recovery (still over threshold)')
+        ctx.logger.warn(
+          `context-overflow compaction reduced the surface but ${target.provider}/${target.model} `
+          + 'remains at or above its pressure threshold; preserving the original request error '
+          + 'instead of retrying an identically oversized request',
+        )
+        return next()
+      }
       if (result !== null) logResult(result, 'context overflow recovery')
       this.overflowRetries.set(agent, retries + 1)
       return { kind: 'retry' }
     })
+  }
+
+  /**
+   * Whether the session's current measured size is now under the routed
+   * target's pressure threshold, or unknown because its context capacity
+   * isn't configured. Used only to decide whether a context-overflow
+   * compaction pass reduced the surface enough to be worth retrying —
+   * capacity or policy resolution failures preserve the prior best-effort
+   * retry behavior rather than blocking recovery on a config gap unrelated
+   * to the overflow itself.
+   * @param agent - agent whose current surface is measured.
+   * @param policy - resolved target policy supplying the threshold ratio.
+   * @param target - exact routed provider/model whose capacity is checked.
+   * @param signal - cancellation forwarded to the adapter capacity lookup.
+   * @returns `true` when under threshold or capacity/policy is unresolvable; `false` when still over.
+   */
+  private async isUnderOverflowThreshold(
+    agent: Agent,
+    policy: ResolvedTargetPolicy,
+    target: Pick<LlmCallConfig, 'provider' | 'model'>,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    let info: LlmResolvedModelInfo
+    try {
+      info = await this.ctx.llm.resolveModelInfo(target.provider, target.model, signal)
+    } catch {
+      return true
+    }
+    if (info.context === undefined) return true
+    try {
+      const spec = resolveCompactSpec(policy, info.context.contextWindow, reservedCompletionTokens(agent, info.defaultMaxTokens))
+      return this.ctx.tokenMeter.measure(agent.session).totalTokens < spec.thresholdTokens
+    } catch {
+      return true
+    }
   }
 
   /**
