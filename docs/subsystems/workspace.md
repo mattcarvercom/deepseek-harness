@@ -233,6 +233,13 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 @Remote('archiveSession') archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue>
 
 /**
+ * Restore one Session to the Workspace grouping surfaces.
+ * @param request - Session identity to unarchive.
+ * @returns the complete resulting archive set.
+ */
+@Remote('unarchiveSession') unarchiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue>
+
+/**
  * Stream a complete Workspace baseline followed by ordered increments.
  * @param signal - generation cancellation.
  * @returns baseline followed by ordered Workspace increments.
@@ -383,6 +390,28 @@ insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly Workspac
  * @returns resolution after durability.
  */
 archiveSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Remove one session from the registry-global archive set, restoring it
+ * to every grouping surface. Archiving never touches workspace accounting,
+ * so the retained slot makes unarchiving a pure set removal. An id that is
+ * not archived resolves without writing.
+ * @param sessionId - The session to unarchive.
+ * @returns resolution after durability.
+ */
+unarchiveSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Remove one session from every workspace record and from the registry
+ * archive set, and drop it from the header index. Callers delete the
+ * session's persistence artifact first; the index drop keeps a later
+ * listing refresh from resurrecting the id in any membership projection.
+ * An unaccounted id is an idempotent no-op.
+ * @param sessionId - The session to remove from workspace accounting.
+ * @returns `true` when a record or the archive set changed, `false` when
+ *   the session was accounted nowhere.
+ */
+removeSession(sessionId: SessionId): Promise<boolean>
 
 /**
  * Resolve by canonical directory path without creating or mutating a

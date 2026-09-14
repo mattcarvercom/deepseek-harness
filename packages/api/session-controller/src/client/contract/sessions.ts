@@ -96,6 +96,14 @@ export interface ISessions {
    */
   fork(opts: { sessionId: SessionId; atSeq?: number; increaseTitle?: boolean }): Promise<SessionId>
   /**
+   * Permanently delete a session. By the time this resolves the Host has
+   * destroyed the stored log and published the removal; the local row is
+   * cleared immediately, so no list-refresh round-trip is needed.
+   * @param id - session id to delete.
+   * @throws on any Host deletion failure (missing session, busy agent, storage fault).
+   */
+  delete(id: SessionId): Promise<void>
+  /**
    * Resolve an Agent-scoped context view (use-and-discard).
    * @param id - session id.
    * @returns scoped ctx, or undefined for a session neither listed nor already scoped.
