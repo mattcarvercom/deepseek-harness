@@ -20,6 +20,7 @@ import {
   type ApiSessionAgentResult,
 } from './agent.ts'
 import { SessionCommandController } from './commands.ts'
+import { SessionDeleteController } from './delete.ts'
 import { SessionControlController } from './control.ts'
 import { SessionHistoryController } from './history.ts'
 import { SessionFileReferences } from './file-references.ts'
@@ -39,6 +40,8 @@ import type {
   SessionControlFrame,
   SessionCreateRequest,
   SessionCreateValue,
+  SessionDeleteRequest,
+  SessionDeleteValue,
   SessionFollowFrame,
   SessionFollowRequest,
   SessionForkRequest,
@@ -111,7 +114,9 @@ export class SessionController extends TypertRemoteService {
     'fs',
     'llm',
     'sessions',
+    'sessionPersistence',
     'sessionProjections',
+    'sessionProjectionCache',
     'sessionQuery',
     'typert',
     'workspaceRegistry',
@@ -124,6 +129,7 @@ export class SessionController extends TypertRemoteService {
 
   private readonly agents: ApiSessionAgentController
   private readonly commands: SessionCommandController
+  private readonly deletions: SessionDeleteController
   private readonly controlState: SessionControlController
   private readonly history: SessionHistoryController
   private readonly listState: ApiSessionList
@@ -145,6 +151,7 @@ export class SessionController extends TypertRemoteService {
     installModelSelectionProjection(ctx)
     this.agents = new ApiSessionAgentController(ctx)
     this.commands = new SessionCommandController(ctx, this.agents, process.cwd())
+    this.deletions = new SessionDeleteController(ctx, this.agents)
     ctx.effect(() => ctx.fileUploads.registerAgentResolver(async (sessionId) => {
       const result = await this.agents.resolveAgent(sessionId)
       if ('error' in result) throw result.error
@@ -430,6 +437,18 @@ export class SessionController extends TypertRemoteService {
       }
     }
     return this.commands.fork(request)
+  }
+
+  /**
+   * Permanently delete one Session: its live Agent is disposed, its stored
+   * log is destroyed, and its cache and workspace accounting are removed.
+   * The operation is not recoverable.
+   * @param request - the Session to delete.
+   * @returns the deletion receipt once every durable step committed.
+   */
+  @Remote('delete')
+  delete(request: SessionDeleteRequest): Promise<SessionDeleteValue> {
+    return this.deletions.delete(request)
   }
 
   /**
