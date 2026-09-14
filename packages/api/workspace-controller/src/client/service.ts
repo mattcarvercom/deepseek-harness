@@ -160,11 +160,6 @@ export class WorkspaceController extends Service implements IWorkspaces {
     if (!result.ok) throw new WorkspaceArchiveError(result.error)
   }
 
-  async unarchiveSession(sessionId: SessionId): Promise<void> {
-    const result = await this.model.unarchiveSession(sessionId)
-    if (!result.ok) throw commandError('session unarchive', result.error)
-  }
-
   async pinSession(sessionId: SessionId): Promise<void> {
     const result = await this.model.pinSession(sessionId)
     if (!result.ok) throw commandError('session pin', result.error)
@@ -173,6 +168,11 @@ export class WorkspaceController extends Service implements IWorkspaces {
   async unpinSession(sessionId: SessionId): Promise<void> {
     const result = await this.model.unpinSession(sessionId)
     if (!result.ok) throw commandError('session unpin', result.error)
+  }
+
+  async unarchiveSession(sessionId: SessionId): Promise<void> {
+    const result = await this.model.unarchiveSession(sessionId)
+    if (!result.ok) throw commandError('session unarchive', result.error)
   }
 
   async insertSessionBefore(

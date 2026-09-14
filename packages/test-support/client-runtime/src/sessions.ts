@@ -682,6 +682,9 @@ export class TestSessions implements ISessions {
     return Promise.resolve(opts.sessionId)
   }
 
+  /** Delete behavior: a no-op the bench overrides to observe or reject a deletion. */
+  delete: ISessions['delete'] = async () => {}
+
   /**
    * The session face of a fixture (typed view for assertions; fixture
    * behavior methods are grafted onto it).

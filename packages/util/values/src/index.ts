@@ -14,6 +14,15 @@ export function assertNever(value: never, context?: string): never {
   throw new Error(`unreachable variant${context ? ` in ${context}` : ''}: ${rendered}`)
 }
 
+// Engines format a native function's toString() body differently (V8: single
+// line `{ [native code] }`; SpiderMonkey: `{\n    [native code]\n}`) - the
+// ECMAScript spec leaves the exact text implementation-defined, so an exact
+// string match against one engine's format rejects every plain object on any
+// other engine. This pattern tolerates the whitespace variation while still
+// requiring the "[native code]" marker a forged constructor could not produce
+// merely by naming itself and pointing `.prototype` at the target.
+const NATIVE_FUNCTION_BODY = /^function\s+[$A-Za-z_][$\w]*\s*\(\s*\)\s*\{\s*\[native code\]\s*\}\s*$/
+
 /** Whether a realm-owned intrinsic prototype is backed by its native constructor. */
 function hasIntrinsicConstructor(prototype: object, name: 'Array' | 'Object'): boolean {
   const descriptor = Object.getOwnPropertyDescriptor(prototype, 'constructor')
@@ -22,7 +31,7 @@ function hasIntrinsicConstructor(prototype: object, name: 'Array' | 'Object'): b
   try {
     return constructor.name === name
       && constructor.prototype === prototype
-      && Function.prototype.toString.call(constructor) === `function ${name}() { [native code] }`
+      && NATIVE_FUNCTION_BODY.test(Function.prototype.toString.call(constructor))
   } catch {
     return false
   }

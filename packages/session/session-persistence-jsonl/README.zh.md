@@ -85,6 +85,10 @@ kind: "package-reference"
 
 历史格式的 `stat` 与 `list` 修订号需要与根目录 Session 数量成正比的元数据工作。首次正文准备扫描所有所选 header 并解码直属子正文；复用准备缓存仍扫描成员集合并检查修订。只读访问从不发布升级，因此冷进程与被淘汰的准备缓存会重复这些工作。当前 V4 正文读取和修订号避开历史全库扫描。见[实测成本与诊断命令](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.zh.md#catalog-scan-measurements)。
 
+### 删除会话
+
+只要该会话在本进程内还有任何已打开句柄，`delete(id)` 就会拒绝（`SessionAlreadyOwnedError`——从未物化的会话始终位于其已打开创建者句柄之后，因此同样被拒绝覆盖），随后按编码后的会话名在每个项目目录下解析该会话目录——与编码和布局无关——并将其整体销毁：所有 generation 连同锁残留，以及该 id 的冷日志 memo。过时的扁平产物（`<project>/<encoded>.jsonl` 与 `<encoded>.jsonl.zstd`）就地移除。删除是销毁而非重写或迁移；没有存储产物的会话报告空操作 `false`。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -160,7 +164,7 @@ JSONL 存储不修改实时请求前缀。只有重建历史、当前 envelope �
 - **格式迁移保留已配置编码，且只支持 catalog 中的链**——本 build 把受支持的历史代迁移到当前格式；更改压缩需要独立根，保留的旧版本不提供自动 fallback 或 downgrade 支持。
 - **平铺文件存储布局不加载**——加载前使用独立根，或将预发布产物移入项目/会话目录布局。
 - **压缩文件不能直接按行读取**——使用后端加载；或在写入新根前选择 `compression: 'none'`，供外部行读取方使用。
-- **不删除会话文件**——日志在 `root` 下累积，直到外部移除；seam 无删除接口。
+- **删除不可恢复且受进程内所有权门控**——`delete(id)` 不留备份地销毁该会话的全部 generation，且本进程持有该 id 句柄时拒绝；跨进程写入方仅由所属实例的已打开句柄拒绝所排除，因此正在被其他进程写入的会话会按已存储状态被删除。
 - **每会话一个活动写入方**——写句柄认领在所属后端实例内排除第二个写入方，内核锁（`session.lock` 上的非阻塞 `flock(2)`；Windows 上为由该路径派生的命名内核信号量，零文件系统足迹）排除其他所有实例与进程；锁在以写模式打开既有产物时立即获取，新建会话则仅在首次实体化写入之前获取，因此未实体化的会话不留任何文件系统足迹。崩溃持有者的锁随其进程消亡，会话立即可再写入，而活着但卡死的持有者会阻塞写入方直到其进程退出（POSIX 上删除锁文件即放弃该排他；释放本身从不删除它）。咨询式 `flock` 在部分网络文件系统（NFSv3）上不可靠，Windows 信号量名按登录会话隔离。
 - **POSIX 实体化需要硬链接支持**——第一次 append 使用 `link()`，使同 id 竞态失败而不覆盖已提交日志；Windows 使用无替换 write-through rename。
 - **POSIX 写入需要匹配的预编译系统 addon**——[`node-addon-system`](../../../native/system/README.zh.md) 提供异步 flock，无须在用户侧编译。addon 缺失时拒绝写入所有权；Windows 保留其信号量实现。

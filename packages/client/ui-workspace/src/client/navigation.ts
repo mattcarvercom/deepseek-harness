@@ -85,6 +85,13 @@ export interface UiWorkspace {
    */
   unpinSession(sessionId: SessionId): Promise<void>
   /**
+   * Permanently delete a Session: the Host destroys its stored log and the
+   * local row leaves the Session list. Not recoverable.
+   * @param sessionId - Session to delete.
+   * @throws on any Host deletion failure.
+   */
+  deleteSession(sessionId: SessionId): Promise<void>
+  /**
    * Open the Host-native directory picker.
    * @returns the selected directory, or null when cancelled.
    */
@@ -260,6 +267,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   async unpinSession(sessionId: SessionId): Promise<void> {
     await this.workspaces.unpinSession(sessionId)
+  }
+
+  async deleteSession(sessionId: SessionId): Promise<void> {
+    await this.sessions.delete(sessionId)
   }
 
   async pickDirectory(): Promise<string | null> {

@@ -85,6 +85,10 @@ Historical body preparation completes the parent catalog through [V3→V4](../se
 
 Historical `stat` and `list` revisions require metadata work proportional to the root’s Session count. Fresh body preparation scans all selected headers and decodes direct-child bodies; memo reuse still scans membership and checks revisions. Read-only access never publishes an upgrade, so cold processes and evicted preparations repeat that work. Current V4 body reads and revisions avoid the historical corpus scan. See the [measured costs and diagnostic command](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md#catalog-scan-measurements).
 
+### Deleting a session
+
+`delete(id)` refuses while any in-process handle for the session is open (`SessionAlreadyOwnedError` — a never-materialized session is always behind its open creator handle, so the refusal covers it), then resolves the session directory by encoded session name under every project directory — encoding- and layout-agnostic — and destroys it wholesale: every generation plus lock residue, and the id's cold-log memo. Obsolete flat artifacts (`<project>/<encoded>.jsonl` and `<encoded>.jsonl.zstd`) are removed in place. Deletion destroys rather than rewrites or migrates; a session with no stored artifact reports the no-op `false`.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -160,7 +164,7 @@ These limits define when this backend is a poor fit or needs special operational
 - **Format migration preserves the configured encoding and supports only the catalogued chain** — this build migrates supported historical generations to the current format; changing compression requires a separate root, and retained predecessors do not provide automatic fallback or downgrade support.
 - **The flat-file storage layout does not load** — use a separate root or move pre-release artifacts into the project/session directory layout before loading.
 - **Compressed files are not directly line-readable** — use the backend to load them, or select `compression: 'none'` before writing a fresh root when external line readers are required.
-- **Nothing deletes session files** — logs accumulate under `root` until removed externally; the seam has no deletion API.
+- **Deletion is unrecoverable and in-process-ownership-gated** — `delete(id)` destroys every generation of the session without backup, and refuses while this process holds a handle for the id; cross-process writers are excluded only by the open-handle refusal of the owning instance, so a session being written by another process deletes as stored.
 - **One live writer per session** — the write-handle claim excludes a second writer inside the owning backend instance, and a kernel lock (non-blocking `flock(2)` on `session.lock`; on Windows a named kernel semaphore derived from that path, with no filesystem footprint) excludes every other instance and process; the lock is taken at write-open of an existing artifact and, for a created session, only right before its first materializing write, so an unmaterialized session leaves no filesystem footprint. A crashed holder's lock dies with its process, so its session is writable again immediately, while a live-but-wedged holder blocks writers until its process exits (on POSIX, removing the lock file forfeits that exclusion; release itself never removes it). Advisory `flock` is unreliable on some network filesystems (NFSv3), and the Windows semaphore name is per login session.
 - **POSIX materialization requires hard-link support** — first append uses `link()` so same-id races fail instead of overwriting a committed log; Windows uses write-through rename without replacement.
 - **POSIX writes require the matching prebuilt system addon** — [`node-addon-system`](../../../native/system/README.md) supplies asynchronous flock without consumer-side compilation. A missing addon rejects write ownership; Windows retains its semaphore implementation.
