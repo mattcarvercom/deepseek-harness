@@ -1082,6 +1082,20 @@
   "packages/experimental/computer-use-cua-driver-native/tests/loader-composition.spec.ts": {
     "2bacab667d9b30188705724df1ae681fd51fb4ebc2668d8e062bfd37d6eb54f1": 1
   },
+  "packages/experimental/hook-protocol/tests/events.spec.ts": {
+    "a59fe57e5f3994018a6bd25208b9c2f56a7bcf7353d6ec2d453564f3f5c225f2": 1
+  },
+  "packages/experimental/hooks-claude-code/tests/bridge.spec.ts": {
+    "38a7cf3dfd5da2f739390f5b233b97731f3bfa1ac3a51fdb8e1594735764bb80": 1
+  },
+  "packages/experimental/hooks-claude-code/tests/coverage-cases.ts": {
+    "38a7cf3dfd5da2f739390f5b233b97731f3bfa1ac3a51fdb8e1594735764bb80": 1,
+    "54f541ed10b92b1386306754b4a96741f6d9e40058ddac191f5aed03af30c32a": 1,
+    "593ac2fabae51a87153bf285d326f2de6ddb84bf2581f2ac280083b9bc130188": 1
+  },
+  "packages/experimental/hooks-codex/tests/bridge.spec.ts": {
+    "bced8a97654435422589a4bdd1b46b5147d4120cd5b496dcf055c453494ce0ab": 1
+  },
   "packages/experimental/inspector/src/client/cdp/console.ts": {
     "8e933eb759fc1e8a1eacb9cf2c152713d00eb46d47ca7d3b1f2d072c49527ca8": 1
   },
@@ -1155,6 +1169,42 @@
   },
   "packages/experimental/ptc-runtime-python/src/index.ts": {
     "b121cee14635b00f7891217013e4682493cf96f676710be60722fdf8b862aea3": 1
+  },
+  "packages/experimental/tool-ralph/src/index.ts": {
+    "6fe9024d30e0d4757a348b83d246925b3f5aeaf2e79a0eff4bf12f3c9fb5826b": 1,
+    "cec7714d93bd00a87b261199e97562ce99a73ae4b4e2414728d874d24bfed7a4": 1
+  },
+  "packages/experimental/tool-ralph/tests/tool-ralph.spec.ts": {
+    "47df8a1ea0e482122f196eb20bb3ae93a50e59d7c80d822c5e8a29efd1c05eb8": 1
+  },
+  "packages/experimental/tool-session-query/tests/sqlite-integration.spec.ts": {
+    "a66cea6887fa5e33f4d504a7899fcb4b99d79958f6aed01288af1ad6ff557298": 1
+  },
+  "packages/experimental/tool-session-query/tests/tool-session-query.spec.ts": {
+    "0ec8a91117e78ae941807094fc63035e115a3e02412917e632be4f34dbfddc62": 1,
+    "6370792878103b8fe2963dfeb036963572c1da2bb6dd7fcc10681be1c866b490": 1,
+    "a66cea6887fa5e33f4d504a7899fcb4b99d79958f6aed01288af1ad6ff557298": 1
+  },
+  "packages/experimental/tool-terminal/tests/loader-composition.spec.ts": {
+    "59c63f734e8bba862325f776e3fcbebd78a84cfb4161f8df41c216950d9bf351": 1
+  },
+  "packages/experimental/webhook-github/tests/body.spec.ts": {
+    "130dbbbe723b0d72d5a736596b3513f42b65a6e3909164b05bce810393f36b96": 1
+  },
+  "packages/experimental/webhook-github/tests/handler.spec.ts": {
+    "171a57417a610abfca8b6ef7c8a8bfe71a2c5cc27f6a52158bb9de709d51c234": 1,
+    "981ca4f4ab5668c2c8d0d0bddf9bff66535bbdd27c8bb47816a83e610b60432f": 1,
+    "e60b9922c7a65986547062e8ce78ac09d83b0c0ac9533030deed3a596d3067b3": 2,
+    "f4fa3c346edf323b9d6e18fa1fc720d828de054c14daf95822308634e0e7fe15": 1
+  },
+  "packages/experimental/webhook-github/tests/loader-composition.spec.ts": {
+    "59c63f734e8bba862325f776e3fcbebd78a84cfb4161f8df41c216950d9bf351": 1
+  },
+  "packages/experimental/webhook/tests/loader-composition.spec.ts": {
+    "59c63f734e8bba862325f776e3fcbebd78a84cfb4161f8df41c216950d9bf351": 1
+  },
+  "packages/experimental/webhook/tests/session.spec.ts": {
+    "febbe0687d7079e44a15b802235157043bad5a5f188348db89fe00f50532bee8": 1
   },
   "packages/experimental/webworker-packer/src/preview.ts": {
     "cdd46c8ceda6d5707bc2abfba329351ba06bcc030b314a3c799d72a4971bd5a4": 1
@@ -1265,20 +1315,6 @@
   },
   "packages/goal/goal/src/index.ts": {
     "09a26f55e58db3477446e73f59bd3cdf678ae76ff8f54d185ec4a0ce0dc7da2d": 1
-  },
-  "packages/experimental/hook-protocol/tests/events.spec.ts": {
-    "a59fe57e5f3994018a6bd25208b9c2f56a7bcf7353d6ec2d453564f3f5c225f2": 1
-  },
-  "packages/experimental/hooks-claude-code/tests/bridge.spec.ts": {
-    "38a7cf3dfd5da2f739390f5b233b97731f3bfa1ac3a51fdb8e1594735764bb80": 1
-  },
-  "packages/experimental/hooks-claude-code/tests/coverage-cases.ts": {
-    "38a7cf3dfd5da2f739390f5b233b97731f3bfa1ac3a51fdb8e1594735764bb80": 1,
-    "54f541ed10b92b1386306754b4a96741f6d9e40058ddac191f5aed03af30c32a": 1,
-    "593ac2fabae51a87153bf285d326f2de6ddb84bf2581f2ac280083b9bc130188": 1
-  },
-  "packages/experimental/hooks-codex/tests/bridge.spec.ts": {
-    "bced8a97654435422589a4bdd1b46b5147d4120cd5b496dcf055c453494ce0ab": 1
   },
   "packages/host/directory-picker-auto/tests/loader-composition.spec.ts": {
     "923a65f07e42e49412ff5a8b2f7ff681e37ed1d07bfbf2187b3672b11685edd1": 1
@@ -1488,9 +1524,6 @@
     "63a69fcdd1764e0ba52911c311b5068815276fab9f673ee498386432f78cd6dc": 2,
     "fc12552d1d3b7146ed53d5d1a2f546ffac66ff774234caade9702fd84f8c0d27": 1
   },
-  "packages/sdk/protocol/tests/transport.spec.ts": {
-    "06af1b2f0b19426e1bc87d38e344c0e5675a4ab1d72b4487741f3b0b8c3eb619": 2
-  },
   "packages/sdk/server/src/server.ts": {
     "04bc8a44533574365dfedf563e2356458bcf95f990a00906938c977c1d683356": 1,
     "5c1e60550b8cda845c02f71cd04a53b55bd092185de3480c8ff86a16547fbedb": 2
@@ -1567,14 +1600,6 @@
   "packages/session-query/session-query/tests/tracing.spec.ts": {
     "09a269bed9b7eb21c5d84c1826987ceed50b4d193728e8cd1d01015088762f08": 1,
     "4cb55fef1f53567526f153fbdf22f46c3e83bb3f6be77d5b42baddbae0b07344": 1
-  },
-  "packages/experimental/tool-session-query/tests/sqlite-integration.spec.ts": {
-    "a66cea6887fa5e33f4d504a7899fcb4b99d79958f6aed01288af1ad6ff557298": 1
-  },
-  "packages/experimental/tool-session-query/tests/tool-session-query.spec.ts": {
-    "0ec8a91117e78ae941807094fc63035e115a3e02412917e632be4f34dbfddc62": 1,
-    "6370792878103b8fe2963dfeb036963572c1da2bb6dd7fcc10681be1c866b490": 1,
-    "a66cea6887fa5e33f4d504a7899fcb4b99d79958f6aed01288af1ad6ff557298": 1
   },
   "packages/session/session-format-catalog/src/current.ts": {
     "78513aa5d7c79ad177457f8902a0d30bd6929ea63fb912944db22a2a7a538b88": 1,
@@ -1814,10 +1839,11 @@
     "adda026f7ad49b47496f381a0c04997300597d040b8a81045a848573485ed299": 1
   },
   "packages/subagent/subagent-claude-code/tests/subagent-claude-code.spec.ts": {
+    "267a1227bfe2dc022f669075950ead7009ff5cde6a3c4e563e936dd5278a752d": 1,
     "2cedee48f4fb8ce4bbd10567fdfbee69e8dd11dbc85af9b824de33c2b77abfbf": 1,
     "4e94c461ab08f535e20f71ebe8bb9a8c911a936c7068f24e259956c06d17c05d": 1,
     "cdcbd6cc73a09b6613864cdfb5b14d0cf66dc2484d26916cb32929deca1032de": 3,
-    "f85c96616fff1bb1e21886bd2fad64e9e34d89d090ab96ab7804f702278cd23d": 4,
+    "f85c96616fff1bb1e21886bd2fad64e9e34d89d090ab96ab7804f702278cd23d": 6,
     "fa05a5e504ed74b5a07cb6281c787b507eb6c44db768803f4dad034dd69cb3b9": 1
   },
   "packages/subagent/subagent-codex/tests/real-deepseek.e2e.ts": {
@@ -1962,9 +1988,6 @@
     "237785adfc64f6fe0cf84ce292d1da4b2065b11f82093029312356e10a3703f0": 6,
     "e87443b2dcbfcd641eba56e2afb1b9daaa697f89df846c40cdea6bfb9b8a7ef3": 2
   },
-  "packages/experimental/tool-terminal/tests/loader-composition.spec.ts": {
-    "59c63f734e8bba862325f776e3fcbebd78a84cfb4161f8df41c216950d9bf351": 1
-  },
   "packages/test-support/client-runtime/src/assembly/modules.ts": {
     "f2e51a73ac632a8978cbb9bae6ab46fbee022a936dbb6fb8462433ed0e702fc3": 1
   },
@@ -2086,31 +2109,6 @@
     "37c9617ff75d6a383f58dd63f939a88803e4ff5e1676bfe7e1c0cc340fc65014": 5,
     "598014dcfe77101781e3c6a02709097e3b0151a335e909c44719fac08fdea433": 2,
     "ed2fec09418bc1a78fde5097fd01d5aabf903166ed1bf480a5e38bccdd3948a6": 1
-  },
-  "packages/experimental/webhook-github/tests/body.spec.ts": {
-    "130dbbbe723b0d72d5a736596b3513f42b65a6e3909164b05bce810393f36b96": 1
-  },
-  "packages/experimental/webhook-github/tests/handler.spec.ts": {
-    "171a57417a610abfca8b6ef7c8a8bfe71a2c5cc27f6a52158bb9de709d51c234": 1,
-    "981ca4f4ab5668c2c8d0d0bddf9bff66535bbdd27c8bb47816a83e610b60432f": 1,
-    "e60b9922c7a65986547062e8ce78ac09d83b0c0ac9533030deed3a596d3067b3": 2,
-    "f4fa3c346edf323b9d6e18fa1fc720d828de054c14daf95822308634e0e7fe15": 1
-  },
-  "packages/experimental/webhook-github/tests/loader-composition.spec.ts": {
-    "59c63f734e8bba862325f776e3fcbebd78a84cfb4161f8df41c216950d9bf351": 1
-  },
-  "packages/experimental/webhook/tests/loader-composition.spec.ts": {
-    "59c63f734e8bba862325f776e3fcbebd78a84cfb4161f8df41c216950d9bf351": 1
-  },
-  "packages/experimental/webhook/tests/session.spec.ts": {
-    "febbe0687d7079e44a15b802235157043bad5a5f188348db89fe00f50532bee8": 1
-  },
-  "packages/experimental/tool-ralph/src/index.ts": {
-    "6fe9024d30e0d4757a348b83d246925b3f5aeaf2e79a0eff4bf12f3c9fb5826b": 1,
-    "cec7714d93bd00a87b261199e97562ce99a73ae4b4e2414728d874d24bfed7a4": 1
-  },
-  "packages/experimental/tool-ralph/tests/tool-ralph.spec.ts": {
-    "47df8a1ea0e482122f196eb20bb3ae93a50e59d7c80d822c5e8a29efd1c05eb8": 1
   },
   "packages/workflow/tool-workflow/tests/tool-workflow.spec.ts": {
     "061944ebda38f8da144d88cfa668e6336efc68c33441a9fe3215d8c001124526": 2
