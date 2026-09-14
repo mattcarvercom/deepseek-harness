@@ -136,6 +136,14 @@ export interface ISessions {
     onCreated?: (childId: SessionId) => void
   }): Promise<SessionId>
   /**
+   * Permanently delete a session. By the time this resolves the Host has
+   * destroyed the stored log and published the removal; the local row is
+   * cleared immediately, so no list-refresh round-trip is needed.
+   * @param id - session id to delete.
+   * @throws on any Host deletion failure (missing session, busy agent, storage fault).
+   */
+  delete(id: SessionId): Promise<void>
+  /**
    * Borrow an already-retained Agent-scoped Context without extending its lifetime.
    * @param id - session id.
    * @returns the live scoped Context, or undefined without a retained generation.
