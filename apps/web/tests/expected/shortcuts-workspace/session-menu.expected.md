@@ -7,3 +7,4 @@
   - menuitem "Show in Finder"
   - separator
   - menuitem "Archive session"
+  - menuitem "Delete session"

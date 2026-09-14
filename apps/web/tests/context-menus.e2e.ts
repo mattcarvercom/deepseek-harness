@@ -71,7 +71,7 @@ describe.each(['MacIntel', 'Win32', 'Linux x86_64'])('web context menus on %s', 
     await menu.getByRole('menuitem', { name: /Copy.*[Ii][Dd]/ }).waitFor()
     const names = await menuLabels(menu)
     expect(names.slice(0, 5)).toEqual(['Pin session', 'Rename', 'Fork session', 'Copy Session ID', 'Show in folder'])
-    expect(names.at(-1)).toBe('Archive session')
+    expect(names.at(-1)).toBe('Delete session')
     expect(await menu.getByRole('menuitem').evaluateAll(rows => rows.every(row => row.querySelector('svg[data-icon]')))).toBe(true)
     expect(await menu.getByRole('separator').count()).toBe(2)
     expect(await menu.getByRole('menuitem', { name: 'Archive session', exact: true }).evaluate(row =>

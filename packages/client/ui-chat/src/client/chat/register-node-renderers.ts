@@ -60,6 +60,8 @@ export function registerChatNodeRenderers(
     children: {
       'conversation.chat.reasoning.body': { kind: 'single', scope: 'session' },
       'conversation.chat.message.images': { kind: 'single', scope: 'session' },
+      'conversation.chat.step-actions': { kind: 'list', scope: 'session' },
+      'conversation.chat.stream-actions': { kind: 'single', scope: 'session' },
     },
     inject: (sessionId): AssistantNodeInjected => ({
       hooks: { presentation },
