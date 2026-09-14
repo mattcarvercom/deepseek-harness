@@ -12,4 +12,5 @@
   - treeitem "{{workspace}} 1min"
   - treeitem "{{workspace}} 1min"
   - treeitem "{{workspace}} 1min"
-  - button "Show 1 more sessions"
+  - treeitem "{{workspace}} 1min"
+  - button "Show less" [expanded]

@@ -23,6 +23,8 @@ type WorkspaceViewState = {
   showArchived: boolean
   /** Explicit zero-or-five-session state keyed by Workspace group identity. */
   groupExpansion: Record<string, boolean>
+  /** Explicitly folded session lists keyed by Workspace group identity; an absent key is expanded (the default). */
+  sessionFolding: Record<string, boolean>
   /** Editable order per Workspace group plus the browser-local flat-list account, written only in Manual. */
   sessionOrderByAccount: Record<string, string[]>
 }
@@ -36,6 +38,7 @@ type WorkspaceViewActions = {
   setOrderBy: (draft: WorkspaceViewState, mode: SessionOrderBy) => void
   setShowArchived: (draft: WorkspaceViewState, shown: boolean) => void
   setGroupExpanded: (draft: WorkspaceViewState, key: string, expanded: boolean) => void
+  setSessionFolded: (draft: WorkspaceViewState, key: string, folded: boolean) => void
   retainAccountKeys: (draft: WorkspaceViewState, workspaceKeys: readonly string[]) => void
   syncSessionOrderAccount: (
     draft: WorkspaceViewState,
@@ -56,20 +59,26 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
       orderBy: 'updated',
       showArchived: false,
       groupExpansion: {},
+      sessionFolding: {},
       sessionOrderByAccount: {},
     }),
-    // The key stays v6: pre-removal v6 payloads rehydrate with an inert
-    // sessionUpdatedAtByAccount key that no code reads.
-    persist: 'dsh.workspace.view.v6',
+    // v7 adds the sessionFolding record; the raw-JSON rehydrate replaces the
+    // state wholesale, so a v6 payload cannot merge the new field and the old
+    // key is dropped rather than misread (one-time reset of stored view prefs).
+    persist: 'dsh.workspace.view.v7',
     actions: {
       setGroupBy: (d, mode: SessionGroupBy) => { d.groupBy = mode },
       setOrderBy: (d, mode: SessionOrderBy) => { d.orderBy = mode },
       setShowArchived: (d, shown: boolean) => { d.showArchived = shown },
       setGroupExpanded: (d, key: string, expanded: boolean) => { d.groupExpansion[key] = expanded },
+      setSessionFolded: (d, key: string, folded: boolean) => { d.sessionFolding[key] = folded },
       retainAccountKeys: (d, workspaceKeys: readonly string[]) => {
         const retained = new Set(workspaceKeys)
         d.groupExpansion = Object.fromEntries(
           Object.entries(d.groupExpansion).filter(([key]) => retained.has(key)),
+        )
+        d.sessionFolding = Object.fromEntries(
+          Object.entries(d.sessionFolding).filter(([key]) => retained.has(key)),
         )
         d.sessionOrderByAccount = Object.fromEntries(
           Object.entries(d.sessionOrderByAccount).filter(([key]) => retained.has(key)),

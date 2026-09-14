@@ -68,11 +68,6 @@ function sanitizeSearchQuery(value: string): string {
   return withoutNul.slice(0, end)
 }
 
-/** Immutable membership toggle for the local expand-all array. */
-function toggled(list: readonly string[], key: string): string[] {
-  return list.includes(key) ? list.filter(k => k !== key) : [...list, key]
-}
-
 /**
  * Accept the native drag at document level while a row drag is active: row
  * hover still owns the insertion marker, and releasing outside the list must
@@ -227,6 +222,10 @@ type SessionTreeProps = Pick<
   groupExpansion: Readonly<Record<string, boolean>>
   /** Persist one Workspace group's zero-or-five-session state. */
   setGroupExpanded: (key: string, expanded: boolean) => void
+  /** Explicitly folded session lists by Workspace group; an absent key is expanded (the default). */
+  sessionFolding: Readonly<Record<string, boolean>>
+  /** Record whether one Workspace group's session list is explicitly folded. */
+  setSessionFolded: (key: string, folded: boolean) => void
   /** Editable orders written only in Manual, used by Workspace groups and the flat-list account. */
   sessionOrderByAccount: Readonly<Record<string, readonly string[]>>
   /** Replace one editable order. */
@@ -257,13 +256,14 @@ type SessionTreeProps = Pick<
   onSessionRevealed: (sessionId: SessionId) => void
 }
 
-/** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
+/** The scrolling session tree; unmounting drops the sessions subscription (the per-group fold lives in the view store). */
 function SessionTree({
   useSessions, useSessionPendingInteraction, startSession, open, forkSession, workspaces, archivedSessionIds,
   workspaceReady, showArchived, usePanelInfo,
   onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionUnarchive, onSessionDelete,
   insertWorkspaceBefore, insertSessionBefore, orderBy,
   groupExpansion, setGroupExpanded,
+  sessionFolding, setSessionFolded,
   sessionOrderByAccount, syncSessionOrderAccount, setSessionOrder, home, t,
   revealSessionId, onSessionRevealed,
 }: SessionTreeProps) {
@@ -274,7 +274,6 @@ function SessionTree({
   const revealGroup = revealSessionId === undefined || !workspaceReady
     ? undefined
     : owningGroupKey(workspaces, revealSessionId)
-  const [expandedSessionGroups, setExpandedSessionGroups] = useState<string[]>([])
   // Transient drag marker state; the selected mode owns the resulting order.
   const [drag, setDrag] = useState<DragState | null>(null)
   const sessionDropCommitted = useRef(false)
@@ -354,8 +353,9 @@ function SessionTree({
     const group = groups.find(candidate => candidate.key === revealGroup)
     if (group === undefined || !group.expanded || !group.sessions.some(row => row.id === revealSessionId)) return
     if (collapsedSessionRows(group.sessions).rows.some(row => row.id === revealSessionId)) return
-    setExpandedSessionGroups(keys => keys.includes(revealGroup) ? keys : [...keys, revealGroup])
-  }, [groups, revealGroup, revealSessionId])
+    if (sessionFolding[revealGroup] !== true) return
+    setSessionFolded(revealGroup, false)
+  }, [groups, revealGroup, revealSessionId, sessionFolding, setSessionFolded])
   const now = Date.now()
   const commitSessionDrag = (activeDrag: DragState, over: NonNullable<DragState['over']>): void => {
     if (sessionDropCommitted.current) return
@@ -363,7 +363,7 @@ function SessionTree({
     setDrag(null)
     const group = groups.find(candidate => candidate.key === activeDrag.accountKey)
     if (group === undefined) return
-    const sessionsExpanded = expandedSessionGroups.includes(group.key)
+    const sessionsExpanded = sessionFolding[group.key] !== true
     const renderedSessions = sessionsExpanded ? group.sessions : collapsedSessionRows(group.sessions).rows
     const targetIndex = renderedSessions.findIndex(session => session.id === over.id)
     if (targetIndex === -1) return
@@ -450,7 +450,7 @@ function SessionTree({
         {groups.map((group) => {
           const workspaceId = group.workspaceId
           const collapsed = collapsedSessionRows(group.sessions)
-          const sessionsExpanded = expandedSessionGroups.includes(group.key)
+          const sessionsExpanded = sessionFolding[group.key] !== true
           const workspaceMarker = workspaceId !== undefined && workspaceDrag?.over?.id === workspaceId
             ? workspaceDrag.over.half
             : null
@@ -510,12 +510,7 @@ function SessionTree({
                 group={group}
                 home={home}
                 t={t}
-                onToggle={() => {
-                  if (group.expanded) {
-                    setExpandedSessionGroups(keys => keys.filter(key => key !== group.key))
-                  }
-                  setGroupExpanded(group.key, !group.expanded)
-                }}
+                onToggle={() => { setGroupExpanded(group.key, !group.expanded) }}
                 onCreate={() => {
                   if (group.workspaceId !== undefined) {
                     setGroupExpanded(group.key, true)
@@ -592,7 +587,10 @@ function SessionTree({
                   type="button"
                   className={css.sessionOverflowButton}
                   aria-expanded={sessionsExpanded}
-                  onClick={() => { setExpandedSessionGroups(keys => toggled(keys, group.key)) }}
+                  // Flip to the other fold polarity: writing true folds the
+                  // list (the only persisted deviation from the default);
+                  // writing false records an explicit expansion.
+                  onClick={() => { setSessionFolded(group.key, sessionsExpanded) }}
                 >
                   {sessionsExpanded
                     ? t('sessions.collapse')
@@ -874,6 +872,7 @@ export function WorkspaceBrowser({
   const orderBy = useStore(s => s.orderBy)
   const showArchived = useStore(s => s.showArchived)
   const groupExpansion = useStore(s => s.groupExpansion)
+  const sessionFolding = useStore(s => s.sessionFolding)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
   const currentBlankSessionId = useSessions((state) => {
     const current = state.current
@@ -1352,6 +1351,8 @@ export function WorkspaceBrowser({
                 workspaceReady={workspacePhase === 'ready' && workspaceStreamState !== 'loading'}
                 groupExpansion={groupExpansion}
                 setGroupExpanded={actions.setGroupExpanded}
+                sessionFolding={sessionFolding}
+                setSessionFolded={actions.setSessionFolded}
                 sessionOrderByAccount={sessionOrderByAccount}
                 syncSessionOrderAccount={actions.syncSessionOrderAccount}
                 setSessionOrder={actions.setSessionOrder}
