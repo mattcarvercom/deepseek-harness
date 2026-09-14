@@ -71,7 +71,7 @@ it('places dynamic Session menu rows by order among the shipped ones and removes
     await row.hover()
     await trigger.click()
     await menu.waitFor()
-    const remainingNames = ['Pin session', 'Rename', 'Fork session', 'Archive session']
+    const remainingNames = ['Pin session', 'Rename', 'Fork session', 'Archive session', 'Delete session']
     const remainingItems = menu.getByRole('menuitem')
     expect(await remainingItems.count()).toBe(remainingNames.length)
     for (const [index, name] of remainingNames.entries()) {
