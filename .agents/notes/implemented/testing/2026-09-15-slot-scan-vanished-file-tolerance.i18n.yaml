@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-09-15-slot-scan-vanished-file-tolerance.md
+2026-09-15-slot-scan-vanished-file-tolerance.md: e05d9f2528124dc3e9a80cbd7f0f90123b355b70
+2026-09-15-slot-scan-vanished-file-tolerance.zh.md: 0dd5290899d241a767febf533a645c0ab173df79
