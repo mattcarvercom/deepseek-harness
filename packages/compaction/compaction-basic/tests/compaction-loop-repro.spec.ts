@@ -139,6 +139,38 @@ class OverflowRecoveryAdapter extends LlmAdapter {
   }
 }
 
+/**
+ * Every conversation request overflows and the offending content is the
+ * newest surface node, which `selectCompactableRange` never touches — so no
+ * single compaction pass can bring a retry back under the test context
+ * window. Reproduces the "one durable surface mutation authorizes a retry
+ * regardless of whether it actually helped" gap directly, rather than
+ * needing several overflow episodes separated by successful steps the way
+ * the live incident this regression pins did. Extends `OverflowRecoveryAdapter`
+ * only for its identical `resolveModel`/`providerRetryPolicy`; `delivery` is
+ * moot since `stream()` is fully overridden below.
+ */
+class PersistentOverflowAdapter extends OverflowRecoveryAdapter {
+  constructor() {
+    super('thrown')
+  }
+
+  override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const trailing = options.messages.at(-1)?.content
+      .map(block => (block.type === 'text' ? block.text : ''))
+      .join('') ?? ''
+    if (trailing.includes('acting as a compaction engine')) {
+      this.summaryRequests.push(options)
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: 'RECOVERY CHECKPOINT' } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+      return
+    }
+    this.conversationRequests.push(options)
+    throw new LlmError('request too large for model context', CONTEXT_WINDOW_EXCEEDED_CODE)
+  }
+}
+
 async function mountInvariants(ctx: Context): Promise<void> {
   await ctx.plugin(InvariantRegistry)
   await ctx.plugin(SessionInvariant)
@@ -500,6 +532,78 @@ describe('context-overflow recovery across the real loop and compaction-basic', 
       expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
         type: 'turn/end',
         data: { reason: { kind: 'completed' } },
+      })
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('does not retry a request a compaction pass could not bring under threshold', async () => {
+    const ctx = new Context()
+    const adapter = new PersistentOverflowAdapter()
+    await mountAgentLoopTestDependencies(ctx)
+    await mountInvariants(ctx)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    await ctx.plugin(TokenMeter)
+    ctx.llm.registerAdapter(['mock'], adapter)
+    ctx.on('agent/request', async (_payload, next) => ({
+      ...await next(), provider: 'mock', model: 'mock',
+    }))
+    await ctx.plugin(BasicCompactionEngine, {
+      thresholdRatio: 1,
+      retainTokens: 100,
+      maxTokens: 64,
+      headroomTokens: 0,
+      compactionRetries: 0,
+      maxOverflowRetries: 1,
+    })
+
+    try {
+      const { agent } = await ctx.agentLoop.createAgent(ctx, {
+        sessionId: SessionId('overflow-unfixable'),
+        seed: overflowHistorySeed(),
+        agentOptions: {
+          provider: 'unconfigured-agent-fallback',
+          model: 'unconfigured-agent-fallback',
+        },
+      })
+
+      // Larger than the 128-token test context window on its own, and it is
+      // the newest surface node once appended — selectCompactableRange never
+      // touches it, so no single compaction pass can shrink the request
+      // enough to fit, no matter how much of the older seeded history it
+      // clears.
+      agent.followup(createUserMessage({
+        content: [{ type: 'text', text: 'OVERFLOW PAYLOAD THAT NEVER SHRINKS '.repeat(40) }],
+        source: { kind: 'user' },
+      }))
+      await agent.whenIdle()
+
+      // Exactly one request was attempted. The compaction pass genuinely ran
+      // (below) — the fix is about not trusting that a pass helped just
+      // because it happened, not about skipping recovery altogether.
+      expect(adapter.conversationRequests).toHaveLength(1)
+      expect(adapter.summaryRequests).toHaveLength(1)
+      expect(JSON.stringify(adapter.conversationRequests[0]!.messages)).toContain('OLD HISTORY SENTINEL')
+
+      const events = agent.session.snapshotEvents()
+      const compaction = events.filter(event =>
+        event.type === 'compaction/start'
+        || event.type === 'compaction/summary'
+        || event.type === 'compaction/end',
+      )
+      expect(compaction.map(event => event.type)).toEqual([
+        'compaction/start',
+        'compaction/summary',
+        'compaction/end',
+      ])
+
+      // The turn ends with the original provider error instead of retrying
+      // (or worse, looping every time a later successful step re-arms the
+      // per-agent overflow-retry budget).
+      expect(events.at(-1)).toMatchObject({
+        type: 'turn/end',
+        data: { reason: { kind: 'error' } },
       })
     } finally {
       await ctx.fiber.dispose()

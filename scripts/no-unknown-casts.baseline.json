@@ -643,7 +643,7 @@
   },
   "packages/client/ui-settings-models/tests/apply.client.spec.ts": {
     "0464c472dfc74994388bf63a6b3c110df506ce44fe47a5040e93c67a5eb3b4ae": 1,
-    "04984a2ce1486250236e638e0197da0a1a840855ed3975c59130a85358c7e5fe": 5,
+    "04984a2ce1486250236e638e0197da0a1a840855ed3975c59130a85358c7e5fe": 3,
     "5c8c41ba658c0576bea6c34b1226c27e7b0328c03c9eea0d6c920f940c9d8f5b": 1
   },
   "packages/client/ui-settings-models/tests/components.client.spec.tsx": {
@@ -1535,9 +1535,6 @@
     "63a69fcdd1764e0ba52911c311b5068815276fab9f673ee498386432f78cd6dc": 2,
     "fc12552d1d3b7146ed53d5d1a2f546ffac66ff774234caade9702fd84f8c0d27": 1
   },
-  "packages/sdk/protocol/tests/transport.spec.ts": {
-    "06af1b2f0b19426e1bc87d38e344c0e5675a4ab1d72b4487741f3b0b8c3eb619": 2
-  },
   "packages/sdk/server/src/server.ts": {
     "04bc8a44533574365dfedf563e2356458bcf95f990a00906938c977c1d683356": 1,
     "5c1e60550b8cda845c02f71cd04a53b55bd092185de3480c8ff86a16547fbedb": 2
@@ -1880,11 +1877,12 @@
   },
   "packages/subagent/subagent-claude-code/tests/subagent-claude-code.spec.ts": {
     "101af668daf0fb9a7df21757c781ed58f7cf6770a1f5021a5da4ce58080c1f5f": 1,
+    "267a1227bfe2dc022f669075950ead7009ff5cde6a3c4e563e936dd5278a752d": 1,
     "2cedee48f4fb8ce4bbd10567fdfbee69e8dd11dbc85af9b824de33c2b77abfbf": 1,
     "4e94c461ab08f535e20f71ebe8bb9a8c911a936c7068f24e259956c06d17c05d": 2,
     "aa1a9402165afaeb270967390b13cae2a59916bc52f13b4f600315d7a0fe2032": 1,
     "cdcbd6cc73a09b6613864cdfb5b14d0cf66dc2484d26916cb32929deca1032de": 3,
-    "f85c96616fff1bb1e21886bd2fad64e9e34d89d090ab96ab7804f702278cd23d": 4,
+    "f85c96616fff1bb1e21886bd2fad64e9e34d89d090ab96ab7804f702278cd23d": 6,
     "fa05a5e504ed74b5a07cb6281c787b507eb6c44db768803f4dad034dd69cb3b9": 1
   },
   "packages/subagent/subagent-codex/tests/real-deepseek.e2e.ts": {

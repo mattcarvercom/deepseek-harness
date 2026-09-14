@@ -475,9 +475,15 @@ export interface ToolRuntimeScheduler {
 
 /**
  * Scheduler entry point omitted from the generated named service API.
+ *
+ * Registered in the global symbol registry: the key is a cross-package
+ * contract between the tool registry and `dsh-agent-loop`, and a source-plane
+ * launch can hold both the `src` and `lib` module copies of this package at
+ * once — a module-local symbol would then miss the service instance built by
+ * the other copy.
  * @internal
  */
-export const TOOL_RUNTIME_SCHEDULER: unique symbol = Symbol('@deepseek-ai/dsh-tools.scheduler')
+export const TOOL_RUNTIME_SCHEDULER: unique symbol = Symbol.for('@deepseek-ai/dsh-tools.scheduler')
 
 /** Canonical error code for cancellation after a tool body was invoked. */
 export const TOOL_ABORTED = 'ABORTED'
