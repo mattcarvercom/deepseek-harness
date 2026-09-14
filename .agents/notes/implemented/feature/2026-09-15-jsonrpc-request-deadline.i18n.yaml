@@ -1,6 +1,25 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-15-jsonrpc-request-deadline.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-15-jsonrpc-request-deadline.md
-2026-09-15-jsonrpc-request-deadline.md: 94b489c9cae10810752acd81ad1b671b50f4c53f
-2026-09-15-jsonrpc-request-deadline.zh.md: 446ee3158b6cddf46eedb3a318de6715a40bf202
+/agent-note-per-request-deadline-on-the-json-rpc-line-transport:
+  en: 3cd314a17fb08960
+  zh: a3a47090e05c9a75
+/agent-note-per-request-deadline-on-the-json-rpc-line-transport/problem:
+  en: 4fbf5bcb939e6dbe
+  zh: 3f75587d2a9ec4e3
+/agent-note-per-request-deadline-on-the-json-rpc-line-transport/decision:
+  en: ca10317d21757256
+  zh: 2bd887fae4f5340f
+/agent-note-per-request-deadline-on-the-json-rpc-line-transport/alternatives-considered:
+  en: 20d082cd8b94a82b
+  zh: f7347396b433b382
+/agent-note-per-request-deadline-on-the-json-rpc-line-transport/consequences:
+  en: 1bccb5aa254228d4
+  zh: a51fa01da0cfa7cb
+/agent-note-per-request-deadline-on-the-json-rpc-line-transport/testing:
+  en: 97b57c65002ac67f
+  zh: 42283a436e0c0367
+/agent-note-per-request-deadline-on-the-json-rpc-line-transport/related:
+  en: 55deb3a8584554b0
+  zh: 294bbc91c96e24b0

@@ -7,18 +7,23 @@ import { chromium } from 'playwright'
 import { expect, it } from 'vitest'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import yaml from 'js-yaml'
-import { WELCOME_NOTICE_VERSION, launchWebScaffold, watchConsole } from './scaffold.ts'
+import { launchWebScaffold, watchConsole } from './scaffold.ts'
 import { ZH_BROWSER_LOCALE } from './support.ts'
+
+// Opaque legacy value: the removed GUI testing notice validated this field
+// against a current version, but the retained ui-settings-general field is
+// now an unvalidated passthrough, so any imported string proves the migration.
+const LEGACY_WELCOME_NOTICE_VERSION = '2026-08-13.1'
 
 it('imports settings.yaml into the profile once and applies the imported values', async () => {
   const harnessHome = mkdtempSync(join(tmpdir(), 'dsh-settings-import-'))
   writeFileSync(join(harnessHome, 'settings.yaml'), [
     'ui-theme:', '  fontSize: 16',
     'ui-developer-tools:', '  enabled: false',
-    'ui-onboarding:', `  welcomeNoticeVersion: '${WELCOME_NOTICE_VERSION}'`,
+    'ui-onboarding:', `  welcomeNoticeVersion: '${LEGACY_WELCOME_NOTICE_VERSION}'`,
     '',
   ].join('\n'))
-  const scaffold = await launchWebScaffold({ harnessHome, welcomeNoticePending: true })
+  const scaffold = await launchWebScaffold({ harnessHome })
   const browser = await chromium.launch()
   try {
     const patchPath = join(harnessHome, 'profiles', 'scaffold', 'cordis.patch.yml')
@@ -27,7 +32,7 @@ it('imports settings.yaml into the profile once and applies the imported values'
       (yaml.load(readFileSync(patchPath, 'utf8'), { schema: entryListSchema }) as Row[]).find(row => row.id === id)?.config
     await expect.poll(() => config('ui-theme')?.['fontSize'], { timeout: 10_000 }).toBe(16)
     expect(config('ui-settings')?.['enabled']).toBe(false)
-    expect(config('ui-settings-general')?.['welcomeNoticeVersion']).toBe(WELCOME_NOTICE_VERSION)
+    expect(config('ui-settings-general')?.['welcomeNoticeVersion']).toBe(LEGACY_WELCOME_NOTICE_VERSION)
     expect(existsSync(join(harnessHome, 'settings.yaml'))).toBe(false)
     expect(readFileSync(join(harnessHome, 'settings.yaml.imported'), 'utf8')).toContain('fontSize: 16')
 

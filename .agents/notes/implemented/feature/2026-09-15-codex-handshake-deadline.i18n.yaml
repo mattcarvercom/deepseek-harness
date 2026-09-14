@@ -1,6 +1,25 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-15-codex-handshake-deadline.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-15-codex-handshake-deadline.md
-2026-09-15-codex-handshake-deadline.md: 6ed8f537b81603449e7e9d82e504b63d836ad3b0
-2026-09-15-codex-handshake-deadline.zh.md: 3da8894a4cfcfc0fa4d15af85788a72c3d018585
+/agent-note-codex-pre-publication-handshake-deadline:
+  en: a23f8f27dd1a2062
+  zh: 191857771ff09c12
+/agent-note-codex-pre-publication-handshake-deadline/problem:
+  en: 0d152df5e211c7bc
+  zh: c086fccfce86e21f
+/agent-note-codex-pre-publication-handshake-deadline/decision:
+  en: a6a055b5977e03f1
+  zh: 3f03ab4462a90e8d
+/agent-note-codex-pre-publication-handshake-deadline/alternatives-considered:
+  en: aa7019ab5a3b50af
+  zh: f55fbdf02b60ef4b
+/agent-note-codex-pre-publication-handshake-deadline/consequences:
+  en: 74000b350473aaba
+  zh: a96dcee41bbc2b48
+/agent-note-codex-pre-publication-handshake-deadline/testing:
+  en: 2b068f4c13e82516
+  zh: 10ce72caab073e6d
+/agent-note-codex-pre-publication-handshake-deadline/related:
+  en: 95371637c96e6401
+  zh: e24cffa6f1aaa7fa

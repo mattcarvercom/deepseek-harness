@@ -6,7 +6,7 @@ import { chromium, type Browser, type Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
-  launchWebScaffold, watchConsole, webSnapshotMode, WELCOME_NOTICE_COPY, type WebScaffold,
+  launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { openSettings, ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 
@@ -23,7 +23,6 @@ describe.skipIf(MODE === 'record').each([false, true])('web e2e: native credenti
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
       deepSeekMissingCredential: true,
-      welcomeNoticePending: true,
       ...desktop ? {} : { extraOverlayPath: fileURLToPath(new URL('./fixtures/onboarding-native/cordis.patch.yml', import.meta.url)) },
     })
     browser = await chromium.launch()
@@ -37,17 +36,11 @@ describe.skipIf(MODE === 'record').each([false, true])('web e2e: native credenti
     await scaffold?.close()
   })
 
-  it('keeps the notice and Models settings without another credential dialog or credential write', async () => {
+  it('keeps Models settings without another credential dialog or credential write', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-onboarding-native'))
     const credentialPath = join(scaffold.harnessHome, '.credentials.yaml')
     const credentials = await readFile(credentialPath, 'utf8')
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
-    const welcome = page.getByRole('dialog', { name: WELCOME_NOTICE_COPY.zh.title })
-    if (!desktop) {
-      await welcome.waitFor()
-      await welcome.getByRole('button', { name: WELCOME_NOTICE_COPY.zh.continueLabel }).click()
-      await welcome.waitFor({ state: 'detached' })
-    }
 
     for (const reload of [false, true]) {
       if (reload) {
@@ -91,7 +84,6 @@ describe.skipIf(MODE === 'record').each([false, true])('web e2e: native credenti
       await settings.getByRole('button', { name: '模型', exact: true }).click()
       await settings.getByLabel('API 密钥', { exact: true }).waitFor()
       expect(await page.getByRole('dialog', { name: '添加一个 API Key 开始使用' }).count()).toBe(0)
-      expect(await welcome.count()).toBe(0)
       expect(await readFile(credentialPath, 'utf8')).toBe(credentials)
       const aria = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(join(SNAPSHOT_DIR, 'models.expected.md'), aria, MODE)

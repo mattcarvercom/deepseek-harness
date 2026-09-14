@@ -7,7 +7,7 @@ import z from '@deepseek-ai/schemastery'
 
 /** Runtime preferences projected to the browser. */
 export interface Config {
-  /** Last acknowledged welcome notice version. */
+  /** Last version acknowledged by the removed GUI testing notice; retained so stored documents stay valid. */
   welcomeNoticeVersion: Volatile<string | undefined>
 }
 

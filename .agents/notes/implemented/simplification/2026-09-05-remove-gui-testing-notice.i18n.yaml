@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-05-remove-gui-testing-notice.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-09-05-remove-gui-testing-notice.md
+/agent-note-remove-the-gui-testing-notice:
+  en: d9de40cbc3726fce
+  zh: ff7a650921bb2817
+/agent-note-remove-the-gui-testing-notice/problem:
+  en: 628828705e9d4f4b
+  zh: ce10f267ce66da6e
+/agent-note-remove-the-gui-testing-notice/decision:
+  en: d36b3f3b01fb0d6b
+  zh: 753f0556c3de4791
+/agent-note-remove-the-gui-testing-notice/alternatives-considered:
+  en: 62e2d3acaf9857f6
+  zh: 1530fa6a0dd3a3e2
+/agent-note-remove-the-gui-testing-notice/consequences:
+  en: 7e5d667af3a6d8a9
+  zh: 8861fd62492e33fc

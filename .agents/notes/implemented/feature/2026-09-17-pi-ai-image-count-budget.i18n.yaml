@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-17-pi-ai-image-count-budget.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-17-pi-ai-image-count-budget.md
-2026-09-17-pi-ai-image-count-budget.md: 1465b3f836523c252382c139c6578eb4d63f517e
-2026-09-17-pi-ai-image-count-budget.zh.md: ecd097c64dbb1b3c6db60596f2816196cc062168
+/agent-note-pi-ai-routes-bound-retained-images-per-request:
+  en: 4b2d36cf1b3809e3
+  zh: b31f49f359d6e816
+/agent-note-pi-ai-routes-bound-retained-images-per-request/problem:
+  en: 66c9d53b5e48b1f1
+  zh: da554ab0fd224175
+/agent-note-pi-ai-routes-bound-retained-images-per-request/decision:
+  en: f00dd6bbe88f2d24
+  zh: d5d4c55e001dbf06
+/agent-note-pi-ai-routes-bound-retained-images-per-request/testing:
+  en: 3f1083a6e8fd0a21
+  zh: b4cb97f99381c253
+/agent-note-pi-ai-routes-bound-retained-images-per-request/alternatives-considered:
+  en: dcf83df79356ea12
+  zh: cc5055e5202f9708
+/agent-note-pi-ai-routes-bound-retained-images-per-request/consequences:
+  en: 77de64b09e64cc62
+  zh: a354313967a9e240

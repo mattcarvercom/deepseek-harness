@@ -9,8 +9,8 @@
   en: af0ef4476e8b699f
   zh: 1071d810d1080026
 /deepseek-ai-dsh-timeout/summary:
-  en: 13fc36a866f4ae6d
-  zh: 02a9ab4bd48e968a
+  en: 8b92dd5b69f35dd5
+  zh: e662a3509cff5721
 /deepseek-ai-dsh-timeout/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
@@ -29,6 +29,9 @@
 /deepseek-ai-dsh-timeout/use-this-package/streaming-with-an-idle-watchdog:
   en: f464a16371ff00d1
   zh: 3c62c560c9dbc804
+/deepseek-ai-dsh-timeout/use-this-package/streaming-with-a-progress-deadline:
+  en: 43e2f43d13d4d9fe
+  zh: aeb7a25712f58783
 /deepseek-ai-dsh-timeout/use-this-package/what-does-not-get-a-timeout:
   en: 73e04894d01ddb23
   zh: 4830e47cc55143ff
@@ -36,8 +39,8 @@
   en: 6c052aa1171a2e3b
   zh: 2a37575eb6059cc9
 /deepseek-ai-dsh-timeout/understand-the-implementation/source-map:
-  en: be1b396f4153b9d0
-  zh: a762ab1642b3431e
+  en: fcd74dfcdc17876e
+  zh: e7969644bd188146
 /deepseek-ai-dsh-timeout/understand-the-implementation/how-a-deadline-fuses-sources:
   en: 940080c53d1d0dac
   zh: b86e7f51434a3f2c
@@ -45,8 +48,11 @@
   en: ceea0b46e6b8e15f
   zh: de87dccf08764061
 /deepseek-ai-dsh-timeout/understand-the-implementation/why-an-idle-watchdog-rearms:
-  en: 7200cfa587c53a9c
-  zh: 09d6b67dc1a31c5e
+  en: 360b39888ca6e4fd
+  zh: 1552616644573495
+/deepseek-ai-dsh-timeout/understand-the-implementation/why-a-progress-deadline-runs-across-gaps:
+  en: 51a01421d1436c84
+  zh: f347685485ed64df
 /deepseek-ai-dsh-timeout/further-exploration:
   en: 4c29a947e28047ad
   zh: d80f5ecb50b16203
@@ -57,8 +63,8 @@
   en: 04cc18d90bf9382d
   zh: 2c8b75063c46c620
 /deepseek-ai-dsh-timeout/known-limitations-and-deferred-work:
-  en: cff4b9d3cfc23a97
-  zh: 9eb52fbe4c8a6c30
+  en: 0cd350384f18b411
+  zh: 2a882d7b2dfa04ee
 /deepseek-ai-dsh-timeout/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 3bb0c20c93f16f98

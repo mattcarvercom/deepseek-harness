@@ -1,6 +1,25 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-15-subagent-run-activity-watchdog.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-15-subagent-run-activity-watchdog.md
-2026-09-15-subagent-run-activity-watchdog.md: 140e6721c3c16aed51e2a93a14839a9493101e38
-2026-09-15-subagent-run-activity-watchdog.zh.md: 0af739158e7546b17eb9ccef24283d2bbad943e8
+/agent-note-subagent-run-activity-watchdog:
+  en: f26b29c0e1fe2f0b
+  zh: bbcc147cdd97c634
+/agent-note-subagent-run-activity-watchdog/problem:
+  en: 0e3758c2b5fcccca
+  zh: da5f87b7c0f8db4b
+/agent-note-subagent-run-activity-watchdog/decision:
+  en: 298b9baa5dd07351
+  zh: 6aa2e4afc81afcfe
+/agent-note-subagent-run-activity-watchdog/alternatives-considered:
+  en: 22a8ed690e394143
+  zh: 04f1ec7623c70c77
+/agent-note-subagent-run-activity-watchdog/consequences:
+  en: 3d3d28cb44d60fd6
+  zh: 76b744038c65bd1b
+/agent-note-subagent-run-activity-watchdog/testing:
+  en: e82d0a8a34f09d65
+  zh: abd20dd668237fbf
+/agent-note-subagent-run-activity-watchdog/related:
+  en: ebb35edd39f1c246
+  zh: 796ca6f09b100c9b
