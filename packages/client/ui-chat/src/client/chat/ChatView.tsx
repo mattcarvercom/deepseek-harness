@@ -3,7 +3,7 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import type {
-  ConversationTimelineSnapshot, RenderMessageImages,
+  ConversationTimelineSnapshot, RenderMessageImages, TurnLocation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -14,6 +14,7 @@ import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { TurnNavigator } from './TurnNavigator.tsx'
 import { mergeTurnRailItems, type TurnRailItem } from './turn-rail-items.ts'
 import { formatRunDuration } from './message-chrome.ts'
+import { useTurnDataValue } from './use-turn-data.ts'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
@@ -156,19 +157,22 @@ function observedRpcIds(
   return observed
 }
 
-function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | null {
-  let latest: number | null = null
+function runningTurn(timeline: ConversationTimelineSnapshot): TurnLocation | null {
+  let latest: TurnLocation | null = null
   for (const turn of timeline.turns.values()) {
-    if (turn.status === 'open') latest = turn.start?.time ?? null
+    if (turn.status === 'open') latest = turn
   }
   return latest
 }
 
 /** Turn-level model activity label retained across first-token, tool, and streaming phases. */
-function TurnStatus({ startTime, t }: {
+function TurnStatus({ startTime, compactingSince, t }: {
   /** The running turn's logged `turn/start` time; null falls back to mount
    *  time when that boundary is outside the window. */
   startTime: number | null
+  /** Epoch ms of the open compaction's `compaction/start`; undefined when the
+   *  turn is not compacting. */
+  compactingSince?: number | undefined
   /** The owning view's locale seat. */
   t: ChatViewSlotProps['t']
 }) {
@@ -177,24 +181,37 @@ function TurnStatus({ startTime, t }: {
   // elapsed time and the final footer's Ran-for label matches this clock.
   const anchor = startTime ?? mountedAt
   const [elapsedMs, setElapsedMs] = useState(() => Math.max(0, Date.now() - anchor))
+  const [compactionElapsedMs, setCompactionElapsedMs] = useState(() =>
+    compactingSince === undefined ? 0 : Math.max(0, Date.now() - compactingSince))
   useEffect(() => {
     const tick = (): void => {
       setElapsedMs(Math.max(0, Date.now() - anchor))
+      if (compactingSince !== undefined) setCompactionElapsedMs(Math.max(0, Date.now() - compactingSince))
     }
     tick()
     const id = setInterval(tick, 1000)
     return () => { clearInterval(id) }
-  }, [anchor])
+  }, [anchor, compactingSince])
   // Short turns keep the plain label; the clock only appears once the turn
   // has clearly been running for a while.
   const showClock = elapsedMs >= 15_000
   return (
-    <div className={css.turnStatus} role="status" aria-live="polite">
-      {t('chat.deepDiving')}
-      {showClock && (
-        <span className={css.turnStatusClock} aria-hidden>
-          {formatRunDuration(elapsedMs, t)}
-        </span>
+    <div className={css.turnStatusGroup} role="status" aria-live="polite">
+      <div className={css.turnStatus}>
+        {t('chat.deepDiving')}
+        {showClock && (
+          <span className={css.turnStatusClock} aria-hidden>
+            {formatRunDuration(elapsedMs, t)}
+          </span>
+        )}
+      </div>
+      {compactingSince !== undefined && (
+        <div className={css.turnStatusCompaction}>
+          {t('chat.compacting')}
+          <span className={css.turnStatusClock} aria-hidden>
+            {formatRunDuration(compactionElapsedMs, t)}
+          </span>
+        </div>
       )}
     </div>
   )
@@ -299,7 +316,11 @@ export function ChatView({
     owner => renderSlot('conversation.message.images', { ...owner, loadImage }),
     [loadImage, renderSlot],
   )
-  const runningTurnStart = useMemo(() => runningTurnStartTime(timeline), [timeline])
+  const runningTurnLocation = useMemo(() => running ? runningTurn(timeline) : null, [running, timeline])
+  // The compaction subline reads the running turn's published start time; the
+  // store is reference-stable per turn, so this subscription is inert outside
+  // a compaction window.
+  const compactingSince = useTurnDataValue(runningTurnLocation?.data, 'compaction')
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const columnRef = useRef<HTMLDivElement | null>(null)
@@ -805,7 +826,13 @@ export function ChatView({
               double-render the same wait. */}
           {/* Turn-level loading signal: rides the whole running turn (first-token
               wait, tool execution, streaming) so it never flickers per step. */}
-          {running && <TurnStatus startTime={runningTurnStart} t={t} />}
+          {running && (
+            <TurnStatus
+              startTime={runningTurnLocation?.start?.time ?? null}
+              compactingSince={compactingSince}
+              t={t}
+            />
+          )}
           {pendingSteering.map(item => (
             <PendingSteeringBubble
               key={item.id}

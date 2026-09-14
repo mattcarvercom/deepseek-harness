@@ -43,7 +43,7 @@ import { SystemPromptNodeView } from '../src/client/chat/SystemPromptRow.tsx'
 import { formatRunDuration } from '../src/client/chat/message-chrome.ts'
 import { ChatSnapshotBuilder } from '../src/client/conversation-nodes/chat-snapshot-builder.ts'
 import type { TurnProcessSpec } from '../src/client/contract/turn-process.ts'
-import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
+import { chatSnapshotFixture, FixtureTurnDataStore } from './chat-snapshot-fixture.client.ts'
 
 // Every session-scope fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
 const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined })) as GlobalStandardProps['useResource']
@@ -2202,6 +2202,46 @@ describe('ChatView', () => {
     )
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByRole('status').textContent).toMatch(/^深度求索中\.\.\.1小时05分0\d秒$/)
+  })
+
+  it('shows the compaction subline with its own clock while the running turn compacts', () => {
+    const startTime = Date.now() - 2_000
+    const trigger: UserMessageNode = { ...user(1, 'go'), time: startTime + 1 }
+    const base = chatSnapshotFixture({
+      nodes: [trigger],
+      turnTimings: new Map([[1, { startTime }]]),
+    })
+    const data = base.timeline.turns.get(1)!.data as FixtureTurnDataStore
+    data.set('compaction', Date.now() - 65_000)
+    data.publish()
+    const h = makeHarness({}, { running: true }, base)
+    const view = render(<h.ChatView {...h.props} />)
+    const status = view.getByRole('status')
+    // The main pill is still under its 15s clock gate, but the subline shows from the start.
+    expect(status.textContent).toMatch(/^深度求索中\.\.\.正在压缩对话\.\.\.1分0\d秒$/)
+    expect(status.querySelectorAll('[aria-hidden="true"]')).toHaveLength(1)
+    act(() => {
+      data.remove('compaction')
+      data.publish()
+    })
+    expect(status.textContent).toBe('深度求索中...')
+    expect(status.querySelector('[aria-hidden="true"]')).toBeNull()
+  })
+
+  it('keeps the main running clock next to the compaction subline once past the 15s gate', () => {
+    const startTime = Date.now() - 125_000
+    const trigger: UserMessageNode = { ...user(1, 'go'), time: startTime + 1 }
+    const base = chatSnapshotFixture({
+      nodes: [trigger],
+      turnTimings: new Map([[1, { startTime }]]),
+    })
+    const data = base.timeline.turns.get(1)!.data as FixtureTurnDataStore
+    data.set('compaction', Date.now() - 5_000)
+    data.publish()
+    const h = makeHarness({}, { running: true }, base)
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('status').textContent)
+      .toMatch(/^深度求索中\.\.\.2分0\d秒正在压缩对话\.\.\.\d秒$/)
   })
 
   it('hands each ordered root call to the keyed business-node slot', () => {

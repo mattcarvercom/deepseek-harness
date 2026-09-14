@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-14-compaction-progress-subline.md
+2026-09-14-compaction-progress-subline.md: 06b79c39f7fdcfe6c20079af1888465a40e51de6
+2026-09-14-compaction-progress-subline.zh.md: f3a76c132d77fae2c64556de51d1e3c4f7cf046d

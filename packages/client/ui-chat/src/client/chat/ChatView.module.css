@@ -78,10 +78,17 @@
    tool rows match Think chrome (no selected ring). */
 
 /* Turn activity keeps the former loader's one-line footprint. A pale
-   brand-blue band sweeps from left to right; reduced-motion keeps it static. */
-.turnStatus {
+   brand-blue band sweeps from left to right; reduced-motion keeps it static.
+   The group wraps the pill and, during compaction, its grey subline. */
+.turnStatusGroup {
   align-self: flex-start;
   flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.turnStatus {
   display: inline-flex;
   align-items: center;
   height: calc(26px + var(--dsh-content-font-delta, 0px));
@@ -120,6 +127,18 @@
   font-variant-numeric: tabular-nums;
   color: var(--dsw-alias-label-caption);
   -webkit-text-fill-color: var(--dsw-alias-label-caption);
+}
+
+/* Grey progress subline shown while the running turn is compacting; its
+   clock runs from compaction start without the main pill's 15s gate. */
+.turnStatusCompaction {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
+  color: var(--dsw-alias-label-caption);
 }
 
 @keyframes dsh-turn-status-shimmer {
