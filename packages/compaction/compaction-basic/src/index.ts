@@ -200,6 +200,7 @@ export class BasicCompactionEngine extends CompactionEngine {
         // durable reduction is sufficient retry proof only when it actually
         // brought the surface back under threshold; do not discard it just
         // because the optional second phase threw. Cancellation still wins.
+        // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while recovery is awaited.
         if (!signal.aborted && agent.session.surface.replaceGeneration > generation
           && await this.isUnderOverflowThreshold(agent, policy, target, signal)) {
           ctx.logger.warn(
@@ -210,12 +211,14 @@ export class BasicCompactionEngine extends CompactionEngine {
           return { kind: 'retry' }
         }
         ctx.logger.warn(
+          // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while recovery is awaited.
           `context-overflow compaction failed: ${message}; ${signal.aborted
             ? 'cancellation prevents retry'
             : 'preserving the original request error'}`,
         )
         return next()
       }
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- the signal can abort while compaction is awaited.
       if (signal.aborted
         || agent.session.surface.replaceGeneration <= generation) return next()
       // `selectCompactableRange` never shrinks the newest balanced surface
