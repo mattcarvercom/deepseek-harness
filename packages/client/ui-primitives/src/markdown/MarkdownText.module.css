@@ -465,3 +465,11 @@
   font-size: 12px;
   line-height: 18px;
 }
+
+/* Read-along highlight: the sentence currently being spoken, in the link
+   blue rather than a neutral tint so it stands out from the transcript. */
+.readHighlight {
+  background: color-mix(in srgb, var(--dsw-alias-link) 26%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}

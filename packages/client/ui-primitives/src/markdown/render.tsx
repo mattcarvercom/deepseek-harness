@@ -163,6 +163,14 @@ export interface MarkdownPathImages {
   resolve(value: string): string | undefined
 }
 
+/** One Markdown-source range to mark as highlighted inside the rendered text. */
+export interface MarkdownHighlightRange {
+  /** Start offset in the Markdown source, inclusive. */
+  readonly start: number
+  /** End offset in the Markdown source, exclusive. */
+  readonly end: number
+}
+
 /**
  * File-mention affordance for inline code: the owner resolves an authored
  * token to the file it names, using its own vocabulary of real files — the
@@ -193,6 +201,11 @@ export interface MarkdownRenderContext {
   readonly fileMentions: MarkdownFileMentions | undefined
   /** Local-path image vocabulary; absent wherever no rewriting owner exists. */
   readonly pathImages: MarkdownPathImages | undefined
+  /**
+   * Read-along highlight ranges in Markdown source offsets; absent renders
+   * plain. Ranges are read in order and must not overlap.
+   */
+  readonly highlight?: readonly MarkdownHighlightRange[] | undefined
   /** Inside an anchor's children: interactive mentions must not nest there. */
   readonly inLink?: boolean
   /** Reference targets visible to this pass. */
@@ -270,10 +283,51 @@ function renderChildren(
   return nodes.map((node, index) => renderNode(node, index, context))
 }
 
+/**
+ * Split one literal node's value into plain and highlighted spans for the
+ * pass's source-offset ranges. The pinned DOM is untouched without an
+ * intersecting range: callers keep the plain string.
+ * @param value - the node's literal text.
+ * @param node - the node locating the value in the Markdown source.
+ * @param context - the render pass.
+ * @returns the spans in order, or undefined when nothing intersects.
+ */
+function highlightSpans(
+  value: string,
+  node: Md.Text | Md.InlineCode,
+  context: MarkdownRenderContext,
+): ReactNode[] | undefined {
+  const ranges = context.highlight
+  if (ranges === undefined || ranges.length === 0) return undefined
+  /* v8 ignore next -- parseGfm stamps every node's position. */
+  const start = node.position?.start.offset ?? 0
+  /* v8 ignore next -- parseGfm stamps every node's position. */
+  const end = node.position?.end.offset ?? start + value.length
+  const spans: ReactNode[] = []
+  let cursor = start
+  for (const range of ranges) {
+    const from = Math.max(range.start, start)
+    const to = Math.min(range.end, end)
+    if (to <= from) continue
+    if (from > cursor) spans.push(value.slice(cursor - start, from - start))
+    spans.push(
+      <mark key={`mark-${String(from)}`} className={css.readHighlight}>
+        {value.slice(from - start, to - start)}
+      </mark>,
+    )
+    cursor = to
+  }
+  if (spans.length === 0) return undefined
+  if (cursor < end) spans.push(value.slice(cursor - start))
+  return spans
+}
+
 function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderContext): ReactNode {
   switch (node.type) {
-    case 'text':
-      return node.value
+    case 'text': {
+      const spans = highlightSpans(node.value, node, context)
+      return spans === undefined ? node.value : <Fragment key={key}>{spans}</Fragment>
+    }
     case 'paragraph':
       return <p key={key}>{renderChildren(node.children, context)}</p>
     case 'heading':
@@ -328,7 +382,8 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
           </code>
         )
       }
-      return <code key={key}>{value}</code>
+      const spans = highlightSpans(value, node, context)
+      return <code key={key}>{spans ?? value}</code>
     }
     case 'html':
       // No HTML parser enters the pipeline: raw HTML stays literal text.

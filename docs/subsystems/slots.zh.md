@@ -140,8 +140,10 @@ Factory: conversation.content [ConversationContent]
 │     │        │  └─ calls Factory: conversation.chat.user.content
 │     │        ├─ key=assistant-step [AssistantNodeView / AssistantMarkdown]
 │     │        │  ├─ conversation.chat.message.images [MessageImages]
-│     │        │  └─ conversation.chat.reasoning.body [DefaultReasoningBody]
-│     │        │     └─ calls Factory: conversation.chat.reasoning.content
+│     │        │  ├─ conversation.chat.reasoning.body [DefaultReasoningBody]
+│     │        │  │  └─ calls Factory: conversation.chat.reasoning.content
+│     │        │  ├─ conversation.chat.step-actions
+│     │        │  └─ conversation.chat.stream-actions
 │     │        ├─ key=tool-call [ToolCallTree]
 │     │        │  └─ tool.call.toolview
 │     │        │     └─ key=read_image [ReadImageRow / ToolRow]

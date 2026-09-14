@@ -19,6 +19,7 @@ class TestPersistence extends SessionPersistence {
   flush(): Promise<void> { return Promise.resolve() }
   stat(): Promise<SessionPersistenceSnapshot | undefined> { return Promise.resolve(undefined) }
   list(): Promise<readonly SessionPersistenceSnapshot[]> { return Promise.resolve([]) }
+  delete(): Promise<boolean> { return Promise.resolve(false) }
 }
 
 class RecordingAdapter extends LlmAdapter {
