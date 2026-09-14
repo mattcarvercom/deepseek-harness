@@ -87,7 +87,8 @@ export interface ScannedFile {
 /**
  * Parse every file matching `patterns`, keeping the ones that carry a slot
  * contract merge or a registration call. Files without either are skipped so
- * the scan stays cheap over the whole workspace.
+ * the scan stays cheap over the whole workspace; a file deleted between the
+ * listing and the read is skipped as well.
  * @param scanRoot - repository root the patterns resolve against.
  * @param patterns - glob(s) selecting the TypeScript/TSX files to scan.
  * @returns one entry per interesting file, in path order.
@@ -99,7 +100,8 @@ export function scanSlotFiles(scanRoot: string, patterns: readonly string[]): Sc
     .map(path => path.split(sep).join('/')))].sort()
   for (const rel of rels) {
     const abs = resolve(scanRoot, rel)
-    const text = readFileSync(abs, 'utf8')
+    const text = readListed(abs)
+    if (text === undefined) continue
     if (!MERGE_HEAD.test(text) && !REGISTER_HEAD.test(text)) continue
     out.push({
       rel,
@@ -114,7 +116,8 @@ export function scanSlotFiles(scanRoot: string, patterns: readonly string[]): Sc
  * Index every exported type declaration of the scanned packages, keeping JSDoc.
  * The catalog resolves owner-props and inject-face shapes through this index
  * instead of a type-checker program: the declaration text with its member
- * documentation IS the teaching material a registrant needs.
+ * documentation IS the teaching material a registrant needs. A file deleted
+ * between the listing and the read is skipped rather than failing the scan.
  * @param scanRoot - repository root the patterns resolve against.
  * @param patterns - glob(s) selecting the TypeScript/TSX files to index.
  * @returns name → declaration, with names declared more than once dropped as ambiguous.
@@ -126,7 +129,9 @@ export function indexExportedTypes(scanRoot: string, patterns: readonly string[]
     .map(path => path.split(sep).join('/')))].sort()
   for (const rel of rels) {
     const abs = resolve(scanRoot, rel)
-    const sf = ts.createSourceFile(abs, readFileSync(abs, 'utf8'), ts.ScriptTarget.Latest, true, scriptKindOf(rel))
+    const text = readListed(abs)
+    if (text === undefined) continue
+    const sf = ts.createSourceFile(abs, text, ts.ScriptTarget.Latest, true, scriptKindOf(rel))
     for (const statement of sf.statements) {
       if (!ts.isInterfaceDeclaration(statement) && !ts.isTypeAliasDeclaration(statement)) continue
       if (!statement.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword)) continue
@@ -308,6 +313,25 @@ function slotModuleBodies(sf: ts.SourceFile): ts.ModuleBlock[] {
 function isSlotsReceiver(receiver: ts.Expression, sf: ts.SourceFile): boolean {
   const text = receiver.getText(sf)
   return text === 'slots' || text.endsWith('.slots')
+}
+
+/**
+ * Read one file a glob listing just produced. The listing and the read are not
+ * atomic: a concurrent spec worker can delete a listed file in the window
+ * between them (the oxlint contract spec writes and removes short-lived `.ts`
+ * probes into package src directories while catalog specs scan the real
+ * workspace). A vanished file is reported as undefined so the scan skips it;
+ * every other read error still throws.
+ * @param abs - absolute path the listing returned.
+ * @returns the file text, or undefined when the file no longer exists.
+ */
+function readListed(abs: string): string | undefined {
+  try {
+    return readFileSync(abs, 'utf8')
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
+    throw error
+  }
 }
 
 /** The workspace package name owning a repo-relative file, memoized per package root. */
