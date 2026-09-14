@@ -1,8 +1,8 @@
 /** Localized copy adapters for Cordis-free UI primitives used by Tool cards. */
 
+import { markdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   DiffBlockLabels,
-  MarkdownLabels,
   ReadBlockLabels,
   SearchBlockLabels,
   WebBlockLabels,
@@ -10,18 +10,6 @@ import type {
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 
 type T = TranslateNS<'conversation'>
-
-/**
- * Build localized Markdown chrome labels.
- * @param t - Conversation locale seat.
- * @returns Markdown chrome labels.
- */
-export function markdownLabels(t: T): MarkdownLabels {
-  return {
-    code: { copyLabel: t('copy'), copiedLabel: t('copied') },
-    footnotes: t('markdown.footnotes'),
-  }
-}
 
 /**
  * Build localized diff-card chrome labels.

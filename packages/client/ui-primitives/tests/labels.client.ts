@@ -10,6 +10,7 @@ import type {
 
 export const markdownLabels: MarkdownLabels = {
   code: { copyLabel: '复制', copiedLabel: '复制成功' },
+  mermaid: { renderError: 'Mermaid 图渲染失败', copiedImage: '图片已复制', copyImage: '复制图片' },
   footnotes: 'Footnotes',
 }
 

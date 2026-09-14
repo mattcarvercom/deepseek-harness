@@ -10,9 +10,10 @@ import {
   IconUserOutline16,
   JsonTree,
   MarkdownText,
+  markdownLabels,
   Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { JsonTreeLabels, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { JsonTreeLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { structuredPatch } from 'diff'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {
@@ -235,13 +236,6 @@ function jsonTreeLabels(t: TrajectoryTranslate): JsonTreeLabels {
     collapseNode: t('json.collapseNode'),
     expandNode: t('json.expandNode'),
     copyButtonTitle: action => t('copy.optionsHint', { action }),
-  }
-}
-
-function markdownLabels(t: TrajectoryTranslate): MarkdownLabels {
-  return {
-    code: { copyLabel: t('copy'), copiedLabel: t('copied') },
-    footnotes: t('markdown.footnotes'),
   }
 }
 

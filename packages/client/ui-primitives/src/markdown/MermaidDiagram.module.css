@@ -1,0 +1,66 @@
+/* Visual baseline: the same card tokens as CodeBlock.module.css so a
+   rendered diagram and its source fallback share one geometry. */
+
+/* Positions the copy-actions overlay over the card; the card keeps its
+   own geometry below. */
+.diagramWrap {
+  position: relative;
+}
+
+.diagram {
+  --dsl-mermaid-border-radius: 12px;
+
+  margin: 16px 0;
+  padding: 16px;
+  background: var(--dsw-alias-markdown-code-block);
+  border-radius: var(--dsl-mermaid-border-radius);
+  text-align: center;
+  overflow-x: auto;
+}
+
+/* mermaid sizes its SVG from the computed layout; let wide diagrams scale
+   down to the column instead of forcing horizontal scroll at their full size. */
+.diagram :global(svg) {
+  max-width: 100%;
+  height: auto;
+}
+
+.fallback {
+  display: block;
+}
+
+.error {
+  margin: 0 0 8px;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-state-error-primary);
+  overflow-wrap: anywhere;
+}
+
+.detail {
+  font-family: var(--ds-font-family-code);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  z-index: 1;
+}
+
+.actionButton {
+  /* Card-colored chip: blends into the card corner, stands out over the
+     diagram strokes; inherits the surrounding label color. */
+  background-color: var(--dsw-alias-markdown-code-block);
+  border: none;
+  padding: 1px 6px;
+  margin: 0;
+  color: inherit;
+  cursor: pointer;
+  font: 11px/18px var(--dsw-font-family);
+  border-radius: 6px;
+}

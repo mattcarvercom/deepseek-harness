@@ -19,9 +19,18 @@ export function MarkdownBody({ content, t }: MarkdownBodyProps): ReactNode {
   const copyLabel = t('code.copy')
   const copiedLabel = t('code.copied')
   const footnotes = t('footnotes')
+  const mermaidRenderError = t('mermaid.renderError')
+  const mermaidCopyImage = t('mermaid.copyImage')
+  const mermaidCopiedImage = t('mermaid.copiedImage')
   const labels = useMemo<MarkdownLabels>(() => ({
-    code: { copyLabel, copiedLabel }, footnotes,
-  }), [copyLabel, copiedLabel, footnotes])
+    code: { copyLabel, copiedLabel },
+    mermaid: {
+      renderError: mermaidRenderError,
+      copyImage: mermaidCopyImage,
+      copiedImage: mermaidCopiedImage,
+    },
+    footnotes,
+  }), [copyLabel, copiedLabel, mermaidRenderError, mermaidCopyImage, mermaidCopiedImage, footnotes])
   if (content.kind !== 'text') return null
   return (
     <div className={css.document} data-document-markdown>
