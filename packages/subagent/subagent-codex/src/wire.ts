@@ -275,7 +275,7 @@ export class CodexAppServerWire {
         experimentalApi: false,
         requestAttestation: false,
       },
-    }, signal), signal), 'initialize response')
+    }, { signal }), signal), 'initialize response')
     this.transport.notify('initialized')
     await this.guarded(this.transport.flush(), signal)
   }
@@ -291,7 +291,7 @@ export class CodexAppServerWire {
       ephemeral: true,
       ...this.model === undefined ? {} : { model: this.model },
       ...THREAD_PERMISSION_PARAMS[this.permissionMode],
-    }, signal), signal), 'thread/start response')
+    }, { signal }), signal), 'thread/start response')
     const thread = object(response.thread, 'thread/start thread')
     const id = string(thread.id, 'thread/start thread id')
     if (thread.ephemeral !== true) {
@@ -321,7 +321,7 @@ export class CodexAppServerWire {
       const response = object(await this.guarded(this.transport.request('turn/start', {
         threadId,
         input: texts.map(text => ({ type: 'text', text, text_elements: [] })),
-      }, signal), signal), 'turn/start response')
+      }, { signal }), signal), 'turn/start response')
       const turn = object(response.turn, 'turn/start turn')
       this.commitTurnId(string(turn.id, 'turn/start turn id'))
     } catch (error: unknown) {
