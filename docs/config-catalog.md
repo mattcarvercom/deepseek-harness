@@ -2440,13 +2440,19 @@ export interface Config {
   permissionMode?: ClaudeCodePermissionMode
   /** Grace in milliseconds between Claude Code managed-range termination tiers. */
   disposeGraceMs?: number
+  /**
+   * Silence bound in milliseconds for SDK stream frames after the query is
+   * published; a silent CLI fails the delegation at the deadline with
+   * category `transport`. `0` leaves the run unbounded.
+   */
+  runActivityTimeoutMs?: number
 }
 
 /** Profile-selectable non-interactive Claude Code permission mode. */
 export type ClaudeCodePermissionMode = typeof CLAUDE_CODE_PERMISSION_MODES[number]
 ```
 
-Source: [`packages/subagent/subagent-claude-code/src/index.ts:38`](../packages/subagent/subagent-claude-code/src/index.ts)
+Source: [`packages/subagent/subagent-claude-code/src/index.ts:39`](../packages/subagent/subagent-claude-code/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-codex"></a>
 
@@ -2477,6 +2483,12 @@ export interface Config {
    * `0` disables the deadline.
    */
   handshakeTimeoutMs?: number
+  /**
+   * Silence bound in milliseconds for protocol frames while the published
+   * turn is in flight; a silent app-server fails the delegation at the
+   * deadline with category `transport`. `0` leaves the turn unbounded.
+   */
+  runActivityTimeoutMs?: number
 }
 
 /** Profile-selectable non-interactive Codex permission mode. */
@@ -2486,7 +2498,7 @@ export type CodexPermissionMode =
   | 'dangerously-bypass-approvals-and-sandbox'
 ```
 
-Source: [`packages/subagent/subagent-codex/src/index.ts:37`](../packages/subagent/subagent-codex/src/index.ts)
+Source: [`packages/subagent/subagent-codex/src/index.ts:38`](../packages/subagent/subagent-codex/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-dsh-sdk"></a>
 

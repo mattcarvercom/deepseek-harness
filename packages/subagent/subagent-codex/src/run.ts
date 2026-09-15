@@ -39,6 +39,9 @@ export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 /** Default app-server handshake deadline; `0` disables the deadline. */
 export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 60_000
 
+/** Default post-publication protocol activity deadline; `0` disables it. */
+export const DEFAULT_RUN_ACTIVITY_TIMEOUT_MS = 300_000
+
 interface CodexPackageManifest {
   readonly bin: {
     readonly codex: string
@@ -160,6 +163,14 @@ export interface CodexRunSpec {
    * (`initialize`, `thread/start`); `0` leaves them unbounded.
    */
   readonly handshakeTimeoutMs: number
+  /**
+   * Silence bound in milliseconds for protocol frames while the published
+   * turn is in flight; the run fails at the deadline with category
+   * `transport`. `0` leaves the turn unbounded.
+   */
+  readonly runActivityTimeoutMs: number
+  /** Host sink for safe lines about frames that cannot belong to this run. */
+  readonly onUnassociatedFrame?: (line: string) => void
   /** Shared subprocess service spawn operation. */
   readonly spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle
   /** Diagnostic sink for a post-publication error flattened into a result. */
@@ -304,6 +315,8 @@ export async function startCodexRun(
     spec.permissionMode,
     spec.model,
     spec.handshakeTimeoutMs,
+    spec.runActivityTimeoutMs,
+    spec.onUnassociatedFrame,
   )
   const onStderr = (chunk: Buffer | string): void => {
     const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
@@ -469,11 +482,17 @@ export async function startCodexRun(
             // The wire failure remains authoritative when exit observation fails.
           }
         }
-        const facts = error instanceof CodexRunFailure
+        let facts: CodexFailureFacts = error instanceof CodexRunFailure
           ? error.facts
           : endedBeforeTerminal && processFailureFacts !== undefined
             ? processFailureFacts
             : withProcessOutcome(wire.collectFailure())
+        // A watchdog trip or a dropped terminal frame can outlive the child
+        // exit that first rejected the race; its detail stays authoritative.
+        const detail = wire.collectFailureDetail()
+        if (detail !== undefined) {
+          facts = { ...facts, detail }
+        }
         recordFailureDiagnostic(facts)
         throw error instanceof CodexRunFailure
           ? error

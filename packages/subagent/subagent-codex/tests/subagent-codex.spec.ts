@@ -25,6 +25,7 @@ import {
   codexAppServerArgv,
   DEFAULT_DISPOSE_GRACE_MS,
   DEFAULT_HANDSHAKE_TIMEOUT_MS,
+  DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
   disposeCodexChild,
   startCodexRun,
   textTask,
@@ -259,6 +260,7 @@ function runSpec(
     env: {},
     disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
     handshakeTimeoutMs: DEFAULT_HANDSHAKE_TIMEOUT_MS,
+    runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
     spawn: () => child.handle,
     ...overrides,
   }
@@ -471,8 +473,16 @@ describe('task admission and package contracts', () => {
     }
     await expect(ctx.plugin(codex, { handshakeTimeoutMs: MAX_TIMER_DELAY_MS + 1 }))
       .rejects.toThrow(`handshakeTimeoutMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
+    for (const runActivityTimeoutMs of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      await expect(ctx.plugin(codex, { runActivityTimeoutMs }))
+        .rejects.toThrow('runActivityTimeoutMs must be a non-negative finite number')
+    }
+    await expect(ctx.plugin(codex, { runActivityTimeoutMs: MAX_TIMER_DELAY_MS + 1 }))
+      .rejects.toThrow(`runActivityTimeoutMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
     const disabledDeadlineFiber = await ctx.plugin(codex, { handshakeTimeoutMs: 0 })
     await disabledDeadlineFiber.dispose()
+    const disabledActivityFiber = await ctx.plugin(codex, { runActivityTimeoutMs: 0 })
+    await disabledActivityFiber.dispose()
     await ctx.fiber.dispose()
   })
 
@@ -608,6 +618,7 @@ describe('task admission and package contracts', () => {
     expect(() => codex.Config({ model: '' })).toThrow()
     expect(codex.Config({}).permissionMode).toBe(DEFAULT_CODEX_PERMISSION_MODE)
     expect(codex.Config({}).handshakeTimeoutMs).toBe(DEFAULT_HANDSHAKE_TIMEOUT_MS)
+    expect(codex.Config({}).runActivityTimeoutMs).toBe(DEFAULT_RUN_ACTIVITY_TIMEOUT_MS)
     for (const permissionMode of CODEX_PERMISSION_MODES) {
       expect(codex.Config({ permissionMode }).permissionMode).toBe(permissionMode)
     }
@@ -627,6 +638,7 @@ describe('task admission and package contracts', () => {
       env: {},
       disposeGraceMs: 3_000,
       handshakeTimeoutMs: DEFAULT_HANDSHAKE_TIMEOUT_MS,
+      runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
     })
     expect(ctx.subagents.getProvider('codex')).toBeDefined()
     const starting = ctx.subagents.start('codex', request())
@@ -1497,8 +1509,6 @@ describe('CodexAppServerWire', () => {
       },
       agentMessage('before', 'final_answer'),
       { method: 'future/notification', params: {} },
-      turnCompleted('completed'),
-      turnCompleted('completed', 'turn-other', 'thread-2'),
     )
     await nextTask()
 
@@ -1508,7 +1518,6 @@ describe('CodexAppServerWire', () => {
     await nextTask()
     child.peer.send(
       agentMessage('wrong turn', 'final_answer', 'turn-2'),
-      turnCompleted('completed', 'turn-2'),
       agentMessage('answer', 'final_answer'),
       turnCompleted('completed'),
     )
@@ -1517,6 +1526,259 @@ describe('CodexAppServerWire', () => {
       stopReason: 'completed',
     })
     wire.close()
+  })
+
+  it('fails the run when the app-server stays silent after the turn is submitted', async () => {
+    const child = fakeChild()
+    const wire = new CodexAppServerWire(
+      child.handle.stdout!,
+      child.handle.stdin!,
+      DEFAULT_CODEX_PERMISSION_MODE,
+      undefined,
+      0,
+      1,
+    )
+    wire.start()
+    const initializing = wire.initialize(new AbortController().signal)
+    const initialize = await child.peer.nextMethod('initialize')
+    child.peer.respond(initialize, { userAgent: 'codex-cli 0.153.4' })
+    await initializing
+    await child.peer.nextMethod('initialized')
+    const starting = wire.startThread(process.cwd(), new AbortController().signal)
+    const threadStart = await child.peer.nextMethod('thread/start')
+    child.peer.respond(threadStart, { thread: { id: 'thread-1', ephemeral: true } })
+    await starting
+
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    await expect(result).rejects.toThrow(
+      'subagent-codex: no app-server protocol activity for 1ms after the turn was submitted; last: none',
+    )
+    expect(wire.collectFailure()).toEqual({ stage: 'turn-start', category: 'transport' })
+    expect(wire.collectFailureDetail()).toBe(
+      'no app-server protocol activity for 1ms after the turn was submitted; last: none',
+    )
+    wire.close()
+  })
+
+  it('fails the in-flight turn when no frame arrives by the deadline', async () => {
+    const child = fakeChild()
+    const wire = new CodexAppServerWire(
+      child.handle.stdout!,
+      child.handle.stdin!,
+      DEFAULT_CODEX_PERMISSION_MODE,
+      undefined,
+      0,
+      30,
+    )
+    wire.start()
+    const initializing = wire.initialize(new AbortController().signal)
+    const initialize = await child.peer.nextMethod('initialize')
+    child.peer.respond(initialize, { userAgent: 'codex-cli 0.153.4' })
+    await initializing
+    await child.peer.nextMethod('initialized')
+    const starting = wire.startThread(process.cwd(), new AbortController().signal)
+    const threadStart = await child.peer.nextMethod('thread/start')
+    child.peer.respond(threadStart, { thread: { id: 'thread-1', ephemeral: true } })
+    await starting
+
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    await expect(result).rejects.toThrow(
+      'subagent-codex: no app-server protocol activity for 30ms after the turn was submitted; last: none',
+    )
+    expect(wire.collectFailure()).toEqual({ stage: 'turn', category: 'transport' })
+    expect(wire.collectFailureDetail()).toBe(
+      'no app-server protocol activity for 30ms after the turn was submitted; last: none',
+    )
+    wire.close()
+  })
+
+  it('resets the activity deadline on every streamed frame', async () => {
+    const child = fakeChild()
+    const wire = new CodexAppServerWire(
+      child.handle.stdout!,
+      child.handle.stdin!,
+      DEFAULT_CODEX_PERMISSION_MODE,
+      undefined,
+      0,
+      30,
+    )
+    wire.start()
+    const initializing = wire.initialize(new AbortController().signal)
+    const initialize = await child.peer.nextMethod('initialize')
+    child.peer.respond(initialize, { userAgent: 'codex-cli 0.153.4' })
+    await initializing
+    await child.peer.nextMethod('initialized')
+    const starting = wire.startThread(process.cwd(), new AbortController().signal)
+    const threadStart = await child.peer.nextMethod('thread/start')
+    child.peer.respond(threadStart, { thread: { id: 'thread-1', ephemeral: true } })
+    await starting
+
+    const startedAt = Date.now()
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    await new Promise<void>((resolve) => { setTimeout(resolve, 15) })
+    child.peer.send(agentMessage('late but live', 'final_answer'))
+    await expect(result).rejects.toThrow(
+      'subagent-codex: no app-server protocol activity for 30ms after the turn was submitted; last: notification:item/completed',
+    )
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(40)
+    expect(wire.collectFailure()).toEqual({ stage: 'turn', category: 'transport' })
+    wire.close()
+  })
+
+  it('resets the activity deadline on a server request', async () => {
+    const child = fakeChild()
+    const wire = new CodexAppServerWire(
+      child.handle.stdout!,
+      child.handle.stdin!,
+      DEFAULT_CODEX_PERMISSION_MODE,
+      undefined,
+      0,
+      30,
+    )
+    wire.start()
+    const initializing = wire.initialize(new AbortController().signal)
+    const initialize = await child.peer.nextMethod('initialize')
+    child.peer.respond(initialize, { userAgent: 'codex-cli 0.153.4' })
+    await initializing
+    await child.peer.nextMethod('initialized')
+    const starting = wire.startThread(process.cwd(), new AbortController().signal)
+    const threadStart = await child.peer.nextMethod('thread/start')
+    child.peer.respond(threadStart, { thread: { id: 'thread-1', ephemeral: true } })
+    await starting
+
+    const startedAt = Date.now()
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    await new Promise<void>((resolve) => { setTimeout(resolve, 15) })
+    child.peer.send({
+      id: 'approval',
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        availableDecisions: ['cancel'],
+      },
+    })
+    await child.peer.nextResponse('approval')
+    await expect(result).rejects.toThrow(
+      'subagent-codex: no app-server protocol activity for 30ms after the turn was submitted; last: request:item/commandExecution/requestApproval',
+    )
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(40)
+    expect(wire.collectFailure()).toEqual({ stage: 'turn', category: 'transport' })
+    wire.close()
+  })
+
+  it('leaves the published turn unbounded when the deadline is disabled', async () => {
+    const { child, wire } = await initializeWire()
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    await new Promise<void>((resolve) => { setTimeout(resolve, 20) })
+    child.peer.send(agentMessage('eventually', 'final_answer'), turnCompleted('completed'))
+    await expect(result).resolves.toEqual({
+      output: [{ type: 'text', text: 'eventually' }],
+      stopReason: 'completed',
+    })
+    expect(wire.collectFailureDetail()).toBeUndefined()
+    wire.close()
+  })
+
+  it('reports frames that cannot belong to the run without failing non-terminals', async () => {
+    const child = fakeChild()
+    const reported: string[] = []
+    const wire = new CodexAppServerWire(
+      child.handle.stdout!,
+      child.handle.stdin!,
+      DEFAULT_CODEX_PERMISSION_MODE,
+      undefined,
+      0,
+      0,
+      line => void reported.push(line),
+    )
+    wire.start()
+    const initializing = wire.initialize(new AbortController().signal)
+    const initialize = await child.peer.nextMethod('initialize')
+    child.peer.respond(initialize, { userAgent: 'codex-cli 0.153.4' })
+    await initializing
+    await child.peer.nextMethod('initialized')
+    const starting = wire.startThread(process.cwd(), new AbortController().signal)
+    const threadStart = await child.peer.nextMethod('thread/start')
+    child.peer.respond(threadStart, { thread: { id: 'thread-1', ephemeral: true } })
+    await starting
+
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    await nextTask()
+    child.peer.send(
+      {
+        method: 'turn/started',
+        params: { threadId: 'thread-2', turn: { id: 'turn-2' } },
+      },
+      agentMessage('other thread', 'final_answer', 'turn-1', 'thread-2'),
+      agentMessage('other turn', 'final_answer', 'turn-2'),
+      agentMessage('answer', 'final_answer'),
+      turnCompleted('completed'),
+    )
+    await expect(result).resolves.toEqual({
+      output: [{ type: 'text', text: 'answer' }],
+      stopReason: 'completed',
+    })
+    expect(reported).toEqual([
+      'unassociated frame: turn/started referenced another thread: thread-2',
+      'unassociated frame: item/completed referenced another thread: thread-2',
+      'unassociated frame: item/completed referenced another turn: turn-2',
+    ])
+    wire.close()
+  })
+
+  it('fails the run on terminal frames that cannot belong to the run', async () => {
+    {
+      const { child, wire } = await initializeWire()
+      const result = wire.runTurn(['task'], new AbortController().signal)
+      const turnStart = await child.peer.nextMethod('turn/start')
+      child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+      await nextTask()
+      child.peer.send(turnCompleted('completed', 'turn-1', 'thread-2'))
+      await expect(result).rejects.toThrow(
+        'subagent-codex: turn/completed referenced another thread: thread-2',
+      )
+      expect(wire.collectFailure()).toEqual({ stage: 'turn', category: 'unknown' })
+      expect(wire.collectFailureDetail()).toBe('turn/completed referenced another thread: thread-2')
+      wire.close()
+    }
+    {
+      const { child, wire } = await initializeWire()
+      const result = wire.runTurn(['task'], new AbortController().signal)
+      const turnStart = await child.peer.nextMethod('turn/start')
+      child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+      await nextTask()
+      child.peer.send(turnCompleted('completed', 'turn-2'))
+      await expect(result).rejects.toThrow(
+        'subagent-codex: turn/completed referenced another turn: turn-2',
+      )
+      expect(wire.collectFailure()).toEqual({ stage: 'turn', category: 'unknown' })
+      expect(wire.collectFailureDetail()).toBe('turn/completed referenced another turn: turn-2')
+      wire.close()
+    }
+    {
+      const { child, wire } = await initializeWire()
+      child.peer.send(turnCompleted('completed'))
+      await nextTask()
+      const result = wire.runTurn(['task'], new AbortController().signal)
+      await child.peer.nextMethod('turn/start')
+      await expect(result).rejects.toThrow(
+        'subagent-codex: turn/completed arrived before the run submitted its turn',
+      )
+      expect(wire.collectFailure()).toEqual({ stage: 'turn-start', category: 'unknown' })
+      expect(wire.collectFailureDetail()).toBe('turn/completed arrived before the run submitted its turn')
+      wire.close()
+    }
   })
 
   it('rejects pending work on abort, EOF, and stream error', async () => {
@@ -1959,6 +2221,7 @@ describe('run lifecycle and quiescence', () => {
         env: {},
         disposeGraceMs: 10,
         handshakeTimeoutMs: 0,
+        runActivityTimeoutMs: 0,
         spawn,
       },
     )).rejects.toThrow('aborted before app-server startup')
@@ -1970,6 +2233,7 @@ describe('run lifecycle and quiescence', () => {
       env: {},
       disposeGraceMs: 10,
       handshakeTimeoutMs: 0,
+      runActivityTimeoutMs: 0,
       spawn: () => { throw new Error('SECRET_TOKEN spawn failure') },
     })
     await expect(spawnFailure)
@@ -2123,6 +2387,28 @@ describe('run lifecycle and quiescence', () => {
       }),
     )
     expect(child.terminate).toHaveBeenCalledOnce()
+  })
+
+  it('fails a silent published run at the activity deadline', async () => {
+    const child = fakeChild()
+    const diagnostics: string[] = []
+    const { run, turnStart } = await publishRun(child, undefined, {
+      runActivityTimeoutMs: 1_000,
+      onError: (error, stopReason) => { diagnostics.push(`${stopReason}: ${error.message}`) },
+    })
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    await expect(run.result).resolves.toEqual({
+      output: [],
+      diagnostic: expectedFailureDiagnostic('turn', 'transport', {
+        detail: 'no app-server protocol activity for 1000ms after the turn was submitted; last: none',
+      }),
+      stopReason: 'error',
+    })
+    expect(diagnostics).toEqual([
+      'error: subagent-codex: Product subagent failure (product: Codex; stage: turn; category: transport; detail: no app-server protocol activity for 1000ms after the turn was submitted; last: none)',
+    ])
+    await run.dispose()
+    expect(child.terminate).toHaveBeenCalledTimes(1)
   })
 
   it('reports a surviving managed range when the child exits before the handshake completes', async () => {
