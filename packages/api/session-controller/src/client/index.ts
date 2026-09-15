@@ -63,6 +63,7 @@ export type {
 } from './contract/events.ts'
 export type {
   OpenState,
+  PendingInboxPrompt,
   PendingSubmission,
   PendingSubmissionAttachment,
   PendingSubmissionFileAttachment,

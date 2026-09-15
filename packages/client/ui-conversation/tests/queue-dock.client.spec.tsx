@@ -46,6 +46,7 @@ function snapshotWith(queue: QueuedMessage[]): SessionSnapshot {
     hasMore: false, loadingOlder: false, promptError: null, blank: false, subagent: null,
     pendingSubmissions: [],
     lastAgentError: null, promptAttempted: true, awaitingFirstTurn: false,
+    pendingInboxPrompts: [],
   }
 }
 

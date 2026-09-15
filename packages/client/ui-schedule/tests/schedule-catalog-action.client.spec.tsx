@@ -65,6 +65,7 @@ function sessionSnapshot(openState: SessionSnapshot['openState']): SessionSnapsh
     lastAgentError: null,
     promptAttempted: false,
     awaitingFirstTurn: false,
+    pendingInboxPrompts: [],
   }
 }
 

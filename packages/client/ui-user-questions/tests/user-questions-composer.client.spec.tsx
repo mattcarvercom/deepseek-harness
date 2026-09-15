@@ -46,6 +46,7 @@ const sessionState: SessionState = {
   lastAgentError: null,
   promptAttempted: false,
   awaitingFirstTurn: false,
+  pendingInboxPrompts: [],
 }
 const sessionList = {
   ids: [SID],

@@ -15,7 +15,7 @@ import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-clie
 import { JUMP_PAGE_MESSAGES, type Session } from '../src/client/sessions/session.ts'
 import { SessionEventStream } from '../src/client/transport.ts'
 import type { SessionFollowRequest, SessionPage, SessionPageRequest } from '../src/types.ts'
-import { entries, ev, historyValue, plainTurn } from './event-script.client.ts'
+import { entries, ev, historyValue, inboxUserMessage, plainTurn } from './event-script.client.ts'
 import { sessionBench } from './remote/bench.client.ts'
 import {
   FOLLOW, PAGE, err, followScript, followSnapshot, frame, history, pageRule, pushEvent,
@@ -159,6 +159,41 @@ describe('live event path', () => {
         repaired.filter(event => event.seq <= 9).map(event => event.seq),
       )
     })
+  })
+
+  it('folds inbox splice events into pendingInboxPrompts on window install and on live append', async ({ mock, start }) => {
+    // A prompt admitted to the durable inbox before a turn that never claimed it
+    // (rejection closes the turn without a step), so it is still in flight after open.
+    const window = [
+      ev.inboxSplice(SessionSeq(0), {
+        target: 'next-turn', start: 0, inserted: [inboxUserMessage('m-q1', 'first prompt', 'req-q1')],
+      }),
+      ev.turnStart(SessionSeq(1), 1),
+      ev.turnEnd(SessionSeq(2), 1),
+    ]
+    const session = await opened(mock, start, window)
+    expect(session.getSnapshot().pendingInboxPrompts).toEqual([
+      {
+        id: 'm-q1', placement: 'queued', rpcId: 'req-q1',
+        content: [{ type: 'text', text: 'first prompt' }],
+        preview: 'first prompt', text: 'first prompt',
+      },
+    ])
+    await pushEvent(mock, ev.inboxSplice(SessionSeq(3), {
+      target: 'next-step', start: 0, inserted: [inboxUserMessage('m-s1', 'steer me', 'req-s1')],
+    }))
+    expect(session.getSnapshot().pendingInboxPrompts).toEqual([
+      {
+        id: 'm-q1', placement: 'queued', rpcId: 'req-q1',
+        content: [{ type: 'text', text: 'first prompt' }],
+        preview: 'first prompt', text: 'first prompt',
+      },
+      {
+        id: 'm-s1', placement: 'steering', rpcId: 'req-s1',
+        content: [{ type: 'text', text: 'steer me' }],
+        preview: 'steer me', text: 'steer me',
+      },
+    ])
   })
 })
 

@@ -38,6 +38,7 @@ function sessionSnapshot(): SessionSnapshot {
     lastAgentError: null,
     promptAttempted: false,
     awaitingFirstTurn: false,
+    pendingInboxPrompts: [],
   }
 }
 

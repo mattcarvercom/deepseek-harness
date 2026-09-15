@@ -131,6 +131,7 @@ function sessionSnapshot(nodes: LegacyConversationSlice['nodes']): SessionSnapsh
     lastAgentError: null,
     promptAttempted: nodes.length > 0,
     awaitingFirstTurn: false,
+    pendingInboxPrompts: [],
   }
 }
 

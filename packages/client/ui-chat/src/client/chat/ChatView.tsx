@@ -9,7 +9,7 @@ import type { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps, OpenFileOptions } from '../contract/slots.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
-import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
+import { PendingInboxPromptBubble, PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { TurnNavigator } from './TurnNavigator.tsx'
 import { mergeTurnRailItems, type TurnRailItem } from './turn-rail-items.ts'
@@ -131,7 +131,33 @@ function openFailureMessage(error: unknown, fallback: string): string {
 }
 
 /**
- * Prompt-RPC identities already rendered by durable material: user/steering
+ * Identities of the committed user and steering nodes in the rendered
+ * window: their node keys (message ids) and their user-source prompt-RPC
+ * ids.
+ * @param order - rendered node keys, oldest first.
+ * @param nodes - the keyed node store.
+ * @returns both committed-identity sets.
+ */
+function committedNodeIds(
+  order: readonly string[],
+  nodes: ChatSnapshot['nodes'],
+): { readonly rpcIds: ReadonlySet<string>; readonly messageIds: ReadonlySet<string> } {
+  const rpcIds = new Set<string>()
+  const messageIds = new Set<string>()
+  for (const key of order) {
+    const node = nodes.get(key)
+    if (node === undefined || (node.kind !== 'user' && node.kind !== 'steering')) continue
+    messageIds.add(key)
+    const source = (node.data as { readonly source?: unknown }).source as
+      | { readonly kind?: unknown; readonly rpcId?: unknown }
+      | undefined
+    if (source?.kind === 'user' && typeof source.rpcId === 'string') rpcIds.add(source.rpcId)
+  }
+  return { rpcIds, messageIds }
+}
+
+/**
+ * Prompt-RPC identities already rendered by durable material: committed
  * node sources plus queue occurrences. A submission echo whose identity
  * appears here is hidden in the same render, so the echo→durable swap is
  * atomic — no duplicate, no gap — regardless of when the echo leaves the
@@ -142,15 +168,7 @@ function observedRpcIds(
   nodes: ChatSnapshot['nodes'],
   queue: readonly { readonly rpcId?: string }[],
 ): ReadonlySet<string> {
-  const observed = new Set<string>()
-  for (const key of order) {
-    const node = nodes.get(key)
-    if (node === undefined || (node.kind !== 'user' && node.kind !== 'steering')) continue
-    const source = (node.data as { readonly source?: unknown }).source as
-      | { readonly kind?: unknown; readonly rpcId?: unknown }
-      | undefined
-    if (source?.kind === 'user' && typeof source.rpcId === 'string') observed.add(source.rpcId)
-  }
+  const observed = new Set(committedNodeIds(order, nodes).rpcIds)
   for (const item of queue) {
     if (item.rpcId !== undefined) observed.add(item.rpcId)
   }
@@ -302,16 +320,39 @@ export function ChatView({
     [inbox],
   )
   const pendingSubmissions = useSession(s => s.pendingSubmissions)
+  const pendingInboxPrompts = useSession(s => s.pendingInboxPrompts)
+  // In-flight durable prompts render in the tail group only in the
+  // claim→commit window: an entry still in the queue projection renders
+  // through the queue dock (queued) or the steering bubbles, and a committed
+  // prompt hides behind its durable node, matched by rpcId or by the node
+  // key, which is the message id. No prompt is represented twice in one
+  // render.
+  const inflightPrompts = useMemo(() => {
+    if (pendingInboxPrompts.length === 0) return pendingInboxPrompts
+    const committed = committedNodeIds(order, nodeStore)
+    const projected = new Set(inbox.map(item => item.messageId))
+    return pendingInboxPrompts.filter(prompt => (
+      (prompt.rpcId === undefined || !committed.rpcIds.has(prompt.rpcId))
+      && !committed.messageIds.has(prompt.id)
+      && !projected.has(prompt.id)
+    ))
+  }, [pendingInboxPrompts, order, nodeStore, inbox])
   // Submission echoes still awaiting their durable counterpart. `order` is the
   // recompute trigger: durable user material always arrives as an append, and
-  // every append replaces the order array.
+  // every append replaces the order array. An echo whose prompt already has an
+  // in-flight fold entry hides behind that bubble (one-frame overlap).
   const visibleSubmissions = useMemo(() => {
     if (pendingSubmissions.length === 0) return pendingSubmissions
     const observed = observedRpcIds(order, nodeStore, inbox)
+    const inflight = new Set(
+      inflightPrompts.flatMap(prompt => prompt.rpcId === undefined ? [] : [prompt.rpcId]),
+    )
     return pendingSubmissions.filter(submission => (
-      submission.placement !== 'queued' && !observed.has(submission.requestId)
+      submission.placement !== 'queued'
+      && !observed.has(submission.requestId)
+      && !inflight.has(submission.requestId)
     ))
-  }, [pendingSubmissions, order, nodeStore, inbox])
+  }, [pendingSubmissions, order, nodeStore, inbox, inflightPrompts])
   const renderMessageImages = useCallback<RenderMessageImages>(
     owner => renderSlot('conversation.message.images', { ...owner, loadImage }),
     [loadImage, renderSlot],
@@ -845,6 +886,14 @@ export function ChatView({
             <PendingSubmissionBubble
               key={submission.requestId}
               submission={submission}
+              renderMessageImages={renderMessageImages}
+              t={t}
+            />
+          ))}
+          {inflightPrompts.map(prompt => (
+            <PendingInboxPromptBubble
+              key={prompt.id}
+              prompt={prompt}
               renderMessageImages={renderMessageImages}
               t={t}
             />

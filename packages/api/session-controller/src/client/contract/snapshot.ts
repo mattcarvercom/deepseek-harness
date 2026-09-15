@@ -70,6 +70,17 @@ export interface PendingSubmission {
   readonly attachments: readonly PendingSubmissionAttachment[]
 }
 
+/** One in-flight user prompt: admitted to the durable inbox, not yet committed as `user/message`. */
+export interface PendingInboxPrompt {
+  readonly id: MessageId
+  readonly placement: 'queued' | 'steering'
+  /** Prompt-RPC identity when the prompt came from a browser submission. */
+  readonly rpcId?: SessionRequestId
+  readonly content: readonly ContentBlock[]
+  readonly preview: string
+  readonly text: string | null
+}
+
 /** History-open lifecycle of a Session event window. */
 export type OpenState = 'cold' | 'loading' | 'open' | 'error'
 
@@ -85,6 +96,15 @@ export interface SessionSnapshot {
   readonly queue: readonly QueuedMessage[]
   /** Local prompt-submission echoes not yet observed as durable events or queue occurrences. */
   readonly pendingSubmissions: readonly PendingSubmission[]
+  /**
+   * User prompts admitted to the durable inbox and not yet committed as
+   * `user/message`; survives reload and the claim→commit (compaction) window.
+   *
+   * Consumer contract: entries still present in the queue projection render
+   * through the queue dock and steering bubbles; views render the remaining
+   * (claimed, uncommitted) entries only.
+   */
+  readonly pendingInboxPrompts: readonly PendingInboxPrompt[]
   readonly running: boolean
   readonly subagent: {
     readonly address: SubagentAddress
