@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-timeout` lets callers apply bounded deadlines to work, distinguish local timeout from upstream cancellation, and monitor streamed reads for inactivity. `clampTimeout` fills a missing hint from a backend default, caps it at the allowed maximum, and rejects invalid values before work starts. `deadline` combines the chosen timeout with upstream cancellation in one signal, while the caller remains responsible for actually stopping its process, socket, or task. `idleWatchdog` counts only time spent waiting for provider reads, and zero remains reserved for backend-owned untimed work rather than public configuration.
+`dsh-timeout` lets callers apply bounded deadlines to work, distinguish local timeout from upstream cancellation, and monitor streamed reads for inactivity. `clampTimeout` fills a missing hint from a backend default, caps it at the allowed maximum, and rejects invalid values before work starts. `deadline` combines the chosen timeout with upstream cancellation in one signal, while the caller remains responsible for actually stopping its process, socket, or task. `idleWatchdog` counts only time spent waiting for provider reads, and `progressDeadline` bounds producer streams that must keep producing, resetting only on progress reports. Zero remains reserved for backend-owned untimed work rather than public configuration.
 
 ## Table of Contents
 
@@ -73,6 +73,21 @@ const next = await watchdog.next(providerIterator)    // timer runs only while t
 
 The timer is armed only while an iterator `next()` is outstanding and rearms on `pulse()` for transport activity that yields no value, so consumer think time between reads never counts as idle. The interval must be positive, finite, and no greater than `MAX_TIMER_DELAY_MS`.
 
+### Streaming with a progress deadline
+
+```ts
+import { progressDeadline } from '@deepseek-ai/dsh-timeout'
+
+declare const upstream: AbortSignal | undefined
+declare const contentMs: number
+
+using progress = progressDeadline(upstream, contentMs, 'LLM_STREAM_CONTENT_IDLE_TIMEOUT')
+// when a stream value carries producer output:
+progress.progress()
+```
+
+The timer arms at creation and resets only through `progress()`, so transport activity that carries no progress (keep-alive frames, metadata events) never extends it, and the interval runs across demand gaps, so a stalled stream cannot hide behind consumer think time. A `timeoutMs` of `0` arms no timer — the explicit opt-out for endpoints whose healthy state is staying open without producing. Fuse `progress.signal` with the idle watchdog's signal for transport observation, and classify a trip with `timeoutOf(progress.signal, code)`.
+
 ### What does not get a timeout
 
 Local file `read`/`write`/`edit` take no `timeoutMs`: file IO runs untimed because a deadline would kill work the OS will still finish.
@@ -91,7 +106,7 @@ The library is built on one boundary: share the timing and classification, keep 
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `clampTimeout`, `deadline`, `idleWatchdog`, `timeoutOf`, `TimeoutReason`, `MAX_TIMER_DELAY_MS` |
+| [`src/index.ts`](src/index.ts) | `clampTimeout`, `deadline`, `idleWatchdog`, `progressDeadline`, `timeoutOf`, `TimeoutReason`, `MAX_TIMER_DELAY_MS` |
 | — | No runtime invariant companion is published; this pure utility owns no event stream or mutable runtime data; its value algebra is enforced by unit tests. |
 
 ### How a deadline fuses sources
@@ -105,6 +120,10 @@ The library is built on one boundary: share the timing and classification, keep 
 ### Why an idle watchdog rearms
 
 `idleWatchdog` keeps one stable fused signal and arms the timer only while `next()` is outstanding; resolution disarms, later demand or `pulse()` rearms, disposal clears, and concurrent demand rejects. Only the transport observes the signal, so the provider's real read must listen to it — the DeepSeek and pi-ai adapters close their response body or SDK request on abort.
+
+### Why a progress deadline runs across gaps
+
+`progressDeadline` fuses one stable signal with upstream cancellation and arms its timer at creation. Only `progress()` resets it, so the idle watchdog's per-demand rearm cannot rescue it, and its interval counts the whole time the producer owns the stream; a consumer that stops demanding is suspended with the producer, which is exactly the stall the deadline detects. Disposal clears the timer, and a timer that already fired cannot be re-armed.
 
 </details>
 
@@ -142,6 +161,7 @@ These limits define what the library deliberately does not do. They are current 
 - **`timeoutMs <= 0` is internal vocabulary** — it disables the local timer only after an owning backend has resolved policy, never as a public model- or plugin-facing knob.
 - **The first abort reason wins classification** — when an upstream cancellation beats the local timer, this layer cannot later report that its own timeout would also have elapsed.
 - **An idle watchdog is not a total deadline** — it rearms per outstanding iterator demand and deliberately excludes consumer think time.
+- **A progress deadline does not pause** — it runs from construction across demand gaps; a consumer that stops demanding for longer than the interval trips it, so the owning stream disposes it when its work pauses.
 
 <a id="dev-note"></a>
 ### Dev Note

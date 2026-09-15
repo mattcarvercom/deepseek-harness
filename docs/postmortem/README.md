@@ -17,3 +17,4 @@ Every post-mortem opens with an **Executive summary**: one short paragraph a bus
 | [0003](0003-web-agent-gui-feedback-loop.md) | Web agent validated a replacement server instead of the GUI hosting its session |
 | [0004](0004-landlock-partial-notice-misclassified-child-failures.md) | Landlock partial-enforcement notice misclassified child failures |
 | [0005](0005-subagent-codex-handshake-hang.md) | Codex subagent handshake hung indefinitely on a live-but-silent app-server |
+| [0006](0006-vllm-stream-never-terminates.md) | A vLLM stream that never delivers model content hung the request forever — no failure, no retry, no report |

@@ -17,3 +17,4 @@
 | [0003](0003-web-agent-gui-feedback-loop.zh.md) | Web agent（智能体）验证了替代服务器，而非承载其会话的 GUI |
 | [0004](0004-landlock-partial-notice-misclassified-child-failures.zh.md) | Landlock 部分强制执行通知导致子进程失败被误归类 |
 | [0005](0005-subagent-codex-handshake-hang.zh.md) | Codex subagent 握手在 app-server 存活但沉默时无限期挂起 |
+| [0006](0006-vllm-stream-never-terminates.zh.md) | 永不交付模型内容的 vLLM 流让请求无限期挂起——无失败、无重试、无报告 |

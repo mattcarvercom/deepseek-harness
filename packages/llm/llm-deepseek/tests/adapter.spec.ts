@@ -1637,6 +1637,144 @@ describe('DeepSeekAdapter against a mock server', () => {
       fetchSpy.mockRestore()
     }
   })
+
+  it('fails a keep-alive-only stream when no content arrives before the content deadline', async () => {
+    vi.useFakeTimers()
+    let stopped = false
+    const encoder = new TextEncoder()
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+      const signal = init?.signal
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          signal?.addEventListener('abort', () => {
+            stopped = true
+            controller.error(signal.reason)
+          }, { once: true })
+          // Keep-alives keep the per-read idle watchdog rearmed, so only the
+          // content deadline can end this stream.
+          for (const at of [75, 150, 225, 300, 375, 450]) {
+            setTimeout(() => {
+              try { controller.enqueue(encoder.encode(': keep-alive\n\n')) } catch (_invalidState) {
+                // The trip errored the stream; later ticks have nothing to deliver.
+              }
+            }, at)
+          }
+        },
+      })
+      return Promise.resolve(new Response(body, { status: 200 }))
+    })
+    const adapter = adapterOf({
+      baseURL: 'https://example.invalid',
+      streamIdleTimeoutMs: 60_000,
+      streamContentIdleTimeoutMs: 100,
+    })
+    try {
+      const drain = (async () => {
+        for await (const _chunk of adapter.stream({ provider: 'deepseek-official', model: 'm', messages: [] })) { /* drain */ }
+      })()
+      const rejected = expect(drain).rejects.toMatchObject({
+        message: 'DeepSeek stream content idle timeout after 100ms',
+        code: 'TIMEOUT',
+      })
+      await vi.advanceTimersByTimeAsync(150)
+      await rejected
+      expect(stopped).toBe(true)
+    } finally {
+      fetchSpy.mockRestore()
+    }
+  })
+
+  it('keeps a stream alive past the content deadline while it keeps producing content', async () => {
+    vi.useFakeTimers()
+    const encoder = new TextEncoder()
+    const content = '{"choices":[{"delta":{"content":"one"}}]}'
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const send = (at: number, payload: string): void => {
+            setTimeout(() => {
+              try { controller.enqueue(encoder.encode(payload)) } catch (_invalidState) {
+                // [DONE] cancels the body upstream; later ticks have nothing to deliver.
+              }
+            }, at)
+          }
+          send(50, `data: ${content}\n\n`)
+          send(100, `data: ${content}\n\n`)
+          send(150, `data: ${content}\n\n`)
+          send(200, textEvents.map(event => `data: ${event}\n\n`).join(''))
+          setTimeout(() => {
+            try { controller.close() } catch (_invalidState) {
+              // The adapter already cancelled the body after [DONE].
+            }
+          }, 210)
+        },
+      })
+      return Promise.resolve(new Response(body, { status: 200 }))
+    })
+    const adapter = adapterOf({
+      baseURL: 'https://example.invalid',
+      streamIdleTimeoutMs: 60_000,
+      streamContentIdleTimeoutMs: 75,
+    })
+    try {
+      const chunks: string[] = []
+      const drain = (async () => {
+        for await (const chunk of adapter.stream({ provider: 'deepseek-official', model: 'm', messages: [] })) {
+          chunks.push(chunk.type)
+        }
+      })()
+      await vi.advanceTimersByTimeAsync(210)
+      await expect(drain).resolves.toBeUndefined()
+      expect(chunks).toEqual(['block-start', 'text-delta', 'text-delta', 'text-delta', 'text-delta', 'block-end', 'usage', 'finish'])
+    } finally {
+      fetchSpy.mockRestore()
+    }
+  })
+
+  it('never trips the content deadline when it is disabled with zero', async () => {
+    vi.useFakeTimers()
+    const encoder = new TextEncoder()
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const at of [50, 100, 150, 200, 300, 400]) {
+            setTimeout(() => {
+              try { controller.enqueue(encoder.encode(': keep-alive\n\n')) } catch (_invalidState) {
+                // The stream was terminated early; later ticks have nothing to deliver.
+              }
+            }, at)
+          }
+          setTimeout(() => {
+            try {
+              controller.enqueue(encoder.encode(textEvents.map(event => `data: ${event}\n\n`).join('')))
+              controller.close()
+            } catch (_invalidState) {
+              // The stream was terminated early; the final tick has nothing to deliver.
+            }
+          }, 500)
+        },
+      })
+      return Promise.resolve(new Response(body, { status: 200 }))
+    })
+    const adapter = adapterOf({
+      baseURL: 'https://example.invalid',
+      streamIdleTimeoutMs: 60_000,
+      streamContentIdleTimeoutMs: 0,
+    })
+    try {
+      const chunks: string[] = []
+      const drain = (async () => {
+        for await (const chunk of adapter.stream({ provider: 'deepseek-official', model: 'm', messages: [] })) {
+          chunks.push(chunk.type)
+        }
+      })()
+      await vi.advanceTimersByTimeAsync(500)
+      await expect(drain).resolves.toBeUndefined()
+      expect(chunks).toEqual(['block-start', 'text-delta', 'block-end', 'usage', 'finish'])
+    } finally {
+      fetchSpy.mockRestore()
+    }
+  })
 })
 
 describe('plugin registration and config', () => {
@@ -2309,6 +2447,31 @@ describe('plugin registration and config', () => {
     })).rejects.toThrow(/filesApiTimeoutMs/)
     expect(resolveAdapterOptions({ filesApiTimeoutMs: 100, streamIdleTimeoutMs: 100 }))
       .toMatchObject({ filesApiTimeoutMs: 100, streamIdleTimeoutMs: 100 })
+  })
+
+  it('resolves the stream content idle deadline with zero as the opt-out', async () => {
+    expect(resolveAdapterOptions({ streamContentIdleTimeoutMs: 0 }))
+      .toMatchObject({ streamContentIdleTimeoutMs: 0 })
+    expect(resolveAdapterOptions({}))
+      .toMatchObject({ streamContentIdleTimeoutMs: 600_000 })
+    expect(() => resolveAdapterOptions({ streamContentIdleTimeoutMs: -1 }))
+      .toThrow(/streamContentIdleTimeoutMs.*finite number/)
+    expect(() => resolveAdapterOptions({ streamContentIdleTimeoutMs: Number.NaN }))
+      .toThrow(/streamContentIdleTimeoutMs.*finite number/)
+    expect(() => resolveAdapterOptions({ streamContentIdleTimeoutMs: MAX_TIMER_DELAY_MS + 1 }))
+      .toThrow(/streamContentIdleTimeoutMs.*no greater/)
+
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await expect(ctx.plugin(LlmDeepSeek, {
+      baseURL: 'http://127.0.0.1:1',
+      streamContentIdleTimeoutMs: -1,
+    })).rejects.toThrow(/streamContentIdleTimeoutMs/)
+    await ctx.plugin(LlmDeepSeek, {
+      baseURL: 'http://127.0.0.1:1',
+      streamContentIdleTimeoutMs: 0,
+    })
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
   })
 
   it('rejects invalid nested retryPolicy before registering the provider', async () => {
