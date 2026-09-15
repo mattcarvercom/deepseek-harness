@@ -21,6 +21,7 @@ import {
   CODEX_PERMISSION_MODES,
   DEFAULT_CODEX_PERMISSION_MODE,
   DEFAULT_DISPOSE_GRACE_MS,
+  DEFAULT_HANDSHAKE_TIMEOUT_MS,
   codexStartupFailure,
   startCodexRun,
   type CodexPermissionMode,
@@ -47,6 +48,13 @@ export interface Config {
   permissionMode?: CodexPermissionMode
   /** Grace in milliseconds between app-server managed-range termination tiers. */
   disposeGraceMs?: number
+  /**
+   * Deadline in milliseconds for the pre-publication handshake (`initialize`
+   * and `thread/start`); a silent app-server fails the delegation at the
+   * deadline with category `transport` instead of waiting indefinitely.
+   * `0` disables the deadline.
+   */
+  handshakeTimeoutMs?: number
 }
 
 export const Config: z<Config> = z.object({
@@ -56,6 +64,7 @@ export const Config: z<Config> = z.object({
   permissionMode: z.union([...CODEX_PERMISSION_MODES])
     .default(DEFAULT_CODEX_PERMISSION_MODE),
   disposeGraceMs: z.number().default(DEFAULT_DISPOSE_GRACE_MS),
+  handshakeTimeoutMs: z.number().default(DEFAULT_HANDSHAKE_TIMEOUT_MS),
 })
 
 type ResolvedConfig = Omit<Required<Config>, 'model'> & Pick<Config, 'model'>
@@ -98,6 +107,7 @@ class CodexProvider implements SubagentProvider {
       permissionMode: this.config.permissionMode,
       env: this.config.env,
       disposeGraceMs: this.config.disposeGraceMs,
+      handshakeTimeoutMs: this.config.handshakeTimeoutMs,
       spawn: spawnSpec => this.ctx.subprocess.spawn(spawnSpec),
       onError: (error, stopReason) => {
         this.ctx.logger.warn(
@@ -112,7 +122,8 @@ class CodexProvider implements SubagentProvider {
 /**
  * Register one Profile-named Codex provider.
  * @param ctx - context carrying shared subagent and subprocess services.
- * @param config - registry name, optional model, permission mode, child environment, and disposal grace.
+ * @param config - registry name, optional model, permission mode, child
+ *   environment, disposal grace, and handshake deadline.
  */
 export function apply(ctx: Context, config: Config): void {
   const resolved: ResolvedConfig = {
@@ -121,6 +132,7 @@ export function apply(ctx: Context, config: Config): void {
     env: config.env as Record<string, string>,
     permissionMode: config.permissionMode ?? DEFAULT_CODEX_PERMISSION_MODE,
     disposeGraceMs: config.disposeGraceMs as number,
+    handshakeTimeoutMs: config.handshakeTimeoutMs as number,
   }
   assertPositiveFinite(
     'subagent-codex',
@@ -130,6 +142,16 @@ export function apply(ctx: Context, config: Config): void {
   if (resolved.disposeGraceMs > MAX_TIMER_DELAY_MS) {
     throw new Error(
       `subagent-codex: disposeGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`,
+    )
+  }
+  if (!Number.isFinite(resolved.handshakeTimeoutMs) || resolved.handshakeTimeoutMs < 0) {
+    throw new Error(
+      'subagent-codex: handshakeTimeoutMs must be a non-negative finite number',
+    )
+  }
+  if (resolved.handshakeTimeoutMs > MAX_TIMER_DELAY_MS) {
+    throw new Error(
+      `subagent-codex: handshakeTimeoutMs must be no greater than ${MAX_TIMER_DELAY_MS}`,
     )
   }
   ctx.subagents.registerProvider(new CodexProvider(

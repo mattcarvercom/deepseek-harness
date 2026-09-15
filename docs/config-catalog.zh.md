@@ -2464,6 +2464,13 @@ export interface Config {
   permissionMode?: CodexPermissionMode
   /** Grace in milliseconds between app-server managed-range termination tiers. */
   disposeGraceMs?: number
+  /**
+   * Deadline in milliseconds for the pre-publication handshake (`initialize`
+   * and `thread/start`); a silent app-server fails the delegation at the
+   * deadline with category `transport` instead of waiting indefinitely.
+   * `0` disables the deadline.
+   */
+  handshakeTimeoutMs?: number
 }
 
 /** Profile-selectable non-interactive Codex permission mode. */
@@ -2473,7 +2480,7 @@ export type CodexPermissionMode =
   | 'dangerously-bypass-approvals-and-sandbox'
 ```
 
-来源：[`packages/subagent/subagent-codex/src/index.ts:36`](../packages/subagent/subagent-codex/src/index.ts)
+来源：[`packages/subagent/subagent-codex/src/index.ts:37`](../packages/subagent/subagent-codex/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-dsh-sdk"></a>
 

@@ -225,6 +225,7 @@ export class CodexAppServerWire {
     output: Writable,
     private readonly permissionMode: CodexPermissionMode,
     private readonly model?: string,
+    private readonly handshakeTimeoutMs = 0,
   ) {
     this.transport = new JsonRpcLineTransport(input, output)
     // Fatal protocol state can arrive after the current guarded operation has
@@ -261,7 +262,8 @@ export class CodexAppServerWire {
   }
 
   /**
-   * Perform the required app-server initialize/initialized handshake.
+   * Perform the required app-server initialize/initialized handshake. The
+   * request is bounded by the constructor's handshake deadline.
    * @param signal - unpublished-start cancellation.
    */
   async initialize(signal: AbortSignal): Promise<void> {
@@ -275,13 +277,14 @@ export class CodexAppServerWire {
         experimentalApi: false,
         requestAttestation: false,
       },
-    }, { signal }), signal), 'initialize response')
+    }, { signal, timeoutMs: this.handshakeTimeoutMs }), signal), 'initialize response')
     this.transport.notify('initialized')
     await this.guarded(this.transport.flush(), signal)
   }
 
   /**
-   * Create the run's private ephemeral thread and retain its identity.
+   * Create the run's private ephemeral thread and retain its identity. The
+   * request is bounded by the constructor's handshake deadline.
    * @param cwd - parent Session workspace.
    * @param signal - unpublished-start cancellation.
    */
@@ -291,7 +294,7 @@ export class CodexAppServerWire {
       ephemeral: true,
       ...this.model === undefined ? {} : { model: this.model },
       ...THREAD_PERMISSION_PARAMS[this.permissionMode],
-    }, { signal }), signal), 'thread/start response')
+    }, { signal, timeoutMs: this.handshakeTimeoutMs }), signal), 'thread/start response')
     const thread = object(response.thread, 'thread/start thread')
     const id = string(thread.id, 'thread/start thread id')
     if (thread.ephemeral !== true) {

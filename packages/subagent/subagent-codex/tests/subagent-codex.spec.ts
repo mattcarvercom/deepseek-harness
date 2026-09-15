@@ -18,11 +18,13 @@ import type {
 } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
+import { JsonRpcTimeoutError } from '@deepseek-ai/dsh-sdk-protocol'
 import {
   CODEX_PERMISSION_MODES,
   DEFAULT_CODEX_PERMISSION_MODE,
   codexAppServerArgv,
   DEFAULT_DISPOSE_GRACE_MS,
+  DEFAULT_HANDSHAKE_TIMEOUT_MS,
   disposeCodexChild,
   startCodexRun,
   textTask,
@@ -142,6 +144,8 @@ interface FakeChildOptions {
   readonly exitOnTerminate?: boolean
   readonly doneError?: Error
   readonly waitForExitError?: Error
+  /** The managed range outlives the direct child, as when a grandchild holds the pipes. */
+  readonly rangeOutlivesChild?: boolean
 }
 
 interface FakeChild {
@@ -169,44 +173,49 @@ function fakeChild(options: FakeChildOptions = {}): FakeChild {
     resolveDone = resolve
     rejectDone = reject
   })
+  // Range observation: the managed range quiesces when the direct child
+  // settles or when terminate kills the range, except when a descendant keeps
+  // the range alive past the child's exit.
+  let resolveRange!: () => void
+  const rangeQuiescent = new Promise<void>((resolve) => {
+    resolveRange = resolve
+  })
+  const quiesceRange = (): void => {
+    if (options.rangeOutlivesChild !== true) resolveRange()
+  }
   const settle = (
     outcome: SubprocessOutcome = { exitCode: 0, signal: null },
   ): void => {
     if (exited) return
     exited = true
+    quiesceRange()
     resolveDone(outcome)
   }
   const fail = (error: Error): void => {
     if (exited) return
     exited = true
+    quiesceRange()
     rejectDone(error)
   }
   if (options.doneError !== undefined) fail(options.doneError)
   const terminate = vi.fn(() => {
+    resolveRange()
     if (options.exitOnTerminate !== false) settle()
   })
-  const waitForExit = vi.fn(async (signal?: AbortSignal) => {
+  const waitForExit = vi.fn((signal?: AbortSignal): Promise<boolean> => {
     if (options.waitForExitError !== undefined) {
-      throw options.waitForExitError
+      return Promise.reject(options.waitForExitError)
     }
-    if (exited) return true
     if (signal === undefined) {
-      await done.catch(() => {})
-      return true
+      return rangeQuiescent.then(() => true)
     }
-    return await new Promise<boolean>((resolve) => {
+    return new Promise<boolean>((resolve) => {
       const onAbort = (): void => { resolve(false) }
       signal.addEventListener('abort', onAbort, { once: true })
-      void done.then(
-        () => {
-          signal.removeEventListener('abort', onAbort)
-          resolve(true)
-        },
-        () => {
-          signal.removeEventListener('abort', onAbort)
-          resolve(true)
-        },
-      )
+      void rangeQuiescent.then(() => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(true)
+      })
     })
   })
   const handle: SubprocessHandle = {
@@ -249,6 +258,7 @@ function runSpec(
     permissionMode: DEFAULT_CODEX_PERMISSION_MODE,
     env: {},
     disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+    handshakeTimeoutMs: DEFAULT_HANDSHAKE_TIMEOUT_MS,
     spawn: () => child.handle,
     ...overrides,
   }
@@ -329,6 +339,7 @@ function expectedFailureDiagnostic(
   options: {
     readonly httpStatus?: number
     readonly outcome?: Partial<SubprocessOutcome>
+    readonly detail?: string
   } = {},
 ): string {
   const fields = [
@@ -350,6 +361,9 @@ function expectedFailureDiagnostic(
     && options.outcome?.signal !== undefined
   ) {
     fields.push(`signal: ${options.outcome.signal}`)
+  }
+  if (options.detail !== undefined) {
+    fields.push(`detail: ${options.detail}`)
   }
   return `Product subagent failure (${fields.join('; ')})`
 }
@@ -451,6 +465,14 @@ describe('task admission and package contracts', () => {
     }
     await expect(ctx.plugin(codex, { disposeGraceMs: MAX_TIMER_DELAY_MS + 1 }))
       .rejects.toThrow(`disposeGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
+    for (const handshakeTimeoutMs of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      await expect(ctx.plugin(codex, { handshakeTimeoutMs }))
+        .rejects.toThrow('handshakeTimeoutMs must be a non-negative finite number')
+    }
+    await expect(ctx.plugin(codex, { handshakeTimeoutMs: MAX_TIMER_DELAY_MS + 1 }))
+      .rejects.toThrow(`handshakeTimeoutMs must be no greater than ${MAX_TIMER_DELAY_MS}`)
+    const disabledDeadlineFiber = await ctx.plugin(codex, { handshakeTimeoutMs: 0 })
+    await disabledDeadlineFiber.dispose()
     await ctx.fiber.dispose()
   })
 
@@ -585,6 +607,7 @@ describe('task admission and package contracts', () => {
     expect(codex.Config({ model: 'gpt-codex' }).model).toBe('gpt-codex')
     expect(() => codex.Config({ model: '' })).toThrow()
     expect(codex.Config({}).permissionMode).toBe(DEFAULT_CODEX_PERMISSION_MODE)
+    expect(codex.Config({}).handshakeTimeoutMs).toBe(DEFAULT_HANDSHAKE_TIMEOUT_MS)
     for (const permissionMode of CODEX_PERMISSION_MODES) {
       expect(codex.Config({ permissionMode }).permissionMode).toBe(permissionMode)
     }
@@ -600,7 +623,11 @@ describe('task admission and package contracts', () => {
     await ctx.plugin(LocalSubprocessRuntime)
     const child = fakeChild()
     vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue(child.handle)
-    codex.apply(ctx, { env: {}, disposeGraceMs: 3_000 })
+    codex.apply(ctx, {
+      env: {},
+      disposeGraceMs: 3_000,
+      handshakeTimeoutMs: DEFAULT_HANDSHAKE_TIMEOUT_MS,
+    })
     expect(ctx.subagents.getProvider('codex')).toBeDefined()
     const starting = ctx.subagents.start('codex', request())
     const initialize = await child.peer.nextMethod('initialize')
@@ -686,6 +713,77 @@ describe('task admission and package contracts', () => {
     child.peer.respond(threadStart, { thread: { id: 'thread-1', ephemeral: true } })
     await starting
     wire.close()
+  })
+
+  it('bounds each handshake request with the constructor deadline and arms none for zero', async () => {
+    const silentChild = fakeChild({ exitOnTerminate: false })
+    const silentWire = new CodexAppServerWire(
+      silentChild.handle.stdout!,
+      silentChild.handle.stdin!,
+      DEFAULT_CODEX_PERMISSION_MODE,
+      undefined,
+      1,
+    )
+    silentWire.start()
+    const silentInitializing = silentWire.initialize(new AbortController().signal)
+    const silentTimeout = await silentInitializing.then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    expect(silentTimeout).toBeInstanceOf(JsonRpcTimeoutError)
+    expect(silentTimeout).toMatchObject({
+      method: 'initialize',
+      timeoutMs: 1,
+      message: 'JSON-RPC request initialize timed out after 1ms',
+    })
+    silentWire.close()
+
+    const threadChild = fakeChild({ exitOnTerminate: false })
+    const threadWire = new CodexAppServerWire(
+      threadChild.handle.stdout!,
+      threadChild.handle.stdin!,
+      DEFAULT_CODEX_PERMISSION_MODE,
+      undefined,
+      1,
+    )
+    threadWire.start()
+    const threadInitializing = threadWire.initialize(new AbortController().signal)
+    const initialize = await threadChild.peer.nextMethod('initialize')
+    threadChild.peer.respond(initialize, { userAgent: 'codex-cli 0.153.4' })
+    await threadInitializing
+    await threadChild.peer.nextMethod('initialized')
+    const threadStarting = threadWire.startThread(
+      '/workspace',
+      new AbortController().signal,
+    )
+    const threadTimeout = await threadStarting.then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    expect(threadTimeout).toBeInstanceOf(JsonRpcTimeoutError)
+    expect(threadTimeout).toMatchObject({
+      method: 'thread/start',
+      timeoutMs: 1,
+    })
+    threadWire.close()
+
+    const unboundedChild = fakeChild({ exitOnTerminate: false })
+    const unboundedWire = new CodexAppServerWire(
+      unboundedChild.handle.stdout!,
+      unboundedChild.handle.stdin!,
+      DEFAULT_CODEX_PERMISSION_MODE,
+    )
+    unboundedWire.start()
+    const unboundedInitializing = unboundedWire
+      .initialize(new AbortController().signal)
+    let settled = false
+    void unboundedInitializing.then(
+      () => { settled = true },
+      () => { settled = true },
+    )
+    await new Promise<void>((resolve) => { setTimeout(resolve, 30) })
+    expect(settled).toBe(false)
+    unboundedWire.close()
   })
 
   it('requires a parent session cwd without suggesting unsupported config', async () => {
@@ -1860,6 +1958,7 @@ describe('run lifecycle and quiescence', () => {
         permissionMode: DEFAULT_CODEX_PERMISSION_MODE,
         env: {},
         disposeGraceMs: 10,
+        handshakeTimeoutMs: 0,
         spawn,
       },
     )).rejects.toThrow('aborted before app-server startup')
@@ -1870,6 +1969,7 @@ describe('run lifecycle and quiescence', () => {
       permissionMode: DEFAULT_CODEX_PERMISSION_MODE,
       env: {},
       disposeGraceMs: 10,
+      handshakeTimeoutMs: 0,
       spawn: () => { throw new Error('SECRET_TOKEN spawn failure') },
     })
     await expect(spawnFailure)
@@ -1887,7 +1987,8 @@ describe('run lifecycle and quiescence', () => {
       .rejects.toThrow(expectedFailureDiagnostic('initialize', 'unknown'))
     await expect(asyncSpawnFailure).rejects.not.toThrow('SECRET_TOKEN')
     expect(asyncSpawnFailureChild.terminate).toHaveBeenCalledOnce()
-    expect(asyncSpawnFailureChild.waitForExit).toHaveBeenCalledOnce()
+    // The liveness probe and the disposal path each observe the same range.
+    expect(asyncSpawnFailureChild.waitForExit).toHaveBeenCalledTimes(2)
 
     const child = fakeChild()
     const starting = startCodexRun(request(), runSpec(child))
@@ -2008,6 +2109,37 @@ describe('run lifecycle and quiescence', () => {
     await expect(stderrRun.result).resolves.toMatchObject({ stopReason: 'completed' })
     await stderrRun.dispose()
     expect(stderrChild.stderr.listenerCount('error')).toBe(0)
+  })
+
+  it('fails a silent app-server at the handshake deadline and reports it still running', async () => {
+    const child = fakeChild()
+    const starting = startCodexRun(
+      request(),
+      runSpec(child, { handshakeTimeoutMs: 1 }),
+    )
+    await expect(starting).rejects.toThrow(
+      expectedFailureDiagnostic('initialize', 'transport', {
+        detail: 'no response within 1ms; app-server process still running',
+      }),
+    )
+    expect(child.terminate).toHaveBeenCalledOnce()
+  })
+
+  it('reports a surviving managed range when the child exits before the handshake completes', async () => {
+    const child = fakeChild({ exitOnTerminate: false, rangeOutlivesChild: true })
+    const starting = startCodexRun(
+      request(),
+      runSpec(child, { handshakeTimeoutMs: 60_000 }),
+    )
+    await child.peer.nextMethod('initialize')
+    child.settle({ exitCode: 7, signal: null })
+    await expect(starting).rejects.toThrow(
+      expectedFailureDiagnostic('initialize', 'unknown', {
+        outcome: { exitCode: 7, signal: null },
+        detail: 'child process exited but its managed range is still running',
+      }),
+    )
+    expect(child.terminate).toHaveBeenCalledOnce()
   })
 
   it('rolls back an abort that wins immediately after thread creation', async () => {
