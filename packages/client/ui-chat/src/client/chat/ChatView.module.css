@@ -79,7 +79,7 @@
 
 /* Turn activity keeps the former loader's one-line footprint. A pale
    brand-blue band sweeps from left to right; reduced-motion keeps it static.
-   The group wraps the pill and, during compaction, its grey subline. */
+   The group wraps the pill, its phase subline, and the action row. */
 .turnStatusGroup {
   align-self: flex-start;
   flex: none;
@@ -139,6 +139,31 @@
   font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
   color: var(--dsw-alias-label-caption);
+}
+
+/* Phase subline: the same grey caption row as the compaction one, carrying
+   the retry, child, tool, or assistant-stream phase label. */
+.turnStatusSubline {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
+  color: var(--dsw-alias-label-caption);
+}
+
+/* Action row under the subline: Cancel always; Cancel & re-run once the
+   turn has settled tool work; Show log while a child is in flight. */
+.turnStatusActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.turnStatusAction {
+  flex: none;
 }
 
 @keyframes dsh-turn-status-shimmer {

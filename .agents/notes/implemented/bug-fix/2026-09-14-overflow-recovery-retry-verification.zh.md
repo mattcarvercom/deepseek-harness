@@ -44,4 +44,4 @@ Status: implemented
 
 `packages/compaction/compaction-basic/tests/compaction-basic.spec.ts` 中「preserves the newest whole tool-call/result pair during forced overflow compaction」这一用例此前使用了一个 1,000 token 的测试上下文窗口，在该窗口下，受保护的最新工具调用／结果对本身（约 2,000 多个启发式 token）永远无法通过新的阈值检查——这是本次修复所针对场景的一次意外实例，与该测试实际想要验证的内容（被保留的这一对内容保持完整且平衡）无关。已将其放宽为 `createContext(10_000)`，与同一文件中其他使用相同 `toolConversation()` 夹具的兄弟用例保持一致。
 
-`packages/compaction/compaction-basic`、`packages/agent-loop`、`packages/llm/llm-retry` 与 `packages/agent` 的完整套件全部通过（201 个测试）；仓库范围内的 `typecheck` 与 `lint` 均干净通过。
+`packages/compaction/compaction-basic`、`packages/core/agent-loop`、`packages/llm/llm-retry` 与 `packages/core/agent` 的完整套件全部通过（201 个测试）；仓库范围内的 `typecheck` 与 `lint` 均干净通过。

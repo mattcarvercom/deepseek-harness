@@ -21,6 +21,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
   subprocessRunHandle,
+  type SubagentActivityKind,
   type SubagentResult,
   type SubagentRun,
   type SubagentStartRequest,
@@ -251,6 +252,27 @@ function streamMessageLabel(message: SDKMessage): string {
 }
 
 /* jscpd:ignore-end */
+
+/**
+ * Classify an official SDK stream message as the coarse child-run activity
+ * kind a consumer records for UI phase display.
+ * @param message - an official stream union member.
+ * @returns the activity kind.
+ */
+export function claudeMessageActivityKind(message: SDKMessage): SubagentActivityKind {
+  switch (message.type) {
+    case 'assistant':
+      return 'output'
+    case 'user':
+      return 'tool'
+    case 'system':
+    case 'result':
+      return 'other'
+    // New official stream members stay `other` until named.
+    default:
+      return 'other'
+  }
+}
 
 /**
  * Validate and preserve the one-shot task before crossing the SDK boundary.
@@ -619,6 +641,7 @@ export async function startClaudeCodeRun(
             receivedResult = true
           }, (message) => {
             watchdog.reset(streamMessageLabel(message))
+            request.onActivity?.(claudeMessageActivityKind(message))
           }),
           publishedProcessFailure,
         ])

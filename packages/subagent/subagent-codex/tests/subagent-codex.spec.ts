@@ -8,7 +8,7 @@ import * as yaml from 'js-yaml'
 import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import SubagentRuntime, { type SubagentActivityKind } from '@deepseek-ai/dsh-subagent'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type {
@@ -31,7 +31,7 @@ import {
   textTask,
   type CodexRunSpec,
 } from '../src/run.ts'
-import { CodexAppServerWire } from '../src/wire.ts'
+import { CodexAppServerWire, codexNotificationActivityKind } from '../src/wire.ts'
 
 const { hostStderrWrite } = vi.hoisted(() => ({
   hostStderrWrite: {
@@ -1834,6 +1834,108 @@ describe('CodexAppServerWire', () => {
       wire.close()
       child.toChild.emit('error', new Error('late stdin close'))
     }
+  })
+
+  it('classifies app-server notifications into coarse activity kinds', () => {
+    const tool = [
+      ['item/started', { item: { type: 'commandExecution' } }],
+      ['item/started', { item: { type: 'fileChange' } }],
+      ['item/started', { item: { type: 'mcpToolCall' } }],
+      ['item/started', { item: { type: 'webSearch' } }],
+      ['item/completed', { item: { type: 'commandExecution' } }],
+    ] as const
+    for (const [method, params] of tool) {
+      expect(codexNotificationActivityKind(method, params)).toBe('tool')
+    }
+    const output = [
+      ['item/started', { item: { type: 'agentMessage' } }],
+      ['item/started', { item: { type: 'reasoning' } }],
+      ['item/started', { item: { type: 'userMessage' } }],
+      ['item/completed', { item: { type: 'agentMessage' } }],
+    ] as const
+    for (const [method, params] of output) {
+      expect(codexNotificationActivityKind(method, params)).toBe('output')
+    }
+    const other: Array<[string, Record<string, unknown>]> = [
+      ['item/started', { item: { type: 'plan' } }],
+      ['item/started', { item: null }],
+      ['item/started', { item: 'not-an-object' }],
+      ['item/started', { item: [] }],
+      ['item/started', {}],
+      ['turn/started', { threadId: 'thread-1', turn: { id: 'turn-1' } }],
+      ['mystery/unknown', {}],
+    ]
+    for (const [method, params] of other) {
+      expect(codexNotificationActivityKind(method, params)).toBe('other')
+    }
+  })
+
+  it('reports each app-server frame to the activity observer without changing the run', async () => {
+    const child = fakeChild()
+    const kinds: SubagentActivityKind[] = []
+    const wire = new CodexAppServerWire(
+      child.handle.stdout!,
+      child.handle.stdin!,
+      DEFAULT_CODEX_PERMISSION_MODE,
+      undefined,
+      0,
+      0,
+      undefined,
+      (kind) => { kinds.push(kind) },
+    )
+    wire.start()
+    const initializing = wire.initialize(new AbortController().signal)
+    const initialize = await child.peer.nextMethod('initialize')
+    child.peer.respond(initialize, { userAgent: 'codex-cli 0.153.4' })
+    await initializing
+    await child.peer.nextMethod('initialized')
+    const starting = wire.startThread('/workspace', new AbortController().signal)
+    const threadStart = await child.peer.nextMethod('thread/start')
+    child.peer.respond(threadStart, { thread: { id: 'thread-1', ephemeral: true } })
+    await starting
+    expect(kinds).toEqual([])
+    const result = wire.runTurn(['task'], new AbortController().signal)
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    // Let commitTurnId settle before the frames arrive; otherwise the wire
+    // re-reports each early notification once the turn id is committed.
+    await nextTask()
+    child.peer.send(
+      {
+        id: 'approval',
+        method: 'item/commandExecution/requestApproval',
+        params: { threadId: 'thread-1', turnId: 'turn-1', availableDecisions: ['decline'] },
+      },
+      {
+        method: 'item/started',
+        params: {
+          threadId: 'thread-1',
+          turnId: 'turn-1',
+          item: { type: 'commandExecution', command: 'ls' },
+        },
+      },
+      {
+        method: 'item/completed',
+        params: {
+          threadId: 'thread-1',
+          turnId: 'turn-1',
+          item: { type: 'agentMessage', text: 'hello', phase: null },
+        },
+      },
+      {
+        method: 'item/started',
+        params: { threadId: 'thread-1', turnId: 'turn-1', item: { type: 'plan' } },
+      },
+      { method: 'mystery/unknown', params: {} },
+      { method: 'turn/started', params: { threadId: 'thread-1', turn: { id: 'turn-1' } } },
+      turnCompleted('completed'),
+    )
+    await expect(result).resolves.toEqual({
+      output: [{ type: 'text', text: 'hello' }],
+      stopReason: 'completed',
+    })
+    expect(kinds).toEqual(['other', 'tool', 'output', 'other', 'other', 'other', 'other'])
+    wire.close()
   })
 })
 

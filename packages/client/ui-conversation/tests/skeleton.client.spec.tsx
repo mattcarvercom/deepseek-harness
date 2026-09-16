@@ -90,6 +90,7 @@ const SID = sid('s1')
 type SessionSlotProps = ComponentProps<typeof ConversationSession>
 
 const useChat: SessionSlotProps['useChat'] = () => { throw new Error('unused') }
+const useSubagentActivity: SessionSlotProps['useSubagentActivity'] = selector => selector({})
 const useTrajectory: SessionSlotProps['useTrajectory'] = () => { throw new Error('unused') }
 
 function workspace(id = 'w1'): WorkspaceView {
@@ -197,6 +198,7 @@ function mount(
           useConversation={useConversation}
           useConversationViews={useConversationViews}
           useChat={useChat}
+          useSubagentActivity={useSubagentActivity}
           useTrajectory={useTrajectory}
           useSessions={props.useSessions}
           usePanelInfo={props.usePanelInfo}
@@ -224,6 +226,7 @@ function mount(
           useConversation={useConversation}
           useConversationViews={useConversationViews}
           useChat={useChat}
+          useSubagentActivity={useSubagentActivity}
           useTrajectory={useTrajectory}
           useSessions={props.useSessions}
           usePanelInfo={props.usePanelInfo}

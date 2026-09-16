@@ -35,7 +35,9 @@ export type {
   ChatNodeViewProps, ChatScrollPosition, ChatStore, ChatViewInjected, ChatViewSlotProps,
   CommandRowOwnerProps, CommandRowProps, MessageImagesProps, OpenFileOptions,
   TurnProcessOwnerProps, TurnTailOwnerProps, UseChat, UseChatNodeTurnData,
+  UseSubagentActivity,
 } from './contract/slots.ts'
+export type { SubagentActivityFact, SubagentActivityMap } from './contract/subagent-activity.ts'
 export type {
   TurnProcessSpec,
 } from './contract/turn-process.ts'

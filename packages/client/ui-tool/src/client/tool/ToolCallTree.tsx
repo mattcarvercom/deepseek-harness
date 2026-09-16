@@ -12,8 +12,9 @@ function callName(node: ToolCallBlock): string {
 
 /** One atomic call dispatched through the Tool-owned keyed slot. */
 const ToolCall = memo(function ToolCall({
-  renderSlot, callId, toolName, block, openFile, cwd, home, inspectCall, loadImage, t, children,
-}: Pick<ToolTreeProps, 'renderSlot' | 'openFile' | 'cwd' | 'inspectCall' | 'loadImage' | 't'> & {
+  renderSlot, callId, toolName, block, openFile, cwd, home, inspectCall, loadImage,
+  useSubagentActivity, t, children,
+}: Pick<ToolTreeProps, 'renderSlot' | 'openFile' | 'cwd' | 'inspectCall' | 'loadImage' | 'useSubagentActivity' | 't'> & {
   callId: string
   toolName: string
   block: ToolCallBlock
@@ -30,6 +31,10 @@ const ToolCall = memo(function ToolCall({
     loadImage,
     inspect: () => { inspectCall(callId) },
   }), [callId, toolName, block, openFile, cwd, home, loadImage, inspectCall])
+  // Only an in-flight subagent delegation records an activity fact under its
+  // own call id; every other row's lookup stays undefined and shows no subline.
+  const fact = useSubagentActivity(m => m[callId])
+  const activityLabel = !('kind' in block) && fact !== undefined ? t(`tool.activity.${fact.kind}`) : undefined
   return (
     <div
       className={css.callRow}
@@ -38,7 +43,7 @@ const ToolCall = memo(function ToolCall({
     >
       {renderSlot('tool.call.toolview', owner, {
         entryKey: toolName,
-        fallback: <GenericToolCard {...owner} t={t} />,
+        fallback: <GenericToolCard {...owner} t={t} activityLabel={activityLabel} />,
       })}
       {children}
     </div>
@@ -46,8 +51,8 @@ const ToolCall = memo(function ToolCall({
 })
 
 const ToolCallBranch = memo(function ToolCallBranch({
-  renderSlot, block, cwd, home, openFile, inspectCall, loadImage, t,
-}: Pick<ToolTreeProps, 'renderSlot' | 'cwd' | 'openFile' | 'inspectCall' | 'loadImage' | 't'> & {
+  renderSlot, block, cwd, home, openFile, inspectCall, loadImage, useSubagentActivity, t,
+}: Pick<ToolTreeProps, 'renderSlot' | 'cwd' | 'openFile' | 'inspectCall' | 'loadImage' | 'useSubagentActivity' | 't'> & {
   block: ToolCallBlock
   home?: string | undefined
 }) {
@@ -62,6 +67,7 @@ const ToolCallBranch = memo(function ToolCallBranch({
       home={home}
       inspectCall={inspectCall}
       loadImage={loadImage}
+      useSubagentActivity={useSubagentActivity}
       t={t}
     >
       {block.subCalls.length > 0 ? (
@@ -76,6 +82,7 @@ const ToolCallBranch = memo(function ToolCallBranch({
               openFile={openFile}
               inspectCall={inspectCall}
               loadImage={loadImage}
+              useSubagentActivity={useSubagentActivity}
               t={t}
             />
           ))}
@@ -92,7 +99,7 @@ const ToolCallBranch = memo(function ToolCallBranch({
  * @returns the Tool call tree.
  */
 export function ToolCallTree({
-  renderSlot, node, cwd, openFile, inspectCall, loadImage, useHostInfo, t,
+  renderSlot, node, cwd, openFile, inspectCall, loadImage, useHostInfo, useSubagentActivity, t,
 }: ToolTreeProps) {
   const home = useHostInfo(info => info.home)
   const block = node.data.root
@@ -105,6 +112,7 @@ export function ToolCallTree({
       openFile={openFile}
       inspectCall={inspectCall}
       loadImage={loadImage}
+      useSubagentActivity={useSubagentActivity}
       t={t}
     />
   )

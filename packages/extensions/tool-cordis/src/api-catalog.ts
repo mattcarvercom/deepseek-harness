@@ -5759,6 +5759,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type StreamChunk = {\n    type: \'block-start\';\n    index: number;\n    blockType: ContentBlockType;\n} | {\n    type: \'text-delta\';\n    index: number;\n    text: string;\n} | {\n    type: \'reasoning-delta\';\n    index: number;\n    text: string;\n} | {\n    type: \'tool-call-delta\';\n    index: number;\n    id: ToolCallId;\n    name?: string;\n    argumentsDelta: string;\n} | {\n    type: \'block-end\';\n    index: number;\n    block: ContentBlock;\n} | {\n    type: \'usage\';\n    usage: TokenUsage;\n} | {\n    type: \'finish\';\n    reason: FinishReason;\n    replayState?: ReplayEnvelope;\n};',
   },
   {
+    name: 'SubagentActivityKind',
+    declaration: 'export type SubagentActivityKind = \'output\' | \'tool\' | \'other\';',
+  },
+  {
     name: 'SubagentCapabilities',
     declaration: 'export interface SubagentCapabilities {\n    readonly agentOptions: boolean;\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly persona: boolean;\n}',
   },
@@ -5832,7 +5836,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentStartRequest',
-    declaration: 'export interface SubagentStartRequest {\n    readonly label?: string;\n    readonly prompt: ContentBlock[];\n    readonly parent: Agent;\n    readonly signal: AbortSignal;\n    readonly agentOptions?: AgentOptions;\n    readonly outputSchema?: ObjectJsonSchema;\n    readonly maxDepth?: number;\n    readonly toolFilter?: ToolRestriction;\n    readonly persona?: string;\n}',
+    declaration: 'export interface SubagentStartRequest {\n    readonly label?: string;\n    readonly prompt: ContentBlock[];\n    readonly parent: Agent;\n    readonly signal: AbortSignal;\n    readonly agentOptions?: AgentOptions;\n    readonly outputSchema?: ObjectJsonSchema;\n    readonly maxDepth?: number;\n    readonly toolFilter?: ToolRestriction;\n    readonly persona?: string;\n    readonly onActivity?: (kind: SubagentActivityKind) => void;\n}',
   },
   {
     name: 'SubagentStopReason',

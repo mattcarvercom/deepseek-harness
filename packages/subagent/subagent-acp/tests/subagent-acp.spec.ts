@@ -6,14 +6,14 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { PassThrough, type Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import SubagentRuntime, { type SubagentActivityKind } from '@deepseek-ai/dsh-subagent'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { SubprocessHandle, SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
 import * as acp from '../src/index.ts'
 import * as acpRun from '../src/run.ts'
-import { acpStopReason, acpContentText, DEFAULT_DISPOSE_EOF_GRACE_MS, DEFAULT_DISPOSE_GRACE_MS, disposeAcpChild, startAcpRun, toAcpPrompt, type AcpRunSpec } from '../src/run.ts'
+import { acpStopReason, acpContentText, acpUpdateActivityKind, DEFAULT_DISPOSE_EOF_GRACE_MS, DEFAULT_DISPOSE_GRACE_MS, disposeAcpChild, startAcpRun, toAcpPrompt, type AcpRunSpec } from '../src/run.ts'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { spawnSubprocess } from '@deepseek-ai/dsh-subprocess-local/src/spawn.ts'
 
@@ -190,6 +190,19 @@ describe('acpStopReason', () => {
 
   it('treats an unknown terminal reason as an error', () => {
     expect(acpStopReason('something-new' as never)).toBe('error')
+  })
+})
+
+describe('acpUpdateActivityKind', () => {
+  it('classifies session updates into coarse activity kinds', () => {
+    expect(acpUpdateActivityKind('agent_message_chunk')).toBe('output')
+    expect(acpUpdateActivityKind('tool_call')).toBe('tool')
+    expect(acpUpdateActivityKind('tool_call_update')).toBe('tool')
+    expect(acpUpdateActivityKind('agent_thought_chunk')).toBe('other')
+    expect(acpUpdateActivityKind('user_message_chunk')).toBe('other')
+    expect(acpUpdateActivityKind('plan_update')).toBe('other')
+    // A future protocol member stays other until named.
+    expect(acpUpdateActivityKind('private/future_update')).toBe('other')
   })
 })
 
@@ -657,6 +670,24 @@ describe('dsh-subagent-acp', () => {
     expect(nextRun.id).not.toBe('acp-child-session')
     await nextRun.result
     await nextRun.dispose()
+  })
+
+  it('reports each session update to the start request activity observer', async () => {
+    const ctx = await setup({ MOCK_TEXT: 'acp answer', MOCK_THOUGHT: '1' })
+    const kinds: SubagentActivityKind[] = []
+    const run = await ctx.subagents.start('acp', {
+      prompt: [{ type: 'text', text: 'do X' }],
+      parent: fakeParent,
+      signal: new AbortController().signal,
+      onActivity: (kind) => { kinds.push(kind) },
+    })
+    const result = await run.result
+    expect(result.stopReason).toBe('completed')
+    expect(text(result.output)).toBe('acp answer')
+    // The thought chunk precedes the message chunk on the wire, and each
+    // update reaches the observer under its classified kind.
+    expect(kinds).toEqual(['other', 'output'])
+    await run.dispose()
   })
 
   it('maps a max_tokens stop reason', async () => {

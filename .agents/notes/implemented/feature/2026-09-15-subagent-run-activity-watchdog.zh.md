@@ -38,6 +38,7 @@ Codex wire 规格固定了触发（轮次提交后的沉默与在途沉默）、
 
 ## 相关
 
+- [Subagent 活动观察与运行中轮次 pill 阶段](2026-09-15-subagent-activity-observation.zh.md) —— 同一运行上的观察型孪生：本 note 让沉默的已发布运行失败；那个 note 为 UI 记录活着的运行。
 - [Codex 发布前握手截止时间](2026-09-15-codex-handshake-deadline.zh.md) — 发布前的姊妹边界；两个截止时间一起关闭事故复盘 0005。
 - [JSON-RPC 行传输的每请求截止时间](2026-09-15-jsonrpc-request-deadline.zh.md) — 握手截止时间所装上的传输机制。
 - [LLM 流内容空闲超时](2026-09-15-llm-stream-content-idle-timeout.zh.md) — LLM 适配器上的两层活动/内容看门狗；同样的「活动不是进展」区分应用到 subagent 流。

@@ -776,6 +776,21 @@ Source: [`packages/core/session/src/types.ts:287`](../packages/core/session/src/
 
 ### `subagent/*`
 
+<a id="subagentactivity--log-only"></a>
+
+#### `subagent/activity` — log-only
+
+```ts persistence-catalog
+/**
+ * Records one throttled observation of a live child's coarse activity
+ * phase against the calling tool call. UI-only; never model-visible.
+ * @param data - the record payload.
+ */
+'subagent/activity': SubagentActivityData
+```
+
+Source: [`packages/subagent/tool-subagent/src/types.ts:32`](../packages/subagent/tool-subagent/src/types.ts)
+
 <a id="subagentcatalog--log-only"></a>
 
 #### `subagent/catalog` — log-only

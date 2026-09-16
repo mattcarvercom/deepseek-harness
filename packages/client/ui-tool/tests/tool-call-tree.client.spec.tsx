@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/react'
 import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { SubagentActivityMap, ToolResultNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { ToolCallOwnerProps, ToolTreeProps } from '../src/client/contract/slots.ts'
@@ -51,6 +51,7 @@ function props(
     loadImage: vi.fn(() => Promise.reject(new Error('not used'))),
     fileMentions: vi.fn(),
     useHostInfo: ((selector: (info: { home: string | undefined }) => unknown) => selector({ home })) as ToolTreeProps['useHostInfo'],
+    useSubagentActivity: ((selector: (value: SubagentActivityMap) => unknown) => selector({})) as ToolTreeProps['useSubagentActivity'],
     t,
   } as unknown as ToolTreeProps
 }

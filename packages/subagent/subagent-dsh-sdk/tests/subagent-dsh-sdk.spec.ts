@@ -12,7 +12,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import SubagentRuntime, { type SubagentActivityKind } from '@deepseek-ai/dsh-subagent'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import {
@@ -176,6 +176,20 @@ describe('dsh-subagent-dsh-sdk provider', () => {
     expect(nextRun.id).not.toBe(run.id)
     await nextRun.result
     await nextRun.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('reports each child session event to the start request activity observer', async () => {
+    const ctx = await setup({ FAKE_TEXT: 'sdk child activity' })
+    const kinds: SubagentActivityKind[] = []
+    const run = await ctx.subagents.start('dsh-sdk', { ...request('do X'), onActivity: (kind) => { kinds.push(kind) } })
+    const result = await run.result
+    expect(result.stopReason).toBe('completed')
+    expect(text(result.output)).toBe('sdk child activity')
+    // The fake runtime scripts an inbox splice, turn open, assistant answer,
+    // and turn close in wire order; the observer sees each classified once.
+    expect(kinds).toEqual(['other', 'other', 'output', 'other'])
+    await run.dispose()
     await ctx.fiber.dispose()
   })
 

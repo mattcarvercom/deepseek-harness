@@ -65,22 +65,22 @@ describe('turn outline projection unit', () => {
     const { ctx, session } = await harness(true)
     expect(outlineOf(ctx, session)).toEqual([])
     expect(ctx.sessionProjections.checkpoint(session).turnOutline)
-      .toEqual({ ver: 2, seq: -1, val: { turns: [], draft: '' } })
+      .toEqual({ ver: 3, seq: -1, val: { turns: [], draft: '' } })
   })
 
-  it('folds each turn with its boundary seq, first prompt, and turn-end response', async () => {
+  it('folds each turn with its boundary seq, start time, first prompt, and turn-end response', async () => {
     const { ctx, session } = await harness(true)
-    const firstBoundary = session.append('turn/start', { turn: 1 }).seq
+    const firstBoundary = session.append('turn/start', { turn: 1 })
     appendPrompt(session, 'hello world')
     appendPrompt(session, 'a later steer must not replace the prompt')
     appendAssistant(session, 1, 1, 'first draft answer')
     appendAssistant(session, 1, 2, 'final answer of turn one')
     endTurn(session, 1)
-    const secondBoundary = session.append('turn/start', { turn: 2 }).seq
+    const secondBoundary = session.append('turn/start', { turn: 2 })
     appendPrompt(session, 'second prompt')
     expect(outlineOf(ctx, session)).toEqual([
-      { turn: 1, seq: firstBoundary, prompt: 'hello world', response: 'final answer of turn one' },
-      { turn: 2, seq: secondBoundary, prompt: 'second prompt', response: '' },
+      { turn: 1, seq: firstBoundary.seq, startedAt: firstBoundary.time, prompt: 'hello world', response: 'final answer of turn one' },
+      { turn: 2, seq: secondBoundary.seq, startedAt: secondBoundary.time, prompt: 'second prompt', response: '' },
     ])
   })
 
@@ -133,13 +133,13 @@ describe('turn outline projection unit', () => {
   it('ignores non-human user/message sources and pre-turn prompts', async () => {
     const { ctx, session } = await harness(true)
     appendPrompt(session, 'queued before any turn')
-    session.append('turn/start', { turn: 1 })
+    const boundary = session.append('turn/start', { turn: 1 })
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'injected context' }],
       source: { kind: 'plugin', plugin: 'test-injector', form: 'relay' },
     }), { surfaceOp: 'append' })
     expect(outlineOf(ctx, session)).toEqual([
-      { turn: 1, seq: 1, prompt: '', response: '' },
+      { turn: 1, seq: 1, startedAt: boundary.time, prompt: '', response: '' },
     ])
   })
 
@@ -164,11 +164,11 @@ describe('turn outline projection unit', () => {
 
   it('keeps quiet on a draftless turn end and an empty in-turn prompt', async () => {
     const { ctx, session } = await harness(true)
-    session.append('turn/start', { turn: 1 })
+    const boundary = session.append('turn/start', { turn: 1 })
     // Whitespace-only prompt text normalizes to nothing: the entry stays unlabeled.
     appendPrompt(session, ' \t  ')
     endTurn(session, 1)
-    expect(outlineOf(ctx, session)).toEqual([{ turn: 1, seq: 0, prompt: '', response: '' }])
+    expect(outlineOf(ctx, session)).toEqual([{ turn: 1, seq: 0, startedAt: boundary.time, prompt: '', response: '' }])
   })
 
   it('bounds preview reading and keeps repeated or empty drafts quiet (fabricated envelopes)', () => {
@@ -179,7 +179,7 @@ describe('turn outline projection unit', () => {
       time: 0,
       data: { message: { content: blocks } },
     }) as unknown as SessionEvent
-    const base: TurnOutlineState = { turns: [{ turn: 1, seq: SessionSeq(0), prompt: 'p', response: '' }], draft: '' }
+    const base: TurnOutlineState = { turns: [{ turn: 1, seq: SessionSeq(0), startedAt: 0, prompt: 'p', response: '' }], draft: '' }
     // Non-text blocks are skipped; whitespace-heavy short blocks cross the raw
     // reading bound early, so the collapsed (short) draft still marks the
     // unread remainder with an ellipsis.
@@ -200,14 +200,14 @@ describe('turn outline projection unit', () => {
     } as unknown as SessionEvent
     expect(def.apply({ turns: [], draft: 'orphan' }, end)).toEqual({ turns: [], draft: '' })
     // …and a re-settled identical response keeps the entries' identity.
-    const settled: TurnOutlineState = { turns: [{ turn: 1, seq: SessionSeq(0), prompt: 'p', response: 'done' }], draft: 'done' }
+    const settled: TurnOutlineState = { turns: [{ turn: 1, seq: SessionSeq(0), startedAt: 0, prompt: 'p', response: 'done' }], draft: 'done' }
     const recommitted = def.apply(settled, end)
     expect(recommitted.turns).toBe(settled.turns)
     expect(recommitted.draft).toBe('')
   })
 
   it('skips a boundary that does not advance the turn number (fabricated envelope)', () => {
-    const state: TurnOutlineState = { turns: [{ turn: 2, seq: SessionSeq(5), prompt: 'kept', response: '' }], draft: '' }
+    const state: TurnOutlineState = { turns: [{ turn: 2, seq: SessionSeq(5), startedAt: 0, prompt: 'kept', response: '' }], draft: '' }
     const regressive = {
       type: 'turn/start',
       seq: SessionSeq(9),
@@ -219,10 +219,10 @@ describe('turn outline projection unit', () => {
 
   it('folds turns already in the log when the plugin mounts late (lazy cell build)', async () => {
     const { ctx, session } = await harness(false)
-    session.append('turn/start', { turn: 1 })
+    const boundary = session.append('turn/start', { turn: 1 })
     appendPrompt(session, 'pre-mount prompt')
     await ctx.plugin(SessionTurnOutlinePlugin)
-    expect(outlineOf(ctx, session)).toEqual([{ turn: 1, seq: 0, prompt: 'pre-mount prompt', response: '' }])
+    expect(outlineOf(ctx, session)).toEqual([{ turn: 1, seq: 0, startedAt: boundary.time, prompt: 'pre-mount prompt', response: '' }])
   })
 
   it('has no key without the plugin and drops it when the plugin unloads (HMR safety)', async () => {
@@ -246,8 +246,8 @@ describe('turn outline projection unit', () => {
         ...row!,
         val: {
           turns: [
-            { turn: 2, seq: 1, prompt: '', response: '' },
-            { turn: 2, seq: 4, prompt: '', response: '' },
+            { turn: 2, seq: 1, startedAt: 0, prompt: '', response: '' },
+            { turn: 2, seq: 4, startedAt: 0, prompt: '', response: '' },
           ],
           draft: '',
         },
@@ -259,8 +259,8 @@ describe('turn outline projection unit', () => {
         ...row!,
         val: {
           turns: [
-            { turn: 1, seq: 1, prompt: 'ok', response: 'done' },
-            { turn: 2, seq: 4, prompt: '', response: '' },
+            { turn: 1, seq: 1, startedAt: 0, prompt: 'ok', response: 'done' },
+            { turn: 2, seq: 4, startedAt: 0, prompt: '', response: '' },
           ],
           draft: '',
         },

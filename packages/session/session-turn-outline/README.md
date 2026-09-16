@@ -41,6 +41,7 @@ Mount the plugin beside the session store and the projection registry when clien
 |---|---|
 | `turn` | Host-assigned turn number from the `turn/start` payload |
 | `seq` | The turn's `turn/start` event seq — paging a window back through this seq loads the whole turn |
+| `startedAt` | The turn's `turn/start` event time (epoch ms) — durable anchor for a running turn's elapsed clock when its paged window excludes the boundary |
 | `prompt` | Preview of the turn's first human prompt (space-joined text blocks, collapsed whitespace, 50-character cap with a trailing ellipsis when clipped — one rail-card line); `''` until an eligible prompt lands |
 | `response` | Preview of the turn's final text-bearing assistant message (same normalization, 120-character cap — up to three rail-card lines); `''` until the turn ends with assistant text |
 
@@ -62,7 +63,7 @@ This section explains the fold behind the outline; the observable behavior is fu
 
 ### Design concept
 
-The unit is a pure fold over committed session events. `turn/start` — not the prompt `user/message` — anchors each entry because its seq is the load-through target for a jump: the agent loop logs `turn/start` before the turn's prompt and steps, so a window paged back through that seq contains the whole turn. The prompt fills from the first human `user/message`, and only while the newest entry is still empty — later human messages in the same turn (steering) keep the first preview. The response cannot fill the same way (`turn/end` carries no text), so each text-bearing `assistant/message` overwrites a state draft and `turn/end` commits the survivor — the newest text, which is the loaded rail's `findLast` semantic.
+The unit is a pure fold over committed session events. `turn/start` — not the prompt `user/message` — anchors each entry because its seq is the load-through target for a jump: the agent loop logs `turn/start` before the turn's prompt and steps, so a window paged back through that seq contains the whole turn. The entry also records the boundary's event time, so a client whose paged window excludes the boundary still anchors the running turn's elapsed clock to a fact the whole-log fold already carries. The prompt fills from the first human `user/message`, and only while the newest entry is still empty — later human messages in the same turn (steering) keep the first preview. The response cannot fill the same way (`turn/end` carries no text), so each text-bearing `assistant/message` overwrites a state draft and `turn/end` commits the survivor — the newest text, which is the loaded rail's `findLast` semantic.
 
 ### Source map
 

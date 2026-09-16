@@ -10,7 +10,7 @@
 
 import type { Readable, Writable } from 'node:stream'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
+import type { SubagentActivityKind, SubagentResult } from '@deepseek-ai/dsh-subagent'
 import { JsonRpcLineTransport } from '@deepseek-ai/dsh-sdk-protocol'
 import type { CodexPermissionMode } from './run.ts'
 
@@ -55,6 +55,35 @@ function string(value: unknown, label: string): string {
     throw new Error(`subagent-codex: app-server returned invalid ${label}`)
   }
   return value
+}
+
+/**
+ * Classify a Codex app-server notification as the coarse child-run activity
+ * kind a consumer records for UI phase display.
+ * @param method - the notification method.
+ * @param params - the notification parameters.
+ * @returns the activity kind.
+ */
+export function codexNotificationActivityKind(method: string, params: Record<string, unknown>): SubagentActivityKind {
+  if (method === 'item/started' || method === 'item/completed') {
+    const item: unknown = params.item
+    if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
+      switch ((item as JsonObject).type) {
+        case 'commandExecution':
+        case 'fileChange':
+        case 'mcpToolCall':
+        case 'webSearch':
+          return 'tool'
+        case 'agentMessage':
+        case 'reasoning':
+        case 'userMessage':
+          return 'output'
+        default:
+          return 'other'
+      }
+    }
+  }
+  return 'other'
 }
 
 function unattendedDecision(params: JsonObject): 'cancel' | 'decline' {
@@ -233,6 +262,7 @@ export class CodexAppServerWire {
     private readonly handshakeTimeoutMs = 0,
     private readonly runActivityTimeoutMs = 0,
     private readonly onUnassociatedFrame?: (line: string) => void,
+    private readonly onActivity?: (kind: SubagentActivityKind) => void,
   ) {
     this.transport = new JsonRpcLineTransport(input, output)
     // Fatal protocol state can arrive after the current guarded operation has
@@ -490,6 +520,11 @@ export class CodexAppServerWire {
     this.activityTimer = setTimeout(this.onActivityTimeout, this.runActivityTimeoutMs)
   }
 
+  /** Report the frame's coarse activity kind to the consumer, if any. */
+  private reportActivity(kind: SubagentActivityKind): void {
+    this.onActivity?.(kind)
+  }
+
   private clearActivityWatchdog(): void {
     if (this.activityTimer === undefined) return
     clearTimeout(this.activityTimer)
@@ -651,6 +686,7 @@ export class CodexAppServerWire {
 
   private handleServerRequest(method: string, params: JsonObject): Promise<unknown> {
     this.observeActivity(`request:${method}`)
+    this.reportActivity('other')
     try {
       switch (method) {
         case 'item/commandExecution/requestApproval':
@@ -717,6 +753,7 @@ export class CodexAppServerWire {
     order?: number,
   ): void {
     this.observeActivity(`notification:${method}`)
+    this.reportActivity(codexNotificationActivityKind(method, params))
     if (method === 'turn/started') {
       const threadId = string(params.threadId, 'turn/started thread id')
       if (threadId !== this.threadId) {

@@ -22,7 +22,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { EMPTY_CHAT_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
-  ChatSnapshot, LegacyConversationSlice,
+  ChatSnapshot, LegacyConversationSlice, SubagentActivityMap,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -225,6 +225,7 @@ function standaloneProps(
   return {
     sessionId: SID,
     useChat: bindSnapshotSelector(createSnapshotStore(EMPTY_CHAT_SNAPSHOT)),
+    useSubagentActivity: selector => selector({}),
     useSessions: emptySessions(),
     usePanelInfo, useResource,
     useSessionPendingInteraction: bindSnapshotSelector(
@@ -326,6 +327,7 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
   const useTrajectory = bindSnapshotSelector<TrajectorySnapshot>(trajectoryStore)
   const useConversation = bindSnapshotSelector<ConversationSnapshot>(conversationStore)
   const useChat = bindSnapshotSelector(createSnapshotStore(EMPTY_CHAT_SNAPSHOT))
+  const useSubagentActivity = bindSnapshotSelector(createSnapshotStore<SubagentActivityMap>({}))
   const useSessions = emptySessions()
   const useSessionPendingInteraction = bindSnapshotSelector(
     createSnapshotStore<SessionPendingInteractionSnapshot>(new Map()),
@@ -350,6 +352,7 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
     useSession,
     useTrajectory,
     useChat,
+    useSubagentActivity,
     useConversation,
     useConversationViews,
     useSessions,

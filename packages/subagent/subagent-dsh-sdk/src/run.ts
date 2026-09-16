@@ -23,7 +23,7 @@ import {
 import type { ContentBlock, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionId, TurnEndReason } from '@deepseek-ai/dsh-session'
 import type { SubagentResult, SubagentRun, SubagentStartRequest, SubagentStopReason } from '@deepseek-ai/dsh-subagent'
-import { AssistantOutputFold, settleRunResult, subprocessRunHandle } from '@deepseek-ai/dsh-subagent'
+import { AssistantOutputFold, sessionEventActivityKind, settleRunResult, subprocessRunHandle } from '@deepseek-ai/dsh-subagent'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 
 /** Resolved spawn spec for an SDK runtime child process (no defaults — see Config). */
@@ -301,7 +301,9 @@ export async function startSdkRun(request: SubagentStartRequest, spec: SdkRunSpe
   const fold = new AssistantOutputFold()
   const observe = (notification: HarnessNotification): void => {
     if (notification.method !== 'session.event' || notification.params.sessionId !== childSessionId) return
-    fold.push(notification.params.event as SessionEvent)
+    const event = notification.params.event as SessionEvent
+    fold.push(event)
+    request.onActivity?.(sessionEventActivityKind(event))
   }
   const collectOutput = (): ContentBlock[] => fold.collect() ?? []
   const teardown = async (): Promise<void> => {

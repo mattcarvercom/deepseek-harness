@@ -44,4 +44,4 @@ A context-overflow whose cause is a single oversized, newest, protected surface 
 
 `packages/compaction/compaction-basic/tests/compaction-basic.spec.ts`'s "preserves the newest whole tool-call/result pair during forced overflow compaction" fixture used a 1,000-token test context window under which the protected newest tool-call/result pair alone (~2,000+ heuristic tokens) could never pass the new threshold check — an accidental instance of exactly the scenario the fix targets, unrelated to what that test is actually pinning (that the preserved pair stays whole and balanced). Widened to `createContext(10_000)`, matching its sibling fixtures elsewhere in the same file that already use that window for the same `toolConversation()` fixture.
 
-Full `packages/compaction/compaction-basic`, `packages/agent-loop`, `packages/llm/llm-retry`, and `packages/agent` suites pass (201 tests); repo-wide `typecheck` and `lint` pass clean.
+Full `packages/compaction/compaction-basic`, `packages/core/agent-loop`, `packages/llm/llm-retry`, and `packages/core/agent` suites pass (201 tests); repo-wide `typecheck` and `lint` pass clean.

@@ -24,7 +24,9 @@
   - img
   - text: Context injection @deepseek-ai/dsh-system-prompt
 - paragraph: partial
-- status: Deep diving...
+- status:
+  - text: Deep diving... Generating…
+  - button "Cancel"
 - list:
   - listitem:
     - text: Keep working until I stop you again.

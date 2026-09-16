@@ -20,7 +20,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { AssistantOutputFold, settleRunResult, subprocessRunHandle } from '@deepseek-ai/dsh-subagent'
-import type { SubagentResult, SubagentRun, SubagentStartRequest, SubagentStopReason } from '@deepseek-ai/dsh-subagent'
+import type { SubagentActivityKind, SubagentResult, SubagentRun, SubagentStartRequest, SubagentStopReason } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessOutcome, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 
 /** Fixed response to child permission requests: reject by default, or select the first allow option. */
@@ -264,6 +264,24 @@ export function toAcpPrompt(prompt: ContentBlock[]): AcpContentBlock[] {
   return blocks
 }
 
+/**
+ * Classify an ACP session-update discriminator as the coarse child-run
+ * activity kind a consumer records for UI phase display.
+ * @param sessionUpdate - the update's discriminator value.
+ * @returns the activity kind.
+ */
+export function acpUpdateActivityKind(sessionUpdate: string): SubagentActivityKind {
+  switch (sessionUpdate) {
+    case 'agent_message_chunk':
+      return 'output'
+    case 'tool_call':
+    case 'tool_call_update':
+      return 'tool'
+    default:
+      return 'other'
+  }
+}
+
 /** Normalize an unknown thrown value to an Error (the catch binding is `unknown`). */
 function toError(value: unknown): Error {
   // The catch only sees rejections from the ACP SDK RPCs and the spawn `error`
@@ -424,6 +442,7 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
       if (update.sessionUpdate === 'agent_message_chunk') {
         fold.pushText(acpContentText(update.content))
       }
+      request.onActivity?.(acpUpdateActivityKind(update.sessionUpdate))
       // Other updates (thoughts, tool calls, plans) are consumed but not
       // surfaced — the subagent returns only its final answer.
       return Promise.resolve()

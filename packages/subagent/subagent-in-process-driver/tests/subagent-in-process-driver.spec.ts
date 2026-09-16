@@ -9,7 +9,7 @@ import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import * as SessionInvariant from '@deepseek-ai/dsh-session/invariant'
 import * as AgentInvariant from '@deepseek-ai/dsh-agent/invariant'
 import * as AgentLoopInvariant from '@deepseek-ai/dsh-agent-loop/invariant'
-import SubagentRuntime, { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
+import SubagentRuntime, { sessionEventActivityKind, snapshotSubagentDescriptor, type SubagentActivityKind } from '@deepseek-ai/dsh-subagent'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import { maxTokensResponse, MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { startInProcessRun } from '../src/index.ts'
@@ -411,5 +411,67 @@ describe('startInProcessRun', () => {
     await run.dispose()
     expect(ctx.agents.list()).toHaveLength(beforeAgents)
     expect(ctx.sessions.list()).toHaveLength(beforeSessions)
+  })
+})
+
+describe('startInProcessRun activity observer', () => {
+  it('reports each child session event to the observer as its activity kind', async () => {
+    const { ctx, parent } = await setup([textResponse('child answer')])
+    const kinds: SubagentActivityKind[] = []
+    const run = await startInProcessRun({ ...request(parent), onActivity: (kind) => { kinds.push(kind) } }, {})
+    const result = await run.result
+    expect(result.stopReason).toBe('completed')
+    // Every append on a fresh child happens after the observer attached, so
+    // the observed sequence is the child log classified, one kind per event.
+    const child = ctx.agents.get(run.id)!
+    expect(kinds).toEqual(child.session.snapshotEvents().map(event => sessionEventActivityKind(event)))
+    expect(kinds).toContain('output')
+    expect(kinds).not.toContain('tool')
+    await run.dispose()
+  })
+
+  it('does not report constructor seed events to the observer', async () => {
+    const { ctx, parent } = await setup([textResponse('parent answer'), textResponse('child answer')])
+    parent.followup(createUserMessage({ content: [{ type: 'text', text: 'parent question' }], source: { kind: 'user' } }))
+    await parent.whenIdle()
+    const seed = parent.session.snapshotEvents()
+    const kinds: SubagentActivityKind[] = []
+    const run = await startInProcessRun({
+      ...request(parent),
+      onActivity: (kind) => { kinds.push(kind) },
+    }, { seed })
+    const result = await run.result
+    expect(text(result.output)).toBe('child answer')
+    const child = ctx.agents.get(run.id)!
+    // The seed's assistant message would add a second 'output': the observer
+    // must see only the child-owned tail of the log, one kind per event. The
+    // constructor's seed push and its end-seed marker predate the attach, so
+    // the observed tail begins after the marker.
+    const log = child.session.snapshotEvents()
+    const marker = log.findIndex(event => event.type === 'session/end-seed')
+    expect(kinds).toEqual(log.slice(marker + 1).map(event => sessionEventActivityKind(event)))
+    expect(kinds.filter(kind => kind === 'output')).toHaveLength(1)
+    await run.dispose()
+  })
+
+  it('reports child tool calls as tool activity', async () => {
+    const { ctx, parent } = await setup([toolCallResponse('t1', 'noop', {}, 'before'), textResponse('after')])
+    const disposeNoop = ctx.tools.register(defineContentToolFixture({
+      name: 'noop', description: 'probe', parameters: {},
+      execute() { return Promise.resolve([{ type: 'text', text: 'noop result' }]) },
+    }))
+    const kinds: SubagentActivityKind[] = []
+    const run = await startInProcessRun({
+      ...request(parent),
+      onActivity: (kind) => { kinds.push(kind) },
+    }, {})
+    const result = await run.result
+    expect(result.stopReason).toBe('completed')
+    expect(text(result.output)).toBe('after')
+    const child = ctx.agents.get(run.id)!
+    expect(kinds).toEqual(child.session.snapshotEvents().map(event => sessionEventActivityKind(event)))
+    expect(kinds.filter(kind => kind === 'tool')).toHaveLength(1)
+    await run.dispose()
+    disposeNoop()
   })
 })

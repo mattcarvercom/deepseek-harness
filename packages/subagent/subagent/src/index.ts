@@ -87,6 +87,7 @@ export type {
   ContinuableStart,
   ContinuableStartSpec,
   ResolvedSubagentStartRequest,
+  SubagentActivityKind,
   SubagentCapabilities,
   SubagentInterruptAuthority,
   SubagentProvider,
@@ -111,6 +112,7 @@ export type {
   SubagentDescriptorInput,
 } from './descriptor.ts'
 export { SubagentError } from './error.ts'
+export { sessionEventActivityKind } from './activity.ts'
 export { settleRun } from './run-settlement.ts'
 export { assertSubagentMaxDepth, delegationDepthOf } from './depth.ts'
 export {

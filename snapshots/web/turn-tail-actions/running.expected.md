@@ -32,7 +32,10 @@
   - img
   - text: Bash Print alpha to stdout
 - paragraph: partial
-- status: Deep diving...
+- status:
+  - text: Deep diving... Generating…
+  - button "Cancel"
+  - button "Cancel & re-run"
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands":
   - img

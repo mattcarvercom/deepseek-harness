@@ -3,6 +3,7 @@
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { RenderResult } from '@testing-library/react'
 import { useEffect } from 'react'
 import type {
   AssistantMessageNode, ChatNode, ChatNodeOwnerProps, ChatNodeViewProps, ChatSnapshot,
@@ -14,6 +15,7 @@ import type {
 import type {
   SessionListState, SessionSnapshot,
 } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionJob } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {
   ConversationLocationDataStore, ConversationTurnDataMap,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -43,6 +45,7 @@ import { SystemPromptNodeView } from '../src/client/chat/SystemPromptRow.tsx'
 import { formatRunDuration } from '../src/client/chat/message-chrome.ts'
 import { ChatSnapshotBuilder } from '../src/client/conversation-nodes/chat-snapshot-builder.ts'
 import type { TurnProcessSpec } from '../src/client/contract/turn-process.ts'
+import type { SubagentActivityMap } from '../src/client/contract/subagent-activity.ts'
 import { chatSnapshotFixture, FixtureTurnDataStore } from './chat-snapshot-fixture.client.ts'
 
 // Every session-scope fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
@@ -183,6 +186,17 @@ const toolResult = (seq: number, callId: string, name = 'bash'): ToolResultNode 
 const runningCall = (callId: string, name = 'bash'): RunningToolCall => ({
   callId, name, argsRaw: `{"command":"cmd-${callId}"}`, turn: 2, step: 1, time: 1_000, subCalls: [],
 })
+const toolOnlyAssistant = (seq: number, callId: string, name: string, turn: number, step: number): AssistantMessageNode => ({
+  kind: 'assistant', seq, time: seq * 1_000, turn, step,
+  blocks: [{ kind: 'tool-call', callId, name, argsRaw: `{"command":"cmd-${callId}"}` }],
+})
+const job = (label: string, status: SessionJob['status'], startedAt: number): SessionJob => ({
+  id: `job-${label}` as SessionJob['id'],
+  kind: 'bash',
+  label,
+  status,
+  startedAt,
+})
 const command = (over: Partial<CommandNode> = {}): CommandNode => ({
   kind: 'command', seq: 5, time: 5_000, commandId: 'cmd-1' as CommandNode['commandId'],
   name: 'plan', args: '', outcome: { kind: 'success', text: '已进入 plan mode' },
@@ -197,11 +211,17 @@ const compaction = (over: Partial<CompactionSummaryNode> = {}): CompactionSummar
   ...over,
 })
 
-/** Empty sessions-list hook for the global standard-kit seat. */
-function emptySessions() {
+/** Sessions-list source for the global standard-kit seat; tests feed jobs. */
+function makeSessionsSource() {
   const store = createSnapshotStore<SessionListState>(
     { ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined })
-  return bindSnapshotSelector(store)
+  return {
+    use: bindSnapshotSelector(store),
+    setJobs: (jobs: readonly SessionJob[]) => {
+      const current = store.getSnapshot()
+      store.set({ ...current, jobsBySession: { [SID]: [...jobs] } })
+    },
+  }
 }
 
 function emptyWorkspaces() {
@@ -267,7 +287,9 @@ function makeHarness(
   const forkAt = vi.fn()
   // Rows and the harness must observe the same chat-store instance.
   const chat = createChatStore().create()
+  const sessionsSource = makeSessionsSource()
   const transcriptView = createSnapshotStore<TranscriptViewMode>('compact')
+  const activityStore = createSnapshotStore<SubagentActivityMap>({})
   const t = makeTranslate(zh, commonZh)
   const toolOwners: Array<{
     callId: string
@@ -371,11 +393,12 @@ function makeHarness(
     sessionId: SID,
     useSession: bindSnapshotSelector(session.source),
     useChat: bindSnapshotSelector(chatSource.source),
+    useSubagentActivity: bindSnapshotSelector(activityStore),
     useChatNode,
     useChatNodeProcess,
     useConversation: bindSnapshotSelector(createSnapshotStore(EMPTY_CONVERSATION_SNAPSHOT)),
     useTrajectory: (() => { throw new Error('unused') }),
-    useSessions: emptySessions(),
+    useSessions: sessionsSource.use,
     useResource,
     useSessionPendingInteraction: bindSnapshotSelector(
       createSnapshotStore<SessionPendingInteractionSnapshot>(new Map()),
@@ -405,6 +428,8 @@ function makeHarness(
     loadImage: vi.fn(() => Promise.reject(new Error('not used'))),
     chatScroll,
     forkAt,
+    cancel: vi.fn(),
+    prompt: vi.fn(),
     // Absent-service default; mention tests override with a real resolver.
     fileMentions: () => undefined,
     t,
@@ -432,7 +457,9 @@ function makeHarness(
     openFile, openSkill, loadOlder, loadThrough, openView,
     setOutline: (value: unknown) => { outlineValue = value },
     chatScroll, forkAt, toolOwners,
+    setJobs: (jobs: readonly SessionJob[]) => { sessionsSource.setJobs(jobs) },
     setTranscriptView: (mode: TranscriptViewMode) => { transcriptView.set(mode) },
+    setActivity: (map: SubagentActivityMap) => { activityStore.set(map) },
     setNodeRenderer: (renderer: React.ComponentProps<typeof ChatNodeSeat>['renderSlot']) => {
       nodeSlotOverride = renderer
     },
@@ -445,6 +472,13 @@ function readerScroll(element: HTMLElement, top: number): void {
   element.scrollTop = top
   fireEvent.scroll(element)
   fireEvent(element, new Event('scrollend'))
+}
+
+/** The running-turn pill among all status roles: the retry row renders its own. */
+function pillStatus(view: RenderResult): HTMLElement {
+  const found = view.getAllByRole('status').find(el => el.textContent?.includes('深度求索中'))
+  if (found === undefined) throw new Error('running-turn pill status element not found')
+  return found
 }
 
 function turnProcessControl(container: HTMLElement): HTMLButtonElement | null {
@@ -2338,7 +2372,8 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
     expect(h.toolOwners[0]?.block).toMatchObject({ callId: 'r1', argsRaw: '{"command":"cmd-r1"}' })
-    expect(view.getByRole('status').textContent).toBe('深度求索中...')
+    // The pill subline names the newest running tool; the cancel button is always present.
+    expect(view.getByRole('status').textContent).toBe('深度求索中...正在运行 bash取消')
   })
 
   it('keeps the Tool renderer mounted when a running call settles into log order', () => {
@@ -2398,7 +2433,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     // Freshly mounted (as after a reload) yet already past the 15s gate.
     const status = view.getByRole('status')
-    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒$/)
+    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒等待首个 token…取消$/)
     expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull()
     act(() => {
       h.setSession({ queue: [{
@@ -2410,7 +2445,7 @@ describe('ChatView', () => {
         text: 'also',
       }] })
     })
-    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒$/)
+    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒等待首个 token…取消$/)
   })
 
   it('the running clock reads hours once the turn passes an hour', () => {
@@ -2421,7 +2456,17 @@ describe('ChatView', () => {
       { running: true },
     )
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.getByRole('status').textContent).toMatch(/^深度求索中\.\.\.1小时05分0\d秒$/)
+    expect(view.getByRole('status').textContent).toMatch(/^深度求索中\.\.\.1小时05分0\d秒等待首个 token…取消$/)
+  })
+
+  it('anchors the running clock to the outline when the window lacks turn/start', () => {
+    const startedAt = Date.now() - 125_000
+    const h = makeHarness({ nodes: [userInTurn(1, 'go', 1)] }, { running: true })
+    h.setOutline([{ turn: 1, seq: 0, startedAt, prompt: '', response: '' }])
+    const view = render(<h.ChatView {...h.props} />)
+    // Freshly mounted (as after a reload) yet already past the 15s clock gate:
+    // the whole-log outline carries the boundary's time, so the elapsed is real.
+    expect(view.getByRole('status').textContent).toMatch(/^深度求索中\.\.\.2分0\d秒等待首个 token…取消$/)
   })
 
   it('shows the compaction subline with its own clock while the running turn compacts', () => {
@@ -2438,13 +2483,13 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     const status = view.getByRole('status')
     // The main pill is still under its 15s clock gate, but the subline shows from the start.
-    expect(status.textContent).toMatch(/^深度求索中\.\.\.正在压缩对话\.\.\.1分0\d秒$/)
+    expect(status.textContent).toMatch(/^深度求索中\.\.\.正在压缩对话\.\.\.1分0\d秒取消$/)
     expect(status.querySelectorAll('[aria-hidden="true"]')).toHaveLength(1)
     act(() => {
       data.remove('compaction')
       data.publish()
     })
-    expect(status.textContent).toBe('深度求索中...')
+    expect(status.textContent).toBe('深度求索中...等待首个 token…取消')
     expect(status.querySelector('[aria-hidden="true"]')).toBeNull()
   })
 
@@ -2461,7 +2506,205 @@ describe('ChatView', () => {
     const h = makeHarness({}, { running: true }, base)
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByRole('status').textContent)
-      .toMatch(/^深度求索中\.\.\.2分0\d秒正在压缩对话\.\.\.\d秒$/)
+      .toMatch(/^深度求索中\.\.\.2分0\d秒正在压缩对话\.\.\.\d秒取消$/)
+  })
+
+  it('shows the bounded retry subline with its clamped countdown', () => {
+    const h = makeHarness(
+      { nodes: [retry(2)], turnTimings: new Map([[1, { startTime: Date.now() - 1000 }]]) },
+      { running: true },
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    // The fixture's logged retry time is far in the past, so the countdown clamps to zero.
+    expect(pillStatus(view).textContent).toBe('深度求索中...正在重试 1/2 · 0秒 · 连接被重置取消')
+  })
+
+  it('shows the unlimited retry subline without a maximum', () => {
+    const unlimited: ModelRetryNode = {
+      kind: 'model-retry',
+      retryId: 'chat-view-retry' as ModelRetryNode['retryId'],
+      seq: 2, time: 2_000, turn: 1, step: 0, retryState: 'scheduled',
+      provider: 'mock', mode: 'always', policyKey: 'mock-always',
+      retry: 3, delayMs: 450,
+      failure: { code: 'TRANSPORT', message: '连接被重置' },
+    }
+    const h = makeHarness(
+      { nodes: [unlimited], turnTimings: new Map([[1, { startTime: Date.now() - 1000 }]]) },
+      { running: true },
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    expect(pillStatus(view).textContent).toBe('深度求索中...正在重试 3 · 0秒 · 连接被重置取消')
+  })
+
+  it('shows the subagent subline with an inspect-log action', () => {
+    const h = makeHarness(
+      {
+        runningCalls: [{ ...runningCall('s1', 'subagent'), turn: 1 }],
+        turnTimings: new Map([[1, { startTime: Date.now() - 1000 }]]),
+      },
+      { running: true },
+    )
+    h.setActivity({ s1: { kind: 'output', at: 1_234, label: 'child-a', provider: 'dsh' } })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('status').textContent).toBe('深度求索中...等待子代理 child-a取消查看日志')
+    fireEvent.click(view.getByRole('button', { name: '查看日志' }))
+    expect(h.openView).toHaveBeenCalledWith('trajectory', 's1')
+  })
+
+  it('shows the running tool subline for a non-delegation call', () => {
+    const h = makeHarness(
+      {
+        runningCalls: [{ ...runningCall('r1', 'bash'), turn: 1 }],
+        turnTimings: new Map([[1, { startTime: Date.now() - 1000 }]]),
+      },
+      { running: true },
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('status').textContent).toBe('深度求索中...正在运行 bash取消')
+  })
+
+  it('follows the partial assistant tail between generating and thinking', () => {
+    const h = makeHarness(
+      {
+        partial: { turn: 1, step: 1, blocks: [{ kind: 'text', text: 'hi' }] },
+        turnTimings: new Map([[1, { startTime: Date.now() - 1000 }]]),
+      },
+      { running: true },
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('status').textContent).toBe('深度求索中...生成中…取消')
+    act(() => {
+      h.setChat({ partial: { turn: 1, step: 1, blocks: [{ kind: 'reasoning', text: 'think' }] } })
+    })
+    expect(view.getByRole('status').textContent).toBe('深度求索中...思考中…取消')
+  })
+
+  it('names a live background job when nothing else is streaming', () => {
+    const h = makeHarness(
+      { turnTimings: new Map([[1, { startTime: Date.now() - 1000 }]]) },
+      { running: true },
+    )
+    h.setJobs([job('test:web', 'running', 1_000)])
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('status').textContent).toBe('深度求索中...等待后台任务 test:web取消')
+  })
+
+  it('lets a running tool outrank a live background job', () => {
+    const h = makeHarness(
+      {
+        runningCalls: [{ ...runningCall('r1', 'bash'), turn: 1 }],
+        turnTimings: new Map([[1, { startTime: Date.now() - 1000 }]]),
+      },
+      { running: true },
+    )
+    h.setJobs([job('test:web', 'running', 1_000)])
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('status').textContent).toBe('深度求索中...正在运行 bash取消')
+  })
+
+  it('lets a streaming partial outrank a live background job', () => {
+    const h = makeHarness(
+      {
+        partial: { turn: 1, step: 1, blocks: [{ kind: 'text', text: 'hi' }] },
+        turnTimings: new Map([[1, { startTime: Date.now() - 1000 }]]),
+      },
+      { running: true },
+    )
+    h.setJobs([job('test:web', 'running', 1_000)])
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('status').textContent).toBe('深度求索中...生成中…取消')
+  })
+
+  it('picks the newest live job and ignores settled ones', () => {
+    const h = makeHarness(
+      { turnTimings: new Map([[1, { startTime: Date.now() - 1000 }]]) },
+      { running: true },
+    )
+    h.setJobs([
+      job('old-job', 'running', 1_000),
+      job('new-job', 'stopping', 2_000),
+      job('done-job', 'completed', 3_000),
+    ])
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('status').textContent).toBe('深度求索中...等待后台任务 new-job取消')
+  })
+
+  it('shows the neutral working subline once the turn has visible assistant output', () => {
+    const h = makeHarness(
+      {
+        nodes: [userInTurn(1, 'q', 1), assistant(2, 'done part', 1)],
+        turnTimings: new Map([[1, { startTime: Date.now() - 1000 }]]),
+      },
+      { running: true },
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('status').textContent).toBe('深度求索中...工作中…取消')
+  })
+
+  it('keeps the honest first-token subline for a tool-only assistant step', () => {
+    const h = makeHarness(
+      {
+        nodes: [userInTurn(1, 'q', 1), toolOnlyAssistant(2, 'r1', 'bash', 1, 1), toolResult(3, 'r1', 'bash')],
+        turnTimings: new Map([[1, { startTime: Date.now() - 1000 }]]),
+      },
+      { running: true },
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    // No visible assistant content yet, so the first-token claim is honest even
+    // though a tool result has settled (the re-run button earns its dialog).
+    expect(view.getByRole('status').textContent).toBe('深度求索中...等待首个 token…取消取消并重试')
+  })
+
+  it('cancels the running turn from the pill action', () => {
+    const h = makeHarness(
+      { turnTimings: new Map([[1, { startTime: Date.now() - 1000 }]]) },
+      { running: true },
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    fireEvent.click(view.getByRole('button', { name: '取消' }))
+    expect(h.props.cancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('confirms cancel & re-run before resending the first user message', async () => {
+    const h = makeHarness(
+      {
+        nodes: [userInTurn(1, 'deploy the app', 1), assistant(2, 'working', 1), toolResult(3, 'r1', 'bash')],
+        turnTimings: new Map([[1, { startTime: Date.now() - 1000 }]]),
+      },
+      { running: true },
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    // The settled assistant step made visible output, so the fallback is the
+    // neutral working label, not a first-token claim.
+    expect(view.getByRole('status').textContent).toBe('深度求索中...工作中…取消取消并重试')
+    await act(async () => {
+      fireEvent.click(view.getByRole('button', { name: '取消并重试' }))
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('dialog', { name: '取消并重试？' })).toBeTruthy()
+    })
+    const dialog = screen.getByRole('dialog', { name: '取消并重试？' })
+    expect(dialog.textContent).toContain('本轮将停止，其原始提示词会作为新轮次重新发送。本轮已产生的内容会保留在对话中。')
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: '继续运行' }))
+    })
+    expect(h.props.cancel).not.toHaveBeenCalled()
+    expect(h.props.prompt).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+    await act(async () => {
+      fireEvent.click(view.getByRole('button', { name: '取消并重试' }))
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('dialog', { name: '取消并重试？' })).toBeTruthy()
+    })
+    const reopened = screen.getByRole('dialog', { name: '取消并重试？' })
+    await act(async () => {
+      fireEvent.click(within(reopened).getByRole('button', { name: '取消并重试' }))
+    })
+    expect(h.props.cancel).toHaveBeenCalledTimes(1)
+    expect(h.props.prompt).toHaveBeenCalledWith('deploy the app')
   })
 
   it('hands each ordered root call to the keyed business-node slot', () => {

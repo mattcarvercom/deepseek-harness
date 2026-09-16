@@ -103,6 +103,16 @@ interface SubagentStartRequest {
    * persona (strict `{{…}}` interpolation against the registered variables).
    */
   readonly persona?: string
+  /**
+   * Observe-only child-run activity observer. One-shot providers call it with
+   * a {@link SubagentActivityKind} as the child produces progress (streamed
+   * content, tool use, protocol housekeeping); consumers own any throttling
+   * and durable recording and never use it for run control. Providers without
+   * an activity source never call it, and the continuable lifecycle does not
+   * forward it.
+   * @param kind - coarse phase the child was last observed in.
+   */
+  readonly onActivity?: (kind: SubagentActivityKind) => void
 }
 ```
 
@@ -431,6 +441,8 @@ interface SubagentProvider {
    * fulfillment; subsequent turn or infrastructure failure settles through
    * the returned run. Distinct starts may overlap; cancellation, failure,
    * result settlement, and disposal remain independent for each run.
+   * `request.onActivity` is observe-only: reporting it never influences
+   * timing, cancellation, or settlement.
    */
   start(request: ResolvedSubagentStartRequest): Promise<SubagentRun>
   /**

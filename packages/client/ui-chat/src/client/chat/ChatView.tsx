@@ -1,12 +1,13 @@
 // An enclosing `[data-conversation-scroll]` owns scrolling when present;
 // otherwise this view owns it. Each row subscribes to one stable node key.
 
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import type {
   ConversationTimelineSnapshot, RenderMessageImages, TurnLocation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SessionJob } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { ChatViewSlotProps, OpenFileOptions } from '../contract/slots.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
 import { PendingInboxPromptBubble, PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
@@ -14,11 +15,13 @@ import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { TurnNavigator } from './TurnNavigator.tsx'
 import { mergeTurnRailItems, type TurnRailItem } from './turn-rail-items.ts'
 import { formatRunDuration } from './message-chrome.ts'
+import { derivePillPhase, firstUserPromptText, hasSettledTool, type PillPhase } from './pill-phase.ts'
 import { useTurnDataValue } from './use-turn-data.ts'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
 const SCROLL_SAMPLE_INTERVAL_MS = 500
+const EMPTY_JOBS: readonly SessionJob[] = []
 
 /** Active column host when present; otherwise the view-local scroller. */
 function scrollerOf(from: HTMLElement): HTMLElement {
@@ -183,14 +186,76 @@ function runningTurn(timeline: ConversationTimelineSnapshot): TurnLocation | nul
   return latest
 }
 
+/** Localized label for the assistant streaming phase arms. */
+function assistantPhaseText(mode: 'first-token' | 'thinking' | 'generating', t: ChatViewSlotProps['t']): string {
+  if (mode === 'thinking') return t('chat.pill.thinking')
+  if (mode === 'generating') return t('chat.pill.generating')
+  return t('chat.pill.waitingFirstToken')
+}
+
+/** The phase subline under the pill: one localized line per phase arm. */
+function renderPillSubline(
+  phase: PillPhase,
+  compactionElapsedMs: number,
+  retryRemainingMs: number,
+  t: ChatViewSlotProps['t'],
+): ReactNode {
+  switch (phase.kind) {
+    case 'compaction':
+      return (
+        <div className={css.turnStatusCompaction}>
+          {t('chat.compacting')}
+          <span className={css.turnStatusClock} aria-hidden>
+            {formatRunDuration(compactionElapsedMs, t)}
+          </span>
+        </div>
+      )
+    case 'retry':
+      return (
+        <div className={css.turnStatusSubline}>
+          {phase.max === undefined
+            ? t('chat.pill.retryingNoMax', {
+              retry: phase.retry,
+              failure: phase.failure.message,
+              in: formatRunDuration(retryRemainingMs, t),
+            })
+            : t('chat.pill.retrying', {
+              retry: phase.retry,
+              max: phase.max,
+              failure: phase.failure.message,
+              in: formatRunDuration(retryRemainingMs, t),
+            })}
+        </div>
+      )
+    case 'subagent':
+      return <div className={css.turnStatusSubline}>{t('chat.pill.waitingChild', { label: phase.label })}</div>
+    case 'tool':
+      return <div className={css.turnStatusSubline}>{t('chat.pill.runningTool', { tool: phase.name })}</div>
+    case 'job':
+      return <div className={css.turnStatusSubline}>{t('chat.pill.waitingJob', { label: phase.label })}</div>
+    case 'working':
+      return <div className={css.turnStatusSubline}>{t('chat.pill.working')}</div>
+    case 'assistant':
+      return <div className={css.turnStatusSubline}>{assistantPhaseText(phase.mode, t)}</div>
+  }
+}
+
 /** Turn-level model activity label retained across first-token, tool, and streaming phases. */
-function TurnStatus({ startTime, compactingSince, t }: {
-  /** The running turn's logged `turn/start` time; null falls back to mount
-   *  time when that boundary is outside the window. */
+function TurnStatus({ startTime, phase, rerun, onCancel, onRequestRerun, onInspect, t }: {
+  /** The running turn's start time: the window's logged `turn/start` when in
+   *  scope, else the outline's recorded boundary time; null falls back to
+   *  mount time. */
   startTime: number | null
-  /** Epoch ms of the open compaction's `compaction/start`; undefined when the
-   *  turn is not compacting. */
-  compactingSince?: number | undefined
+  /** The derived phase owning the subline. */
+  phase: PillPhase
+  /** Text resending on cancel & re-run; undefined hides that action. */
+  rerun: string | undefined
+  /** Cancel the running turn. */
+  onCancel: () => void
+  /** Open the cancel & re-run confirmation dialog. */
+  onRequestRerun: () => void
+  /** Open the trajectory view for one call id. */
+  onInspect: (callId: string) => void
   /** The owning view's locale seat. */
   t: ChatViewSlotProps['t']
 }) {
@@ -199,17 +264,27 @@ function TurnStatus({ startTime, compactingSince, t }: {
   // elapsed time and the final footer's Ran-for label matches this clock.
   const anchor = startTime ?? mountedAt
   const [elapsedMs, setElapsedMs] = useState(() => Math.max(0, Date.now() - anchor))
+  const compactingSince = phase.kind === 'compaction' ? phase.since : undefined
   const [compactionElapsedMs, setCompactionElapsedMs] = useState(() =>
     compactingSince === undefined ? 0 : Math.max(0, Date.now() - compactingSince))
+  const retryAt = phase.kind === 'retry' ? phase.at : undefined
+  const retryDelayMs = phase.kind === 'retry' ? phase.delayMs : undefined
+  const [retryRemainingMs, setRetryRemainingMs] = useState(() =>
+    retryAt === undefined || retryDelayMs === undefined
+      ? 0
+      : Math.max(0, retryDelayMs - (Date.now() - retryAt)))
   useEffect(() => {
     const tick = (): void => {
       setElapsedMs(Math.max(0, Date.now() - anchor))
       if (compactingSince !== undefined) setCompactionElapsedMs(Math.max(0, Date.now() - compactingSince))
+      if (retryAt !== undefined && retryDelayMs !== undefined) {
+        setRetryRemainingMs(Math.max(0, retryDelayMs - (Date.now() - retryAt)))
+      }
     }
     tick()
     const id = setInterval(tick, 1000)
     return () => { clearInterval(id) }
-  }, [anchor, compactingSince])
+  }, [anchor, compactingSince, retryAt, retryDelayMs])
   // Short turns keep the plain label; the clock only appears once the turn
   // has clearly been running for a while.
   const showClock = elapsedMs >= 15_000
@@ -223,14 +298,27 @@ function TurnStatus({ startTime, compactingSince, t }: {
           </span>
         )}
       </div>
-      {compactingSince !== undefined && (
-        <div className={css.turnStatusCompaction}>
-          {t('chat.compacting')}
-          <span className={css.turnStatusClock} aria-hidden>
-            {formatRunDuration(compactionElapsedMs, t)}
-          </span>
-        </div>
-      )}
+      {renderPillSubline(phase, compactionElapsedMs, retryRemainingMs, t)}
+      <div className={css.turnStatusActions}>
+        <Button variant="outline" size="sm" className={css.turnStatusAction} onClick={onCancel}>
+          {t('cancel')}
+        </Button>
+        {rerun !== undefined && (
+          <Button variant="outline" size="sm" className={css.turnStatusAction} onClick={onRequestRerun}>
+            {t('chat.action.cancelRerun')}
+          </Button>
+        )}
+        {phase.kind === 'subagent' && (
+          <Button
+            variant="outline"
+            size="sm"
+            className={css.turnStatusAction}
+            onClick={() => { onInspect(phase.callId) }}
+          >
+            {t('chat.action.showLog')}
+          </Button>
+        )}
+      </div>
     </div>
   )
 }
@@ -250,9 +338,9 @@ const ChatNodeList = memo(function ChatNodeList({ order, ...seatProps }: ChatNod
  * ordered business Node crosses the keyed renderer seat.
  */
 export function ChatView({
-  useSession, useChat, useChatNode, useChatNodeProcess, useSessions, useStore, actions, renderSlot,
+  useSession, useChat, useChatNode, useChatNodeProcess, useSessions, useSubagentActivity, useStore, actions, renderSlot,
   sessionId, openFile, openSkill, loadOlder, loadThrough, loadImage, openView, chatScroll, forkAt, fileMentions,
-  useTranscriptView, useProjection, t,
+  cancel, prompt, useTranscriptView, useProjection, t,
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
   const nodeStore = useChat(s => s.nodes)
@@ -268,9 +356,16 @@ export function ChatView({
     [turnNavigationItems, turnOutline],
   )
   const timeline = useChat(s => s.timeline)
+  // The pill's live channels: reference-guarded legacy-slice fields whose
+  // identity moves with every streamed change, so the phase re-derives from
+  // what is actually streaming instead of a frozen node scan.
+  const legacyNodes = useChat(s => s.legacy.nodes)
+  const partial = useChat(s => s.legacy.partial)
+  const runningCalls = useChat(s => s.legacy.runningCalls)
   const inbox = useSession(s => s.queue)
   // Workspace root off the session list row: path summaries display relative to it.
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
+  const jobs = useSessions(s => s.jobsBySession[sessionId])
   const running = useSession(s => s.running)
   const openState = useSession(s => s.openState)
   const openError = useSession(s => s.openError)
@@ -358,10 +453,42 @@ export function ChatView({
     [loadImage, renderSlot],
   )
   const runningTurnLocation = useMemo(() => running ? runningTurn(timeline) : null, [running, timeline])
+  // The clock anchors to the turn's logged start; when that boundary is
+  // outside the loaded window, the whole-log outline still records the
+  // boundary's time, so a mid-turn reload keeps the real elapsed.
+  const lastOutline = turnOutline?.at(-1)
+  const turnStartAt = runningTurnLocation?.start?.time ?? lastOutline?.startedAt ?? null
+  const turnStartSeq = runningTurnLocation?.start?.seq ?? lastOutline?.seq ?? null
   // The compaction subline reads the running turn's published start time; the
   // store is reference-stable per turn, so this subscription is inert outside
   // a compaction window.
   const compactingSince = useTurnDataValue(runningTurnLocation?.data, 'compaction')
+  // The pill derives from the running turn's live channels: the durable node
+  // stream, in-flight calls, the streamed partial, the session's job views,
+  // and the durable activity map.
+  const activity = useSubagentActivity(m => m)
+  const phase = useMemo(
+    () => derivePillPhase({
+      nodes: legacyNodes,
+      turnStartSeq,
+      runningCalls,
+      partial,
+      jobs: jobs ?? EMPTY_JOBS,
+      compactingSince,
+      activity,
+    }),
+    [legacyNodes, turnStartSeq, runningCalls, partial, jobs, compactingSince, activity],
+  )
+  // Cancel & re-run resends the turn's own first user message as a new turn;
+  // it earns its confirmation only once the turn has settled tool work.
+  const rerunText = useMemo(
+    () => (hasSettledTool(legacyNodes, turnStartSeq) ? firstUserPromptText(legacyNodes, turnStartSeq) : undefined),
+    [legacyNodes, turnStartSeq],
+  )
+  const [rerunPending, setRerunPending] = useState(false)
+  useEffect(() => {
+    if (!running) setRerunPending(false)
+  }, [running])
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const columnRef = useRef<HTMLDivElement | null>(null)
@@ -869,8 +996,12 @@ export function ChatView({
               wait, tool execution, streaming) so it never flickers per step. */}
           {running && (
             <TurnStatus
-              startTime={runningTurnLocation?.start?.time ?? null}
-              compactingSince={compactingSince}
+              startTime={turnStartAt}
+              phase={phase}
+              rerun={rerunText}
+              onCancel={cancel}
+              onRequestRerun={() => { setRerunPending(true) }}
+              onInspect={inspectCall}
               t={t}
             />
           )}
@@ -925,6 +1056,17 @@ export function ChatView({
           t={t}
         />
       )}
+      {rerunPending && rerunText !== undefined && (
+        <RerunConfirmDialog
+          onClose={() => { setRerunPending(false) }}
+          onConfirm={() => {
+            setRerunPending(false)
+            cancel()
+            prompt(rerunText)
+          }}
+          t={t}
+        />
+      )}
     </div>
   )
 }
@@ -950,6 +1092,29 @@ function FileOpenErrorDialog({
         <>
           <Button variant="outline" className={css.modalAction} onClick={onClose}>{t('cancel')}</Button>
           <Button variant="primary" className={css.modalAction} disabled={busy} onClick={onRetry}>{t('retry')}</Button>
+        </>
+      )}
+    />
+  )
+}
+
+/** Cancels the running turn and resends its first user message as a new turn. */
+function RerunConfirmDialog({ onClose, onConfirm, t }: {
+  onClose: () => void
+  onConfirm: () => void
+  t: ChatViewSlotProps['t']
+}) {
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      closeLabel={t('close')}
+      title={t('chat.rerunConfirm.title')}
+      description={t('chat.rerunConfirm.body')}
+      footer={(
+        <>
+          <Button variant="outline" className={css.modalAction} onClick={onClose}>{t('chat.rerunConfirm.keep')}</Button>
+          <Button variant="primary" className={css.modalAction} onClick={onConfirm}>{t('chat.action.cancelRerun')}</Button>
         </>
       )}
     />

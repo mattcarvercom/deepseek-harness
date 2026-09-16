@@ -33,6 +33,7 @@ import { en, NS, zh } from './locale.ts'
 import { TranscriptViewRow, type TranscriptViewRowInjected } from './settings/TranscriptViewRow.tsx'
 import { createChatStore } from './stores.ts'
 import { TranscriptViewPolicy } from './transcript-view.ts'
+import { SubagentActivityFeed } from './subagent-activity.ts'
 import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../chat-settings.ts'
 import { useTurnDataValue } from './chat/use-turn-data.ts'
 
@@ -70,9 +71,44 @@ export function apply(ctx: Context): void {
   }
   registerConversationNodes(ctx)
   registerChatNodeRenderers(ctx)
+  const activityFeeds = new WeakMap<SessionBinding, SubagentActivityFeed>()
+  const liveActivityFeeds = new Set<SubagentActivityFeed>()
+  const activityFeed = (binding: SessionBinding): SubagentActivityFeed => {
+    let feed = activityFeeds.get(binding)
+    if (feed === undefined) {
+      const created = new SubagentActivityFeed(binding.eventSource)
+      activityFeeds.set(binding, created)
+      liveActivityFeeds.add(created)
+      // The feed follows the Session binding's own scope: releasing the
+      // session stops it even if the plugin fiber outlives it.
+      binding.ctx.effect(
+        () => () => {
+          created.dispose()
+          liveActivityFeeds.delete(created)
+          activityFeeds.delete(binding)
+        },
+        'ui-chat subagent activity feed',
+      )
+      feed = created
+    }
+    return feed
+  }
+  // WeakMap is not iterable, so the fiber teardown walks the parallel set of
+  // still-live feeds (the binding effects above keep it in sync).
+  ctx.effect(() => {
+    return () => {
+      for (const feed of liveActivityFeeds) feed.dispose()
+      liveActivityFeeds.clear()
+    }
+  }, 'ui-chat subagent activity feeds')
   ctx.uiSession.provide({
-    hooks: ['chat'],
-    resolve: binding => ({ hooks: { chat: chatSource(binding) } }),
+    hooks: ['chat', 'subagentActivity'],
+    resolve: binding => ({
+      hooks: {
+        chat: chatSource(binding),
+        subagentActivity: activityFeed(binding).store,
+      },
+    }),
   })
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-chat: dictionaries')
@@ -161,6 +197,16 @@ export function apply(ctx: Context): void {
               .catch(() => {
                 // Fork or child-title failure leaves the source view unchanged.
               })
+          },
+          cancel: () => {
+            void session.cancel().catch(() => {
+              // A rejected cancel is already mirrored into snapshot.promptError.
+            })
+          },
+          prompt: (text) => {
+            void session.prompt([{ type: 'text', text }], 'queue').catch(() => {
+              // A rejected prompt is already mirrored into snapshot.promptError.
+            })
           },
         }
       },

@@ -38,6 +38,7 @@ The Codex wire spec pins the trip (silence after the turn is submitted and silen
 
 ## Related
 
+- [Subagent activity observation and the running-turn pill phase](2026-09-15-subagent-activity-observation.md) — the observe-only sibling on the same run: this note fails a silent published run; that note records a live one for the UI.
 - [Codex pre-publication handshake deadline](2026-09-15-codex-handshake-deadline.md) — the pre-publication sibling bound; the two deadlines together close post-mortem 0005.
 - [Per-request deadline on the JSON-RPC line transport](2026-09-15-jsonrpc-request-deadline.md) — the transport mechanism the handshake deadline arms.
 - [LLM stream content idle timeout](2026-09-15-llm-stream-content-idle-timeout.md) — the two-tier activity/content watchdog on the LLM adapters; the same "activity is not progress" distinction applied to subagent streams.

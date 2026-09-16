@@ -317,6 +317,7 @@ export async function startCodexRun(
     spec.handshakeTimeoutMs,
     spec.runActivityTimeoutMs,
     spec.onUnassociatedFrame,
+    request.onActivity,
   )
   const onStderr = (chunk: Buffer | string): void => {
     const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk

@@ -24,7 +24,7 @@ import {
 } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import SubagentRuntime, { type SubagentActivityKind } from '@deepseek-ai/dsh-subagent'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type {
   SubprocessHandle,
@@ -43,6 +43,7 @@ import {
   CLAUDE_CODE_PERMISSION_MODES,
   DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
   DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
+  claudeMessageActivityKind,
   claudeQueryOptions,
   consumeClaudeQuery,
   disposeClaudeCodeChild,
@@ -1085,6 +1086,56 @@ describe('query options and result mapping', () => {
       stopReason: 'completed',
     })
     expect(onPermissionDenied).toHaveBeenCalledOnce()
+  })
+})
+
+describe('stream activity classification', () => {
+  it('classifies SDK stream messages into coarse activity kinds', () => {
+    const output = [
+      { type: 'assistant', message: { role: 'assistant' } },
+      { type: 'assistant' },
+    ] as unknown as SDKMessage[]
+    for (const message of output) {
+      expect(claudeMessageActivityKind(message)).toBe('output')
+    }
+    const tool = [
+      { type: 'user', tool_use_result: {} },
+      { type: 'user' },
+    ] as unknown as SDKMessage[]
+    for (const message of tool) {
+      expect(claudeMessageActivityKind(message)).toBe('tool')
+    }
+    const other = [
+      { type: 'system', subtype: 'init' },
+      { type: 'system', subtype: 'permission_denied' },
+      success('done'),
+      { type: 'future_stream_member' },
+    ] as unknown as SDKMessage[]
+    for (const message of other) {
+      expect(claudeMessageActivityKind(message)).toBe('other')
+    }
+  })
+
+  it('reports every SDK stream message to the start request activity observer', async () => {
+    const fixture = fakeRun([
+      { type: 'system', subtype: 'init' } as SDKMessage,
+      { type: 'assistant', message: { role: 'assistant' } } as unknown as SDKMessage,
+      { type: 'user', tool_use_result: {} } as unknown as SDKMessage,
+      success('done'),
+    ])
+    const kinds: SubagentActivityKind[] = []
+    const run = await startClaudeCodeRun({
+      prompt: [{ type: 'text', text: 'go' }],
+      parent: fakeParent,
+      signal: new AbortController().signal,
+      onActivity: (kind) => { kinds.push(kind) },
+    }, fixture.spec)
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'done' }],
+      stopReason: 'completed',
+    })
+    expect(kinds).toEqual(['other', 'output', 'tool', 'other'])
+    await run.dispose()
   })
 })
 
