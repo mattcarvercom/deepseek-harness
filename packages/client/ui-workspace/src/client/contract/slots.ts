@@ -145,12 +145,6 @@ export type WorkspaceBrowserInjected = {
    * recoverable. The row leaves the list on resolution.
    */
   deleteSession: (sessionId: SessionId) => Promise<void>
-  /**
-   * Reorder a session inside its Workspace account (DOM-insertBefore
-   * semantics: omitted anchor appends to the end). The view refreshes from
-   * the Host response/changed frame; failures leave the order unchanged.
-   */
-  insertSessionBefore: (workspaceId: WorkspaceId, sessionId: SessionId, beforeSessionId?: SessionId) => Promise<void>
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
 }

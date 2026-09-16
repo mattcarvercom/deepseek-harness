@@ -205,7 +205,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-api-session-controller`
 
-需要：`agentDefaultModel` · `agents` · `attachments` · `fileUploads` · `llm` · `sessions` · `sessionProjections` · `sessionQuery` · `typert` · `workspaceRegistry`
+需要：`agentDefaultModel` · `agents` · `attachments` · `fileUploads` · `llm` · `sessions` · `sessionPersistence` · `sessionProjections` · `sessionProjectionCache` · `sessionQuery` · `typert` · `workspaceRegistry`
 
 ```ts config-catalog
 /** Session Controller deployment policy. */
@@ -1128,6 +1128,8 @@ export interface Config {
   models?: DeepSeekCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
   streamIdleTimeoutMs?: number
+  /** Maximum time without model content once a stream has started (default ten minutes; zero disables the bound). */
+  streamContentIdleTimeoutMs?: number
   /** Maximum accumulated file-referenced image bytes per chat request (default 128 MiB). */
   maxRequestFilesBytes?: number
   /** Maximum accumulated base64 image payload after Files API fallback (default 20 MiB). */
@@ -1283,6 +1285,12 @@ export interface PiAiProviderProfile {
   websocketConnectTimeoutMs?: number
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs?: number
+  /**
+   * Maximum time without model content once a stream has started; content is a
+   * non-empty text or reasoning delta or a tool-call payload. Zero disables
+   * the bound for endpoints whose healthy state is a long silence.
+   */
+  streamContentIdleTimeoutMs?: number
   /**
    * Maximum base64-encoded image payload per request. When a request's
    * accumulated images exceed it, the oldest images are replaced by text
@@ -2601,6 +2609,12 @@ export interface Config {
   permissionMode?: ClaudeCodePermissionMode
   /** Grace in milliseconds between Claude Code managed-range termination tiers. */
   disposeGraceMs?: number
+  /**
+   * Silence bound in milliseconds for SDK stream frames after the query is
+   * published; a silent CLI fails the delegation at the deadline with
+   * category `transport`. `0` leaves the run unbounded.
+   */
+  runActivityTimeoutMs?: number
 }
 
 /** Profile-selectable non-interactive Claude Code permission mode. */
@@ -2631,6 +2645,19 @@ export interface Config {
   permissionMode?: CodexPermissionMode
   /** Grace in milliseconds between app-server managed-range termination tiers. */
   disposeGraceMs?: number
+  /**
+   * Deadline in milliseconds for the pre-publication handshake (`initialize`
+   * and `thread/start`); a silent app-server fails the delegation at the
+   * deadline with category `transport` instead of waiting indefinitely.
+   * `0` disables the deadline.
+   */
+  handshakeTimeoutMs?: number
+  /**
+   * Silence bound in milliseconds for protocol frames while the published
+   * turn is in flight; a silent app-server fails the delegation at the
+   * deadline with category `transport`. `0` leaves the turn unbounded.
+   */
+  runActivityTimeoutMs?: number
 }
 
 /** Profile-selectable non-interactive Codex permission mode. */

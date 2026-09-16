@@ -1187,7 +1187,7 @@ describe('dsh-tool-subagent background mode', () => {
       reply: 'background answer',
       onStart: (started) => { request = started },
     })
-    const parent = ownerAgent(ctx, 'sess-parent')
+    const parent = await ownerAgent(ctx, 'sess-parent')
 
     const started = await ctx.tools.execute({
       signal: testToolSignal,
@@ -1233,7 +1233,7 @@ describe('dsh-tool-subagent background mode', () => {
         return new Promise<void>((resolve) => { release = resolve })
       },
     })
-    const parent = ownerAgent(ctx, 'sess-parent')
+    const parent = await ownerAgent(ctx, 'sess-parent')
 
     const started = await ctx.tools.execute({
       signal: testToolSignal,

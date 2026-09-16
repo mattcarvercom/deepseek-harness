@@ -19,6 +19,8 @@ export type SessionOrderBy = 'manual' | 'updated'
 type WorkspaceViewState = {
   groupBy: SessionGroupBy
   orderBy: SessionOrderBy
+  /** Registry-archived Sessions render in their groups (dimmed) instead of hiding. */
+  showArchived: boolean
   /** Explicit zero-or-five-session state keyed by Workspace group identity. */
   groupExpansion: Record<string, boolean>
   /** Saved manual order per Workspace group plus the browser-local flat-list account. */
@@ -31,6 +33,7 @@ type WorkspaceViewState = {
  */
 type WorkspaceViewActions = {
   setGroupBy: (draft: WorkspaceViewState, mode: SessionGroupBy) => void
+  setShowArchived: (draft: WorkspaceViewState, shown: boolean) => void
   setOrderBy: (
     draft: WorkspaceViewState,
     mode: SessionOrderBy,
@@ -66,12 +69,16 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
     init: (): WorkspaceViewState => ({
       groupBy: 'workspace',
       orderBy: 'updated',
+      showArchived: false,
       groupExpansion: {},
       sessionOrderByAccount: {},
     }),
+    // The archived filter defaults to hidden: a v5 payload without the field
+    // reads as `undefined`, which every consumer treats as false.
     persist: 'dsh.workspace.view.v5',
     actions: {
       setGroupBy: (d, mode: SessionGroupBy) => { d.groupBy = mode },
+      setShowArchived: (d, shown: boolean) => { d.showArchived = shown },
       setOrderBy: (d, mode: SessionOrderBy, initialOrders) => {
         if (mode === d.orderBy) return
         d.sessionOrderByAccount = mode === 'manual' ? copySessionOrders(initialOrders) : {}

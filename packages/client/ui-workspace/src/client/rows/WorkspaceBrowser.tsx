@@ -97,11 +97,13 @@ function useNativeDragAcceptance(active: boolean): void {
 }
 
 /** Grouping and ordering menu; own open state so it resets with the wide chrome. */
-function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
+function ViewOptionsMenu({ groupBy, orderBy, showArchived, onGroupPick, onOrderPick, onShowArchivedPick, t }: {
   groupBy: 'workspace' | 'flat'
   orderBy: SessionOrderBy
+  showArchived: boolean
   onGroupPick: (mode: 'workspace' | 'flat') => void
   onOrderPick: (mode: SessionOrderBy) => void
+  onShowArchivedPick: (shown: boolean) => void
   t: WorkspaceBrowserProps['t']
 }) {
   const [open, setOpen] = useState(false)
@@ -117,11 +119,13 @@ function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
         { type: 'label' as const, id: 'order-by', text: t('orderBy.label') },
         { id: 'manual', label: t('orderBy.manual') },
         { id: 'updated', label: t('orderBy.updated') },
+        { id: 'showArchived', label: t('archived.show') },
       ]}
-      selectedIds={[groupBy, orderBy]}
+      selectedIds={[groupBy, orderBy, ...(showArchived ? ['showArchived'] : [])]}
       onSelect={(id) => {
         if (id === 'workspace' || id === 'flat') onGroupPick(id)
         else if (id === 'manual' || id === 'updated') onOrderPick(id)
+        else if (id === 'showArchived') onShowArchivedPick(!showArchived)
         setOpen(false)
       }}
       align="end"
@@ -183,6 +187,8 @@ type SessionTreeProps = Pick<
   workspaceReady: boolean
   /** Explicit persisted zero-or-five-session state by Workspace group. */
   groupExpansion: Readonly<Record<string, boolean>>
+  /** Show registry-archived Sessions in their retained positions, dimmed but actionable. */
+  showArchived: boolean
   /** Persist one Workspace group's zero-or-five-session state. */
   setGroupExpanded: (key: string, expanded: boolean) => void
   /** Save a drag order and select Manual. */
@@ -197,6 +203,10 @@ type SessionTreeProps = Pick<
   onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Archive a session (row menu action; the row disappears on the state echo). */
   onSessionArchive: (sessionId: SessionNode['id']) => void
+  /** Unarchive a session (row menu action; the row stays on the state echo). */
+  onSessionUnarchive: (sessionId: SessionNode['id']) => void
+  /** Open the browser-owned session delete confirmation (row menu action). */
+  onSessionDelete: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** One Session chosen from search that must be exposed and scrolled into view. */
   revealSessionId?: SessionId | undefined
   /** Acknowledge that the chosen Session row has been revealed. */
@@ -208,9 +218,9 @@ function SessionTree({
   list, useSessionPendingInteraction, startSession, open, forkSession, workspaces, ungroupedSessionIds,
   archivedSessionIds,
   workspaceReady, usePanelInfo,
-  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
+  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onSessionUnarchive, onSessionDelete,
   insertWorkspaceBefore,
-  groupExpansion, setGroupExpanded,
+  groupExpansion, setGroupExpanded, showArchived,
   setSessionOrder, home, t,
   revealSessionId, onSessionRevealed,
 }: SessionTreeProps) {
@@ -220,7 +230,9 @@ function SessionTree({
   const revealGroup = revealSessionId === undefined || !workspaceReady
     ? undefined
     : owningGroupKey(workspaces, revealSessionId)
-  const [expandedSessionGroups, setExpandedSessionGroups] = useState<string[]>([])
+  // Explicit folds only: a group absent from this list renders its complete
+  // session list (the default); the overflow control folds it on request.
+  const [foldedSessionGroups, setFoldedSessionGroups] = useState<string[]>([])
   // Transient drag marker state; the selected mode owns the resulting order.
   const [drag, setDrag] = useState<DragState | null>(null)
   const sessionDropCommitted = useRef(false)
@@ -243,8 +255,9 @@ function SessionTree({
     () => deriveGroups(list, workspaces, archivedSessionIds, pendingInteractions, {
       expandedGroups,
       ungroupedOrder: ungroupedSessionIds,
+      showArchived,
     }),
-    [list, workspaces, archivedSessionIds, pendingInteractions, expandedGroups, ungroupedSessionIds],
+    [list, workspaces, archivedSessionIds, pendingInteractions, expandedGroups, ungroupedSessionIds, showArchived],
   )
   useEffect(() => {
     if (revealGroup === undefined || groupExpansion[revealGroup] === true) return
@@ -254,8 +267,7 @@ function SessionTree({
     if (revealSessionId === undefined || revealGroup === undefined) return
     const group = groups.find(candidate => candidate.key === revealGroup)
     if (group === undefined || !group.expanded || !group.sessions.some(row => row.id === revealSessionId)) return
-    if (collapsedSessionRows(group.sessions).rows.some(row => row.id === revealSessionId)) return
-    setExpandedSessionGroups(keys => keys.includes(revealGroup) ? keys : [...keys, revealGroup])
+    setFoldedSessionGroups(keys => keys.includes(revealGroup) ? keys.filter(key => key !== revealGroup) : keys)
   }, [groups, revealGroup, revealSessionId])
   const now = Date.now()
   const commitSessionDrag = (activeDrag: DragState, over: NonNullable<DragState['over']>): void => {
@@ -264,7 +276,7 @@ function SessionTree({
     setDrag(null)
     const group = groups.find(candidate => candidate.key === activeDrag.accountKey)
     if (group === undefined) return
-    const sessionsExpanded = expandedSessionGroups.includes(group.key)
+    const sessionsExpanded = !foldedSessionGroups.includes(group.key)
     const renderedSessions = sessionsExpanded ? group.sessions : collapsedSessionRows(group.sessions).rows
     const targetIndex = renderedSessions.findIndex(session => session.id === over.id)
     if (targetIndex === -1) return
@@ -345,7 +357,7 @@ function SessionTree({
         {groups.map((group) => {
           const workspaceId = group.workspaceId
           const collapsed = collapsedSessionRows(group.sessions)
-          const sessionsExpanded = expandedSessionGroups.includes(group.key)
+          const sessionsExpanded = !foldedSessionGroups.includes(group.key)
           const workspaceMarker = workspaceId !== undefined && workspaceDrag?.over?.id === workspaceId
             ? workspaceDrag.over.half
             : null
@@ -407,7 +419,7 @@ function SessionTree({
                 t={t}
                 onToggle={() => {
                   if (group.expanded) {
-                    setExpandedSessionGroups(keys => keys.filter(key => key !== group.key))
+                    setFoldedSessionGroups(keys => keys.filter(key => key !== group.key))
                   }
                   setGroupExpanded(group.key, !group.expanded)
                 }}
@@ -473,6 +485,8 @@ function SessionTree({
                     onRename={onSessionRename}
                     onFork={forkSession}
                     onArchive={onSessionArchive}
+                    onUnarchive={onSessionUnarchive}
+                    onDelete={onSessionDelete}
                     onReveal={node.id === revealSessionId && group.key === revealGroup
                       ? () => { onSessionRevealed(node.id) }
                       : undefined}
@@ -486,7 +500,7 @@ function SessionTree({
                   type="button"
                   className={css.sessionOverflowButton}
                   aria-expanded={sessionsExpanded}
-                  onClick={() => { setExpandedSessionGroups(keys => toggled(keys, group.key)) }}
+                  onClick={() => { setFoldedSessionGroups(keys => toggled(keys, group.key)) }}
                 >
                   {sessionsExpanded
                     ? t('sessions.collapse')
@@ -504,8 +518,8 @@ function SessionTree({
 
 /** The flat "In one list" body: every session is one draggable top-level row. */
 function FlatList({
-  list, sessionIds, useSessionPendingInteraction, open, forkSession, onSessionRename, onSessionArchive,
-  usePanelInfo, setSessionOrder,
+  list, sessionIds, useSessionPendingInteraction, open, forkSession, onSessionRename, onSessionArchive, onSessionUnarchive, onSessionDelete,
+  archivedSessionIds, usePanelInfo, setSessionOrder,
   revealSessionId, onSessionRevealed, t,
 }: Pick<
   SessionTreeProps,
@@ -514,6 +528,9 @@ function FlatList({
   | 'forkSession'
   | 'onSessionRename'
   | 'onSessionArchive'
+  | 'onSessionUnarchive'
+  | 'onSessionDelete'
+  | 'archivedSessionIds'
   | 'usePanelInfo'
   | 'setSessionOrder'
   | 'revealSessionId'
@@ -526,8 +543,8 @@ function FlatList({
   const panelActive = usePanelInfo(info => info.activePanelId !== null)
   const pendingInteractions = useSessionPendingInteraction(s => s)
   const rows = useMemo(
-    () => deriveFlat(list, sessionIds, pendingInteractions),
-    [list, sessionIds, pendingInteractions],
+    () => deriveFlat(list, sessionIds, pendingInteractions, archivedSessionIds),
+    [list, sessionIds, pendingInteractions, archivedSessionIds],
   )
   const [drag, setDrag] = useState<DragState | null>(null)
   const dropCommitted = useRef(false)
@@ -570,6 +587,8 @@ function FlatList({
               onRename={onSessionRename}
               onFork={forkSession}
               onArchive={onSessionArchive}
+              onUnarchive={onSessionUnarchive}
+              onDelete={onSessionDelete}
               onReveal={node.id === revealSessionId
                 ? () => { onSessionRevealed(node.id) }
                 : undefined}
@@ -710,6 +729,8 @@ export function WorkspaceBrowser({
   deleteWorkspace,
   insertWorkspaceBefore,
   archiveSession,
+  unarchiveSession,
+  deleteSession,
   createWorkspace,
   searchSessions,
   searchResultLimit,
@@ -730,6 +751,7 @@ export function WorkspaceBrowser({
   const directoryFlowAvailable = useDirectoryFlow(occupied => occupied)
   const groupBy = useStore(s => s.groupBy)
   const orderBy = useStore(s => s.orderBy)
+  const showArchived = useStore(s => s.showArchived)
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
   const workspaceReady = workspacePhase === 'ready' && workspaceStreamState !== 'loading'
@@ -741,8 +763,8 @@ export function WorkspaceBrowser({
     return list.ids.filter(id => list.byId[id] !== undefined && !accounted.has(id))
   }, [list, workspaces])
   const flatMemberIds = useMemo(
-    () => visibleSessionIds(list, archivedSessionIds),
-    [archivedSessionIds, list],
+    () => visibleSessionIds(list, archivedSessionIds, showArchived),
+    [archivedSessionIds, list, showArchived],
   )
   const orderedWorkspaces = useMemo(() => workspaces.map((workspace) => {
     const memberIds = workspace.sessionIds
@@ -1003,6 +1025,52 @@ export function WorkspaceBrowser({
       console.warn('session archive rejected:', reason)
     })
   }
+  const onSessionUnarchive = (sessionId: SessionNode['id']) => {
+    unarchiveSession(sessionId).catch((reason: unknown) => {
+      console.warn('session unarchive rejected:', reason)
+    })
+  }
+
+  // Session delete is destructive (the stored log is destroyed; nothing is
+  // recoverable), so the row menu opens a confirmation instead of committing.
+  // The dialog is browser-owned, like the workspace-delete dialog, so the row
+  // unmounting on the removal echo cannot tear down the in-flight state.
+  const [sessionDeleteTarget, setSessionDeleteTarget] = useState<{ sessionId: SessionNode['id']; title: string } | null>(null)
+  const [sessionDeleting, setSessionDeleting] = useState(false)
+  const [sessionDeleteCommittedId, setSessionDeleteCommittedId] = useState<SessionNode['id'] | null>(null)
+  const [sessionDeleteError, setSessionDeleteError] = useState<string | null>(null)
+  const sessionIds = useSessions(s => s.ids)
+  useEffect(() => {
+    if (sessionDeleteCommittedId === null
+      || sessionIds.some(id => id === sessionDeleteCommittedId)) return
+    setSessionDeleting(false)
+    setSessionDeleteCommittedId(null)
+    setSessionDeleteTarget(null)
+  }, [sessionDeleteCommittedId, sessionIds])
+  const onSessionDelete = (sessionId: SessionNode['id'], currentTitle: string) => {
+    setSessionDeleteTarget({ sessionId, title: currentTitle })
+    setSessionDeleteError(null)
+  }
+  const closeSessionDelete = () => {
+    if (sessionDeleting) return
+    setSessionDeleteTarget(null)
+    setSessionDeleteError(null)
+  }
+  const confirmSessionDelete = () => {
+    /* v8 ignore next -- the Modal is absent without a target and its button is disabled while deleting. */
+    if (sessionDeleting || sessionDeleteTarget === null) return
+    setSessionDeleting(true)
+    setSessionDeleteCommittedId(null)
+    setSessionDeleteError(null)
+    deleteSession(sessionDeleteTarget.sessionId).then(() => {
+      // Keep the confirmation pending until this component has rendered the
+      // committed list projection without the deleted id.
+      setSessionDeleteCommittedId(sessionDeleteTarget.sessionId)
+    }).catch((reason: unknown) => {
+      setSessionDeleting(false)
+      setSessionDeleteError(reason instanceof Error ? reason.message : String(reason))
+    })
+  }
 
   // Delete dialog is separate from the row so a successful removal can
   // unmount that row without tearing down the in-flight confirmation state.
@@ -1109,8 +1177,10 @@ export function WorkspaceBrowser({
             <ViewOptionsMenu
               groupBy={groupBy}
               orderBy={orderBy}
+              showArchived={showArchived}
               onGroupPick={(mode) => { actions.setGroupBy(mode) }}
               onOrderPick={(mode) => { actions.setOrderBy(mode, activeSessionOrders) }}
+              onShowArchivedPick={(shown) => { actions.setShowArchived(shown) }}
               t={t}
             />
           )}
@@ -1197,6 +1267,8 @@ export function WorkspaceBrowser({
                 useSessionPendingInteraction={useSessionPendingInteraction}
                 open={open} forkSession={forkSession}
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
+                onSessionUnarchive={onSessionUnarchive} onSessionDelete={onSessionDelete}
+                archivedSessionIds={archivedSessionIds}
                 setSessionOrder={saveSessionOrder}
                 revealSessionId={revealSessionId}
                 onSessionRevealed={acknowledgeSessionReveal}
@@ -1210,11 +1282,14 @@ export function WorkspaceBrowser({
                 useSessionPendingInteraction={useSessionPendingInteraction}
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
+                onSessionUnarchive={onSessionUnarchive}
+                onSessionDelete={onSessionDelete}
                 forkSession={forkSession}
                 workspaces={orderedWorkspaces}
                 ungroupedSessionIds={orderedUngroupedSessionIds}
                 workspaceReady={workspaceReady}
                 groupExpansion={groupExpansion}
+                showArchived={showArchived}
                 setGroupExpanded={actions.setGroupExpanded}
                 setSessionOrder={saveSessionOrder}
                 archivedSessionIds={archivedSessionIds}
@@ -1328,6 +1403,31 @@ export function WorkspaceBrowser({
       >
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
+      </Modal>
+      <Modal
+        open={sessionDeleteTarget !== null}
+        onClose={closeSessionDelete}
+        closeLabel={t('close')}
+        title={t('deleteSession.title')}
+        {...sessionDeleteTarget === null
+          ? {}
+          : { description: t('deleteSession.desc', { name: sessionDeleteTarget.title }) }}
+        footer={(
+          <>
+            <Button variant="outline" disabled={sessionDeleting} onClick={closeSessionDelete}>{t('cancel')}</Button>
+            <Button
+              variant="outline"
+              className={css.deleteAction}
+              disabled={sessionDeleting}
+              onClick={confirmSessionDelete}
+            >
+              {t('deleteSession.confirm')}
+            </Button>
+          </>
+        )}
+      >
+        {sessionDeleting && <div className={css.deleteStatus} role="status">{t('deleteSession.pending')}</div>}
+        {sessionDeleteError !== null && <div className={css.renameError} role="alert">{sessionDeleteError}</div>}
       </Modal>
     </div>
   )

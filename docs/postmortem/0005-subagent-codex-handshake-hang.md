@@ -35,10 +35,10 @@ The report's post-publication facet — the child completes its turn and exits w
 ## Timeline
 
 - 2026-08-04 — The Codex product provider ships with the handshake requests carrying the request's abort signal: a user cancel interrupts a pending handshake, and a child exit fails the run.
-- 2026-08-18 — `6ebf8d199d` races the pre-publication phase against direct child failure, so a child that dies mid-handshake settles the run with its exit outcome instead of waiting for a protocol close.
+- 2026-08-18 — The pre-publication race ships: a child that dies mid-handshake settles the run with its exit outcome instead of waiting for a protocol close.
 - [Discussion #6226](https://github.com/deepseek-ai/deepseek-harness/discussions/6226) reports intermittent `subagent_codex` calls that never return: the delegated child completes its turn — streamed output, file side effects — and exits while the dsh-side run hangs, the reporter observes that cancel has no effect, and the discussion remains Unanswered.
 - The deep dive of the report against the current code establishes the remaining holes: the pre-publication handshake has no time bound (a live-but-silent child settles nothing), and the post-publication race has no activity bound and drops a mismatched `turn/completed` silently.
-- The per-request response deadline lands in the shared JSON-RPC transport as the first commit of this series (`84cf69f282`).
+- The per-request response deadline lands in the shared JSON-RPC transport as the first commit of this series.
 - This commit arms the deadline on the two pre-publication handshake requests from the new `Config.handshakeTimeoutMs` (default `60_000`, `0` = off), classifies a deadline failure as `transport`, and records a pre-teardown liveness detail in the safe failure diagnostic.
 - This commit closes the post-publication facets with the protocol-frame activity watchdog and terminal-frame mismatch diagnostics; kill-child run control follows in the same series.
 

@@ -93,6 +93,8 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     renameWorkspace: vi.fn(async () => {}),
     deleteWorkspace: vi.fn(async () => {}),
     archiveSession: vi.fn(async () => {}),
+    unarchiveSession: vi.fn(async () => {}),
+    deleteSession: vi.fn(async () => {}),
     insertWorkspaceBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
     useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
@@ -389,7 +391,7 @@ describe('WorkspaceBrowser', () => {
     expect(screen.getByText('分组方式')).toBeTruthy() // the menu heading label
     expect(screen.getByRole('separator')).toBeTruthy()
     expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
-      '按工作区', '单列表', '手动排序', '最近更新',
+      '按工作区', '单列表', '手动排序', '最近更新', '显示已归档会话',
     ])
     expect(screen.getByRole('menuitem', { name: '按工作区' }).querySelector('svg')).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: '手动排序' }).querySelector('svg')).toBeTruthy()
@@ -483,28 +485,29 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('alpha-s')).toBeNull()
   })
 
-  it('shows five sessions by default and clears transient show-all when the Workspace collapses', () => {
+  it('shows every session by default and folds the group to five on request', () => {
     const items = Array.from({ length: 7 }, (_, index) => summary(`session-${index + 1}`, 7 - index))
     const b = mount({
       useSessions: hook(sessionState(items)),
       useWorkspaces: hook(workspaceState([workspace('alpha', items.map(item => item.id))])),
     })
     fireEvent.click(screen.getByText('alpha'))
+    // Expanded by default: every session renders behind a collapse control.
+    for (const item of items) expect(screen.getByText(item.displayTitle)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '收起' }))
     for (const item of items.slice(0, 5)) expect(screen.getByText(item.displayTitle)).toBeTruthy()
     expect(screen.queryByText('session-6')).toBeNull()
     expect(screen.queryByText('session-7')).toBeNull()
+    expect(screen.getByRole('button', { name: '展开其余 2 个会话' })).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: '展开其余 2 个会话' }))
-    expect(screen.getByText('session-6')).toBeTruthy()
-    expect(screen.getByText('session-7')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '收起' })).toBeTruthy()
-
+    // Collapsing the group clears the explicit fold, so reopening shows all.
     fireEvent.click(screen.getByText('alpha'))
     expect(b.store.getSnapshot().groupExpansion).toEqual({ alpha: false })
     fireEvent.click(screen.getByText('alpha'))
     expect(b.store.getSnapshot().groupExpansion).toEqual({ alpha: true })
-    expect(screen.queryByText('session-6')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 2 个会话' })).toBeTruthy()
+    expect(screen.getByText('session-6')).toBeTruthy()
+    expect(screen.getByText('session-7')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '收起' })).toBeTruthy()
   })
 
   it('keeps the blank New Session outside the five-row folding quota', () => {
@@ -514,7 +517,13 @@ describe('WorkspaceBrowser', () => {
       useSessions: hook(sessionState([blank, ...ordinary], { current: blank.id })),
       useWorkspaces: hook(workspaceState([workspace('alpha', [blank.id, ...ordinary.map(item => item.id)])])),
     })
+    // Expanded by default: the blank and every ordinary row render.
     expect(screen.getByText('新会话')).toBeTruthy()
+    for (const item of ordinary) expect(screen.getByText(item.displayTitle)).toBeTruthy()
+    expect(screen.getByRole('button', { name: '收起' })).toBeTruthy()
+
+    // Folding applies the five-ordinary-row quota; the blank is not charged.
+    fireEvent.click(screen.getByRole('button', { name: '收起' }))
     for (const item of ordinary.slice(0, 5)) expect(screen.getByText(item.displayTitle)).toBeTruthy()
     expect(screen.queryByText('session-6')).toBeNull()
     expect(screen.getByRole('button', { name: '展开其余 1 个会话' })).toBeTruthy()
@@ -554,6 +563,10 @@ describe('WorkspaceBrowser', () => {
       top: 200, bottom: 234, left: 0, right: 200, width: 200, height: 34,
       x: 0, y: 200, toJSON: () => ({}),
     })
+    // Fold first: the drag must place the source at the visible boundary
+    // before the hidden account members.
+    fireEvent.click(screen.getByRole('button', { name: '收起' }))
+    expect(screen.queryByText('session-6')).toBeNull()
     const session5 = screen.getByText('session-5').closest('[role="treeitem"]') as HTMLElement
     fireEvent.dragStart(session5, { dataTransfer: dragData() })
     fireDrag(blankRow, 'drop', 205)
@@ -994,7 +1007,7 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().groupExpansion).not.toHaveProperty('stale')
   })
 
-  it('keeps the bounded group projection when the revealed result is already within it', () => {
+  it('keeps the expanded group projection when the revealed result is already within it', () => {
     const sessions = sessionState([
       summary('target', 6, { displayTitle: 'Needle session' }),
       summary('second', 5),
@@ -1012,8 +1025,10 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('treeitem'))
 
     expect(screen.getByText('Needle session')).toBeTruthy()
-    expect(screen.queryByText('hidden')).toBeNull()
-    expect(screen.getByRole('button', { name: '展开其余 1 个会话' })).toBeTruthy()
+    // The group is expanded by default, so the revealed row is already
+    // visible and no fold is introduced: every row stays rendered.
+    expect(screen.getByText('hidden')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '收起' })).toBeTruthy()
     expect(scrollIntoView).toHaveBeenCalledOnce()
   })
 

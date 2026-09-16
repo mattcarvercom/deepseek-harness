@@ -128,9 +128,6 @@ export function apply(ctx: Context): void {
     archiveSession: async (sessionId) => { await uiWorkspace.archiveSession(sessionId) },
     unarchiveSession: async (sessionId) => { await uiWorkspace.unarchiveSession(sessionId) },
     deleteSession: async (sessionId) => { await uiWorkspace.deleteSession(sessionId) },
-    insertSessionBefore: async (workspaceId, sessionId, beforeSessionId) => {
-      await workspaces.insertSessionBefore(workspaceId, sessionId, beforeSessionId)
-    },
     createWorkspace: input => workspaces.create(input),
     hooks: { directoryFlow: browserFlowSource, hostInfo },
   })

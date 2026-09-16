@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/postmortem/0005-subagent-codex-handshake-hang.md
-0005-subagent-codex-handshake-hang.md: 8d0b78c3da46d5edc42624516e2b15a0e6f93962
-0005-subagent-codex-handshake-hang.zh.md: e0b45de0da8971f6bc17041853ee2e0142258076
+0005-subagent-codex-handshake-hang.md: 43873d34a5d1780e8b8bf99a08cab4d61d3bae7d
+0005-subagent-codex-handshake-hang.zh.md: 504867663f81e8c89d417d1d27d51ce8dc59252c
