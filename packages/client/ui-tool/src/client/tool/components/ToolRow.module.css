@@ -344,6 +344,23 @@
   border: 0.5px solid var(--dsw-alias-border-l1);
 }
 
+/* Grey activity subline under a running row whose call carries a session
+   activity fact (an in-flight subagent delegation): the fact's localized
+   phase. Indented to the row's title (16px leading + 6px gap) and reading in
+   the caption tier, so it reads as a continuation of the row, not a second
+   summary. */
+.activitySubline {
+  margin-top: 2px;
+  padding-left: 22px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
+  color: var(--dsw-alias-label-caption);
+}
+
 /* Visually hidden run-state label for assistive technology: the StateDot and
    the running sweep are aria-hidden / colour-only, so the text carries the
    running/failed/interrupted state to a screen reader. */

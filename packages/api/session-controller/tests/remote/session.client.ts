@@ -172,6 +172,7 @@ export const sessionWorld: RemoteTable = {
   unary: {
     'session/prompt': ok({ accepted: true }),
     'session/cancel': ok({ accepted: true }),
+    'session/killSubagent': ok({ accepted: true }),
     'session/updateQueue': ok({ accepted: true }),
     'session/rename': ok({ title: 'fk-renamed', seq: 0 }),
     'session/attachment': ok({

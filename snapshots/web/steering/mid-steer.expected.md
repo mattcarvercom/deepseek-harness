@@ -26,7 +26,10 @@
   - img
   - img
   - text: Ask question waiting
-- status: Deep diving...
+- status:
+  - text: Deep diving... Running ask_user_question
+  - button "Cancel":
+    - img
 - text: "Interjection: include the word BANANA in your final reply."
 - button "Copy":
   - img

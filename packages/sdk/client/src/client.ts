@@ -329,7 +329,7 @@ export class HarnessClient {
         abandon.abort(new RequestTimeoutError(`${method} timed out after ${timeout}ms waiting for ${this.runtime.description}${stderr}`))
       }, timeout)
       try {
-        return await transport.request(method, params ?? {}, abandon.signal)
+        return await transport.request(method, params ?? {}, { signal: abandon.signal })
       } finally {
         clearTimeout(timer)
       }

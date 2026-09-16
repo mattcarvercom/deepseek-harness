@@ -28,9 +28,11 @@ import {
   finalAssistantOutput,
   resolveChildAgentOptions,
   resolveChildDepth,
+  sessionEventActivityKind,
 } from '@deepseek-ai/dsh-subagent'
 import type {
   ResolvedSubagentStartRequest,
+  SubagentActivityKind,
   SubagentDescriptorData,
   SubagentResult,
   SubagentRun,
@@ -91,6 +93,22 @@ function attachDescriptorAppend(childCtx: Context, descriptor: SubagentDescripto
 }
 
 /**
+ * Observe the child's live session events and report their activity kind to
+ * the consumer's callback. The listener is owned by the child context, so it
+ * is removed with the child; constructor seed events do not fire this feed.
+ * @param childCtx - the child's context inside its creation transaction.
+ * @param onActivity - the consumer's observe-only callback.
+ */
+function attachActivityObserver(
+  childCtx: Context,
+  onActivity: (kind: SubagentActivityKind) => void,
+): void {
+  childCtx.on('session/event', (_session, event) => {
+    onActivity(sessionEventActivityKind(event))
+  })
+}
+
+/**
  * Establish and drive one in-process one-shot child. Fulfillment means the agent
  * is already published in the registry and transfers its turn, cancellation,
  * and disposal work through the returned run. Rejection means the agent
@@ -129,6 +147,9 @@ export async function startInProcessRun(
       structured = attachStructuredRuntime(childCtx, request.outputSchema)
     }
     attachDescriptorAppend(childCtx, request.descriptor)
+    if (request.onActivity !== undefined) {
+      attachActivityObserver(childCtx, request.onActivity)
+    }
   }
 
   const handle = await parent.ctx.agents.create({

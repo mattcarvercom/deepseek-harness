@@ -14,7 +14,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
+import type { SubagentActivityKind, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
@@ -22,7 +22,9 @@ import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-a
 import { loadStoredSession } from '../../subagent/tests/persistence-helpers.ts'
 import * as mock from './scripted-provider.ts'
 import * as tool from '../src/index.ts'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+// Pulls the `subagent/activity` SessionEventMap merge into this program.
+import type {} from '../src/types.ts'
+import { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   callSubagent,
   disposeSetupProvider,
@@ -38,6 +40,13 @@ async function projectedContext(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionProjectionRegistry)
   return ctx
+}
+
+/** All durable `subagent/activity` records in one session's own log. */
+function activityEvents(session: Session) {
+  return session.ownEvents().filter(
+    (event): event is Extract<SessionEvent, { type: 'subagent/activity' }> => event.type === 'subagent/activity',
+  )
 }
 
 /**
@@ -1172,6 +1181,89 @@ describe('dsh-tool-subagent background mode', () => {
     expect(text(killed)).toBe('(no new output)\n[status: killed]')
   })
 
+  it('records a background run activity and stops recording once the job settles', async () => {
+    let request: SubagentStartRequest | undefined
+    const ctx = await backgroundSetup({ provider: 'mock' }, {
+      reply: 'background answer',
+      onStart: (started) => { request = started },
+    })
+    const parent = ownerAgent(ctx, 'sess-parent')
+
+    const started = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('activity-background'),
+      name: 'subagent',
+      arguments: { description: 'background work', prompt: 'go', run_in_background: true },
+      agent: parent,
+    })
+    expect(text(started)).toBe('started background subagent job subagent-1')
+    request?.onActivity?.('output')
+    request?.onActivity?.('tool')
+
+    const settled = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('activity-background-collect'),
+      name: 'job_output',
+      arguments: { job_id: 'subagent-1', wait: true },
+      agent: parent,
+    })
+    expect(text(settled)).toBe('background answer\n[status: completed]')
+
+    // The recorder dies with the job settlement: a later observation records nothing.
+    request?.onActivity?.('output')
+    const events = activityEvents(parent.session)
+    expect(events.map(event => event.data.kind)).toEqual(['output', 'tool'])
+    expect(events.every(event => event.data.callId === 'activity-background')).toBe(true)
+    expect(events.every(event => event.data.provider === 'mock' && event.data.label === 'background work')).toBe(true)
+    // The default scripted run is remote-shaped: no kill-reachable id is latched.
+    expect(events.every(event => !('childSessionId' in event.data))).toBe(true)
+  })
+
+  it('carries the local child session id on background activity records after start resolves', async () => {
+    const child = fakeAgent('bg-local-child')
+    let release!: () => void
+    let request: SubagentStartRequest | undefined
+    const ctx = await backgroundSetup({ provider: 'mock' }, {
+      reply: 'background answer',
+      localAgent: child,
+      onStart: (started) => {
+        request = started
+        // Holding the gate keeps the result's 0ms timer un-armed, so the job
+        // cannot settle (and dispose the recorder) before the observations.
+        return new Promise<void>((resolve) => { release = resolve })
+      },
+    })
+    const parent = ownerAgent(ctx, 'sess-parent')
+
+    const started = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('activity-background-local'),
+      name: 'subagent',
+      arguments: { description: 'background work', prompt: 'go', run_in_background: true },
+      agent: parent,
+    })
+    expect(text(started)).toBe('started background subagent job subagent-1')
+    // The gated start settles in flushed microtasks; the latch follows it.
+    await new Promise<void>(resolve => setTimeout(resolve, 0))
+    request?.onActivity?.('output')
+    request?.onActivity?.('tool')
+    release()
+
+    const settled = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('activity-background-local-collect'),
+      name: 'job_output',
+      arguments: { job_id: 'subagent-1', wait: true },
+      agent: parent,
+    })
+    expect(text(settled)).toBe('background answer\n[status: completed]')
+
+    const events = activityEvents(parent.session)
+    expect(events.map(event => event.data.kind)).toEqual(['output', 'tool'])
+    expect(events.every(event => 'childSessionId' in event.data)).toBe(true)
+    expect(events.every(event => event.data.childSessionId === child.id)).toBe(true)
+  })
+
 })
 
 describe('dsh-tool-subagent continuable background mode', () => {
@@ -1337,6 +1429,19 @@ describe('dsh-tool-subagent continuable background mode', () => {
     expect(loaded.events.some(event => event.type === 'assistant/message')).toBe(true)
   })
 
+  it('records no activity events for a continuable child (the lifecycle does not forward the observer)', async () => {
+    const { ctx, parent } = await continuableSetup()
+    const started = await callSubagent(ctx, { description: 'continuable work', prompt: 'dig in' }, { agent: parent })
+    expect(started.isError).toBe(false)
+    const match = /^started subagent (\S+)$/.exec(text(started))
+    expect(match).not.toBeNull()
+    const [, childId] = match!
+    await vi.waitFor(() => {
+      expect(ctx.agents.get(SessionId(childId!))).toBeUndefined()
+    }, { timeout: 5_000 })
+    expect(activityEvents(parent.session)).toEqual([])
+  })
+
 })
 
 describe('background preflight failure (no orphaned child, by construction)', () => {
@@ -1467,5 +1572,140 @@ describe('depth budget configuration', () => {
     await callSubagent(ctx, { description: 'd', prompt: 'p' })
     expect(requests[0]?.maxDepth).toBeUndefined()
     expect(requests[0]?.toolFilter).toBeUndefined()
+  })
+})
+
+describe('dsh-tool-subagent activity recording', () => {
+  it('records the first observation, each phase change, and the phase heartbeat on the parent session', async () => {
+    let release!: () => void
+    const ctx = await setup({ provider: 'mock' }, {
+      onStart: (request) => {
+        const observe = (kind: SubagentActivityKind): void => { request.onActivity?.(kind) }
+        observe('output')
+        // Same phase inside the heartbeat window: no record.
+        setTimeout(() => { observe('output') }, 5_000)
+        // Phase change: an immediate record.
+        setTimeout(() => { observe('tool') }, 6_000)
+        // Same phase across the heartbeat boundary: a record again.
+        setTimeout(() => { observe('tool') }, 36_000)
+        // Same phase right after that record: no record.
+        setTimeout(() => { observe('tool') }, 37_000)
+        // Holding the gate keeps the run open until release, so every
+        // observation above lands while the recorder is still alive.
+        return new Promise<void>((resolve) => { release = resolve })
+      },
+    })
+    const parent = fakeAgent()
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    try {
+      const call = ctx.tools.execute({
+        signal: testToolSignal,
+        callId: ToolCallId('activity-foreground'),
+        name: 'subagent',
+        arguments: { description: 'do a thing', prompt: 'go', run_in_background: false },
+        agent: parent,
+      })
+      await vi.advanceTimersByTimeAsync(37_000)
+      release()
+      await vi.advanceTimersByTimeAsync(1)
+      const result = await call
+      expect(result.isError).toBe(false)
+      const events = activityEvents(parent.session)
+      expect(events.map(event => event.data.kind)).toEqual(['output', 'tool', 'tool'])
+      for (const event of events) {
+        expect(event.data.callId).toBe('activity-foreground')
+        expect(event.data.provider).toBe('mock')
+        expect(event.data.label).toBe('do a thing')
+      }
+      // The default scripted run is remote-shaped: the kill-reachable id is never latched.
+      expect(events.every(event => !('childSessionId' in event.data))).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('carries the local child session id on foreground records after start resolves (the first record predates the latch)', async () => {
+    let release!: () => void
+    let request: SubagentStartRequest | undefined
+    const child = fakeAgent('local-child')
+    const ctx = await setup({ provider: 'mock' }, {
+      localAgent: child,
+      onStart: (started) => {
+        request = started
+        started.onActivity?.('output')
+        return new Promise<void>((resolve) => { release = resolve })
+      },
+    })
+    const parent = fakeAgent()
+    const pending = ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('activity-local'),
+      name: 'subagent',
+      arguments: { description: 'do a thing', prompt: 'go', run_in_background: false },
+      agent: parent,
+    })
+    // The provider's start settles in flushed microtasks; the latch follows it.
+    await new Promise<void>(resolve => setTimeout(resolve, 0))
+    request?.onActivity?.('tool')
+    release()
+
+    const result = await pending
+    expect(result.isError).toBe(false)
+    const events = activityEvents(parent.session)
+    expect(events.map(event => event.data.kind)).toEqual(['output', 'tool'])
+    expect(events.map(event => 'childSessionId' in event.data)).toEqual([false, true])
+    expect(events[1]?.data.childSessionId).toBe(child.id)
+  })
+
+  it('warns and disables recording when a record append fails, without failing the run', async () => {
+    const ctx = await setup({ provider: 'mock' }, {
+      onStart: (request) => { request.onActivity?.('output') },
+    })
+    const warnings: string[] = []
+    ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
+    const parent = fakeAgent()
+    const session = parent.session as unknown as { append: () => void }
+    session.append = () => { throw new Error('persistence down') }
+
+    const result = await callSubagent(ctx, { description: 'd', prompt: 'p', run_in_background: false }, { agent: parent })
+    expect(result.isError).toBe(false)
+    expect(text(result)).toBe('scripted subagent reply')
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('stopped recording subagent activity after append failed')
+    expect(warnings[0]).toContain('persistence down')
+    expect(activityEvents(parent.session)).toEqual([])
+  })
+
+  it('contains an append failure whose thrown value cannot be rendered', async () => {
+    const ctx = await setup({ provider: 'mock' }, {
+      onStart: (request) => { request.onActivity?.('output') },
+    })
+    const warnings: string[] = []
+    ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
+    const parent = fakeAgent()
+    const session = parent.session as unknown as { append: () => void }
+    session.append = () => {
+      throw { toString: () => { throw new Error('coercion trap') } }
+    }
+
+    const result = await callSubagent(ctx, { description: 'd', prompt: 'p', run_in_background: false }, { agent: parent })
+    expect(result.isError).toBe(false)
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('[unrenderable thrown value]')
+    expect(activityEvents(parent.session)).toEqual([])
+  })
+
+  it('truncates the record label to its display bound', async () => {
+    const ctx = await setup({ provider: 'mock' }, {
+      onStart: (request) => { request.onActivity?.('output') },
+    })
+    const parent = fakeAgent()
+    const result = await callSubagent(ctx, { description: 'x'.repeat(250), prompt: 'p', run_in_background: false }, { agent: parent })
+    expect(result.isError).toBe(false)
+    const events = activityEvents(parent.session)
+    expect(events).toHaveLength(1)
+    expect(events[0]?.data.label).toHaveLength(200)
+    expect(events[0]?.data.label).toBe('x'.repeat(200))
   })
 })

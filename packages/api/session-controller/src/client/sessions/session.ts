@@ -37,6 +37,7 @@ import { ProjectionValueStore } from './projection-store.ts'
 import type { ProjectionsBaseline } from './projection-store.ts'
 import { resolvedClientTimeZone } from '../time-zone.ts'
 import { SessionQueueMirror } from './queue-mirror.ts'
+import { PendingInboxPrompts } from './pending-inbox-prompts.ts'
 import {
   ClientAssistantStream,
   type ClientAssistantStreamResult,
@@ -101,6 +102,8 @@ export class Session implements SessionFace {
   private jumpPromise: Promise<void> | null = null
   /** Authoritative stream-only inbox snapshot; pending work never hits history. */
   private readonly queueMirror = new SessionQueueMirror()
+  /** Durable inbox fold: user prompts admitted but not yet committed (survives reload). */
+  private readonly pendingInbox = new PendingInboxPrompts()
   private readonly assistantStream = new ClientAssistantStream()
   private running = false
   private address: SubagentAddress | undefined
@@ -343,6 +346,19 @@ export class Session implements SessionFace {
       this.notifier.markDirty()
     }
     return result
+  }
+
+  /**
+   * Kill one live subagent child of this session: the child's current turn is
+   * cancelled, its pending inbox work is durably discarded, and a resident
+   * continuable child's residency epoch is closed. Failures are returned, not
+   * stored: this is a control operation on a child, not on this session's own
+   * turn, so the caller owns any error display.
+   * @param childSessionId - the durable child session to kill.
+   * @returns the kill result.
+   */
+  async killSubagent(childSessionId: SessionId): Promise<RemoteResult<{ accepted: true }>> {
+    return this.remote.session.killSubagent({ sessionId: this.sessionId, childSessionId })
   }
 
   /**
@@ -671,6 +687,8 @@ export class Session implements SessionFace {
     if (projections !== undefined) this.projections.seed(projections)
     this.eventSource.replace(visible, hasMore)
     for (const entry of visible) this.observeSubmissionEvent(entry.event)
+    this.pendingInbox.reset(visible.map(entry => entry.event))
+    this.observePendingInboxEchoes()
     this.notifier.markDirty()
   }
 
@@ -706,6 +724,7 @@ export class Session implements SessionFace {
     this.baseSeq = entries[0] === undefined ? this.baseSeq : SessionLogOffset(entries[0].event.seq)
     this.hasMore = hasMore
     this.eventSource.prepend(entries, hasMore)
+    if (this.pendingInbox.prepend(entries.map(entry => entry.event))) this.notifier.markDirty()
   }
 
   /** Append one stream-validated live event. */
@@ -714,12 +733,14 @@ export class Session implements SessionFace {
     const awaitingFirstTurn = this.firstPromptPendingTurn
     if (event.type === 'turn/start') this.firstPromptPendingTurn = false
     const queueChanged = this.queueMirror.acceptDurable(event)
+    const inboxChanged = this.pendingInbox.append(event)
     this.eventSource.append(entry)
     // After the feed append: the conversation assembly's animation frame is
     // registered by the feed subscribers above, so the echo-retirement frame
     // scheduled here always runs after the durable node became renderable.
     this.observeSubmissionEvent(event)
-    return queueChanged || awaitingFirstTurn !== this.firstPromptPendingTurn
+    if (inboxChanged) this.observePendingInboxEchoes()
+    return queueChanged || inboxChanged || awaitingFirstTurn !== this.firstPromptPendingTurn
   }
 
   /** Retire the matching echo when a durable browser-prompt `user/message` becomes visible. */
@@ -732,6 +753,14 @@ export class Session implements SessionFace {
     const source = data?.source as { readonly kind?: unknown; readonly rpcId?: unknown } | undefined
     if (source?.kind !== 'user' || typeof source.rpcId !== 'string') return
     this.scheduleObservedRetirement(source.rpcId as SessionRequestId, attachmentRefsIn(data?.content))
+  }
+
+  /** Retire an echo whose prompt now has a durable inbox fold entry: the in-flight bubble supersedes the transient echo. */
+  private observePendingInboxEchoes(): void {
+    if (this.submissionSettlements.size === 0) return
+    for (const entry of this.pendingInbox.snapshot()) {
+      if (entry.rpcId !== undefined) this.scheduleObservedRetirement(entry.rpcId, attachmentRefsIn(entry.content))
+    }
   }
 
   /** Retire echoes whose prompts landed in the host inbox instead of the log (running-turn submissions). */
@@ -797,6 +826,7 @@ export class Session implements SessionFace {
       sessionId: this.sessionId,
       queue: this.queueMirror.snapshot(),
       pendingSubmissions: this.pendingSubmissions,
+      pendingInboxPrompts: this.pendingInbox.snapshot(),
       running: this.running,
       subagent: this.address === undefined
         ? null

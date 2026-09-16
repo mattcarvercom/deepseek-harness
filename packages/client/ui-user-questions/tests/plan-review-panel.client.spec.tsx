@@ -47,6 +47,7 @@ const sessionState: SessionState = {
   lastAgentError: null,
   promptAttempted: false,
   awaitingFirstTurn: false,
+  pendingInboxPrompts: [],
 }
 const sessionList = {
   ids: [SID],
@@ -121,6 +122,7 @@ const kit: Omit<QuestionComposerProps, 'matched'> = {
   useWorkspaces: selector => selector(workspaceState),
   useConversation: selector => selector(conversationState),
   useChat: selector => selector(chatState),
+  useSubagentActivity: selector => selector({}),
   useTrajectory: selector => selector(trajectoryState),
   useProjection: (() => undefined),
   useInput: selector => selector(inputState),

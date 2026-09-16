@@ -85,6 +85,12 @@ export interface ToolRowProps {
    * over the expanded body. Absent = no affordance.
    */
   inspect?: (() => void) | undefined
+  /**
+   * Localized in-flight activity label under a running row whose call owns a
+   * session activity fact (an in-progress subagent delegation). Shown only
+   * while the row is running; absent rows never render it.
+   */
+  activityLabel?: string | undefined
 }
 
 function leadingFor(state: ToolRowState, icon: ReactNode): ReactNode {
@@ -133,6 +139,7 @@ export function ToolRow({
   filePathLine,
   onOpenFile,
   inspect,
+  activityLabel,
 }: ToolRowProps) {
   const [expanded, setExpanded] = useState(false)
   const terminalLabels = useMemo(() => terminalBlockLabels(t), [t])
@@ -330,6 +337,9 @@ export function ToolRow({
           )}
         </div>
       </DisclosureRow>
+      {state === 'running' && activityLabel !== undefined && (
+        <div className={css.activitySubline}>{activityLabel}</div>
+      )}
     </div>
   )
 }

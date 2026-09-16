@@ -49,6 +49,7 @@ const emptyTrajectory: TrajectorySnapshot = {
 const useSessionPendingInteraction: MessageImagesProps['useSessionPendingInteraction'] = selector => selector(noAttention)
 const useConversation: MessageImagesProps['useConversation'] = selector => selector(EMPTY_CONVERSATION_SNAPSHOT)
 const useChat: MessageImagesProps['useChat'] = selector => selector(EMPTY_CHAT_SNAPSHOT)
+const useSubagentActivity: MessageImagesProps['useSubagentActivity'] = selector => selector({})
 const useTrajectory: MessageImagesProps['useTrajectory'] = selector => selector(emptyTrajectory)
 
 describe('MessageImage', () => {
@@ -279,6 +280,7 @@ describe('ImageGallery', () => {
       useProjection: () => undefined,
       useConversation,
       useChat,
+      useSubagentActivity,
       useTrajectory,
       useInput,
       inputActions: {

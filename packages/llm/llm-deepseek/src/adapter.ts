@@ -8,7 +8,7 @@
  * @module dsh-llm-deepseek/adapter
  */
 
-import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, isTokenDelta, LlmAdapter, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
   GenerateOptions,
@@ -29,7 +29,7 @@ import type {
   RequestImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
-import { deadline, idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { deadline, idleWatchdog, progressDeadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import type {
   DeepSeekLlmApiExtensionRequest,
@@ -98,6 +98,12 @@ export interface DeepSeekConnectionOptions {
   models: readonly DeepSeekCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs: number
+  /**
+   * Maximum time without model content once a stream has started; content is a
+   * non-empty text or reasoning delta or a tool-call payload. Zero disables
+   * the bound for endpoints whose healthy state is a long silence.
+   */
+  streamContentIdleTimeoutMs: number
   /** Maximum accumulated file-referenced image bytes in one request. */
   maxRequestFilesBytes: number
   /** Maximum accumulated base64 image payload after Files API fallback. */
@@ -143,6 +149,8 @@ export interface DeepSeekAdapterOptions {
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
 export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
+/** Default maximum interval without model content once a stream has started. */
+export const DEFAULT_STREAM_CONTENT_IDLE_TIMEOUT_MS = 600_000
 /** Default combined request/response context capacity. */
 export const DEFAULT_CONTEXT_WINDOW = 1_000_000
 /** Default per-request output-token cap. */
@@ -164,6 +172,7 @@ export const DEFAULT_FILE_QUOTA_CLEANUP_BATCH = 100
 /** Default deadline for resolving one request image through the Files API. */
 export const DEFAULT_FILES_API_TIMEOUT_MS = 60_000
 const STREAM_IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT'
+const STREAM_CONTENT_IDLE_TIMEOUT_CODE = 'LLM_STREAM_CONTENT_IDLE_TIMEOUT'
 const FILES_API_TIMEOUT_CODE = 'DEEPSEEK_FILES_API_TIMEOUT'
 const OFF_REASONING_EFFORT = ReasoningEffortId('off')
 const LOW_REASONING_EFFORT = ReasoningEffortId('low')
@@ -355,7 +364,8 @@ export function httpErrorCode(status: number, error?: WireError['error']): strin
  * registered under (the harness model name IS the wire model name).
  *
  * One stable signal reaches both initial fetch and body reads. Caller aborts
- * map to `ABORTED`; the configured per-read idle watchdog maps to `TIMEOUT`.
+ * map to `ABORTED`; the per-read idle watchdog and the content-idle deadline
+ * both map to `TIMEOUT`, so the retry policy treats either trip the same.
  */
 export class DeepSeekAdapter extends LlmAdapter {
   private readonly files: DeepSeekFileStore
@@ -483,9 +493,14 @@ export class DeepSeekAdapter extends LlmAdapter {
       ? consumer.signal
       : AbortSignal.any([options.signal, consumer.signal])
     using watchdog = idleWatchdog(upstream, connection.streamIdleTimeoutMs, STREAM_IDLE_TIMEOUT_CODE)
+    using progress = progressDeadline(
+      upstream,
+      connection.streamContentIdleTimeoutMs,
+      STREAM_CONTENT_IDLE_TIMEOUT_CODE,
+    )
     const iterator = this.request(
       options,
-      watchdog.signal,
+      AbortSignal.any([watchdog.signal, progress.signal]),
       connection,
       apiKey,
       userId,
@@ -500,12 +515,20 @@ export class DeepSeekAdapter extends LlmAdapter {
           exhausted = true
           return
         }
+        if (isTokenDelta(result.value)) progress.progress()
         yield result.value
       }
     } catch (error: unknown) {
       if (timeoutOf(watchdog.signal, STREAM_IDLE_TIMEOUT_CODE) !== undefined) {
         throw new LlmError(
           `DeepSeek stream idle timeout after ${connection.streamIdleTimeoutMs}ms`,
+          'TIMEOUT',
+          { cause: error },
+        )
+      }
+      if (timeoutOf(progress.signal, STREAM_CONTENT_IDLE_TIMEOUT_CODE) !== undefined) {
+        throw new LlmError(
+          `DeepSeek stream content idle timeout after ${connection.streamContentIdleTimeoutMs}ms`,
           'TIMEOUT',
           { cause: error },
         )

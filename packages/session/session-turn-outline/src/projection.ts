@@ -7,7 +7,10 @@
  * `turn/start` — not the prompt `user/message` — anchors each entry because
  * its seq is the load-through target for a jump: the loop logs `turn/start`
  * before the turn's prompt and steps, so a window paged back through that seq
- * contains the whole turn. Previews mirror the rail's loaded-turn previews
+ * contains the whole turn. Each entry also records the boundary event's time,
+ * so a client whose window excludes the `turn/start` still anchors the
+ * running turn's elapsed clock to a fact the baseline already carries.
+ * Previews mirror the rail's loaded-turn previews
  * (space-joined text blocks, collapsed whitespace, an ellipsis when clipped)
  * with budgets sized to the rail card's clamps — one prompt line, up to three
  * response lines — so a turn shows the same words before and after its events
@@ -61,6 +64,7 @@ function preview(content: MessageContent, limit: number): string {
 const turnOutlineEntriesSchema: ZodType<readonly TurnOutlineEntry[]> = z.array(z.object({
   turn: z.number().int().nonnegative(),
   seq: z.number().int().nonnegative().transform(SessionSeq),
+  startedAt: z.number().int().nonnegative(),
   prompt: z.string().max(PROMPT_PREVIEW_LIMIT),
   response: z.string().max(RESPONSE_PREVIEW_LIMIT),
 }).strict()).superRefine((turns, context) => {
@@ -84,7 +88,7 @@ const EMPTY_OUTLINE: TurnOutlineState = { turns: [], draft: '' }
 /** The `turnOutline` unit registered on `ctx.sessionProjections` (exported for the unit spec). */
 export const turnOutlineProjectionDefinition = {
   key: 'turnOutline',
-  stateVersion: 2,
+  stateVersion: 3,
   stateSchema: turnOutlineStateSchema,
   init: () => EMPTY_OUTLINE,
   apply: (state, event) => {
@@ -99,7 +103,7 @@ export const turnOutlineProjectionDefinition = {
         // standing entry.
         if (last !== undefined && event.data.turn <= last.turn) return state
         return {
-          turns: [...state.turns, { turn: event.data.turn, seq: event.seq, prompt: '', response: '' }],
+          turns: [...state.turns, { turn: event.data.turn, seq: event.seq, startedAt: event.time, prompt: '', response: '' }],
           draft: '',
         }
       }

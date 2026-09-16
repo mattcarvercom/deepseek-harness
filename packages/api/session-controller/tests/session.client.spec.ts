@@ -15,7 +15,7 @@ import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-clie
 import { JUMP_PAGE_MESSAGES, type Session } from '../src/client/sessions/session.ts'
 import { SessionEventStream } from '../src/client/transport.ts'
 import type { SessionFollowRequest, SessionPage, SessionPageRequest } from '../src/types.ts'
-import { entries, ev, historyValue, plainTurn } from './event-script.client.ts'
+import { entries, ev, historyValue, inboxUserMessage, plainTurn } from './event-script.client.ts'
 import { sessionBench } from './remote/bench.client.ts'
 import {
   FOLLOW, PAGE, err, followScript, followSnapshot, frame, history, pageRule, pushEvent,
@@ -159,6 +159,41 @@ describe('live event path', () => {
         repaired.filter(event => event.seq <= 9).map(event => event.seq),
       )
     })
+  })
+
+  it('folds inbox splice events into pendingInboxPrompts on window install and on live append', async ({ mock, start }) => {
+    // A prompt admitted to the durable inbox before a turn that never claimed it
+    // (rejection closes the turn without a step), so it is still in flight after open.
+    const window = [
+      ev.inboxSplice(SessionSeq(0), {
+        target: 'next-turn', start: 0, inserted: [inboxUserMessage('m-q1', 'first prompt', 'req-q1')],
+      }),
+      ev.turnStart(SessionSeq(1), 1),
+      ev.turnEnd(SessionSeq(2), 1),
+    ]
+    const session = await opened(mock, start, window)
+    expect(session.getSnapshot().pendingInboxPrompts).toEqual([
+      {
+        id: 'm-q1', placement: 'queued', rpcId: 'req-q1',
+        content: [{ type: 'text', text: 'first prompt' }],
+        preview: 'first prompt', text: 'first prompt',
+      },
+    ])
+    await pushEvent(mock, ev.inboxSplice(SessionSeq(3), {
+      target: 'next-step', start: 0, inserted: [inboxUserMessage('m-s1', 'steer me', 'req-s1')],
+    }))
+    expect(session.getSnapshot().pendingInboxPrompts).toEqual([
+      {
+        id: 'm-q1', placement: 'queued', rpcId: 'req-q1',
+        content: [{ type: 'text', text: 'first prompt' }],
+        preview: 'first prompt', text: 'first prompt',
+      },
+      {
+        id: 'm-s1', placement: 'steering', rpcId: 'req-s1',
+        content: [{ type: 'text', text: 'steer me' }],
+        preview: 'steer me', text: 'steer me',
+      },
+    ])
   })
 })
 
@@ -559,6 +594,37 @@ describe('prompt and cancel errors', () => {
     expect(mock.log.requests('session/attachment')).toEqual([{
       sessionId: SID, attachmentId: 'attachment-1',
     }])
+  })
+})
+
+describe('killSubagent', () => {
+  const CHILD = 'fk-child' as SessionId
+
+  it('addresses the parent session with the durable child id', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    const result = await session.killSubagent(CHILD)
+    expect(result).toEqual({ ok: true, value: { accepted: true } })
+    expect(mock.log.requests('session/killSubagent')).toEqual([{ sessionId: SID, childSessionId: CHILD }])
+  })
+
+  it('returns a business failure without recording a prompt error on this session', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    mock.remote.session.killSubagent.mockResolvedValue(
+      err(new RemoteError('subagent/unauthorized', 'subagent does not belong to this parent', { childSessionId: CHILD })),
+    )
+    const result = await session.killSubagent(CHILD)
+    expect(result).toMatchObject({ ok: false, error: { code: 'subagent/unauthorized', details: { childSessionId: CHILD } } })
+    expect(session.getSnapshot().promptError).toBeNull()
+  })
+
+  it('receives a carrier throw as the client\'s gateway/internal fold without a prompt error', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    mock.remote.session.killSubagent.mockImplementation(() => Promise.reject(new Error('kill transport down')))
+    const result = await session.killSubagent(CHILD)
+    expect(result).toMatchObject({
+      ok: false, error: { code: 'gateway/internal', message: 'client api: session/killSubagent failed: kill transport down' },
+    })
+    expect(session.getSnapshot().promptError).toBeNull()
   })
 })
 

@@ -18,6 +18,40 @@ const text = (t: string): ContentBlock[] => [{ type: 'text', text: t }]
 const at = (seq: SessionSeq, e: Record<string, unknown>): SessionEvent =>
   ({ seq, time: 1_700_000_000_000 + seq, ...e }) as unknown as SessionEvent
 
+/** A durable user message as an inbox splice payload carries it: a stable id and a
+ *  user source with the prompt's rpcId when the Host copied one. */
+export interface InboxUserMessage {
+  readonly id: string
+  readonly role: 'user'
+  readonly content: readonly ContentBlock[]
+  readonly source: { readonly kind: 'user'; readonly rpcId?: string }
+}
+
+/** The durable inbox splice payload as the agent-loop inbox writes it (the wire view of its SessionEventMap entry). */
+export interface InboxSpliceFixture {
+  readonly target: 'next-turn' | 'next-step'
+  readonly start: number
+  readonly removedCount?: number
+  readonly inserted: readonly InboxUserMessage[]
+  readonly outcome?: 'canceled'
+}
+
+/**
+ * Build one inbox-payload user message.
+ * @param id - stable message identity.
+ * @param body - prompt text.
+ * @param rpcId - prompt correlation the Host copied from the client request, when present.
+ * @returns the wire-view message.
+ */
+export function inboxUserMessage(id: string, body: string, rpcId?: string): InboxUserMessage {
+  return {
+    id,
+    role: 'user',
+    content: text(body),
+    source: { kind: 'user', ...(rpcId === undefined ? {} : { rpcId }) },
+  }
+}
+
 export const ev = {
   turnStart: (seq: SessionSeq, turn: number): SessionEvent =>
     at(seq, { type: 'turn/start', data: { turn } }),
@@ -152,6 +186,9 @@ export const ev = {
         source: { kind: 'plugin', plugin: 'compact' },
       }),
     }),
+  /** One durable inbox splice record with the exact payload the agent-loop inbox writes. */
+  inboxSplice: (seq: SessionSeq, data: InboxSpliceFixture): SessionEvent =>
+    at(seq, { type: 'agent/inbox/spliced', data }),
 }
 
 /** One complete plain turn (turn/start → user → step → assistant → turn/end), 6 events from startSeq. */

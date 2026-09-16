@@ -3001,13 +3001,12 @@ describe('continuable lifecycle observation', () => {
 })
 
 describe('continuable public API', () => {
-  it('exposes no host authority, residency query, cancellation, steering, or report operation', async () => {
+  it('exposes no host authority, residency query, raw cancel, steering, or report operation', async () => {
     const { ctx } = await setup([])
     const subagents: Record<string, unknown> = ctx.subagents as unknown as Record<string, unknown>
     for (const absent of [
       'activationState',
       'cancel',
-      'kill',
       'report',
       'resume',
       'steer',
@@ -3554,5 +3553,245 @@ describe('SubagentRuntime.interrupt', () => {
 
     hold.resolve(undefined)
     await drained
+  })
+})
+
+describe('SubagentRuntime.kill', () => {
+  it('kills a running resident child: the turn aborts with the user cause, parked work is discarded, and the epoch closes', async () => {
+    const releaseFirst = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([{ chunks: textResponse('first'), gate: releaseFirst.promise }])
+    const { ctx, parent } = await setupWith(adapter)
+    parkParent(ctx, parent)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const child = ctx.agents.get(started.childId)!
+    await queuePrompt(ctx, parent, started.childId, message('parked B'))
+    await queuePrompt(ctx, parent, started.childId, message('parked C'))
+    const cancelSpy = vi.spyOn(child, 'cancel')
+
+    ctx.subagents.kill(started.childId, { parentSessionId: parent.id })
+    // The kill's user cancel and the close transaction's whole-Activation
+    // re-cancel both land before the call returns; the first cause wins.
+    expect(cancelSpy).toHaveBeenCalledTimes(2)
+    expect(cancelSpy).toHaveBeenNthCalledWith(1, { kind: 'user' }, { keepInbox: false })
+    expect(cancelSpy).toHaveBeenNthCalledWith(2, { kind: 'parent' })
+
+    // Cancellation is cooperative: the held model call observes it on release.
+    releaseFirst.resolve(undefined)
+    await waitNoActivation(ctx, started.childId)
+
+    // Parked work spent no model call and never reached the log as a user message.
+    expect(adapter.requests).toHaveLength(1)
+    const loaded = await loadStoredSession(ctx.sessionPersistence, started.childId)
+    expect(userTexts(loaded.events)).toEqual(['child task'])
+    const splices = loaded.events.flatMap(event =>
+      event.type === 'agent/inbox/spliced' ? [event.data] : [])
+    expect(splices.at(-1)).toMatchObject({ target: 'next-turn', removedCount: 2, outcome: 'canceled' })
+    const turnEnds = loaded.events.flatMap(event =>
+      event.type === 'turn/end' ? [event.data.reason] : [])
+    expect(turnEnds).toEqual([{ kind: 'aborted', reason: { kind: 'user' } }])
+  })
+
+  it('kills an idle resident child, discarding its parked queue and closing the epoch', async () => {
+    const releaseFirst = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([{ chunks: textResponse('first'), gate: releaseFirst.promise }])
+    const { ctx, parent } = await setupWith(adapter)
+    parkParent(ctx, parent)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const child = ctx.agents.get(started.childId)!
+    await queuePrompt(ctx, parent, started.childId, message('parked B'))
+
+    // Interrupt leaves the child idle with the parked message pending; kill
+    // then discards it durably and closes the epoch instead of letting a
+    // later wake run it.
+    ctx.subagents.interrupt(started.childId, { kind: 'user', parentSessionId: parent.id })
+    releaseFirst.resolve(undefined)
+    await child.whenIdle()
+    await passSettlementCheck(ctx, started.childId)
+    expect(ctx.agents.get(started.childId)).toBe(child)
+
+    const cancelSpy = vi.spyOn(child, 'cancel')
+    ctx.subagents.kill(started.childId, { parentSessionId: parent.id })
+    // The idle phase has no turn to abort: both cancels only clear the inbox,
+    // the kill's and the close transaction's.
+    expect(cancelSpy).toHaveBeenCalledTimes(2)
+    expect(cancelSpy).toHaveBeenNthCalledWith(1, { kind: 'user' }, { keepInbox: false })
+    expect(cancelSpy).toHaveBeenNthCalledWith(2, { kind: 'parent' })
+
+    await waitNoActivation(ctx, started.childId)
+    const loaded = await loadStoredSession(ctx.sessionPersistence, started.childId)
+    expect(userTexts(loaded.events)).toEqual(['child task'])
+    const splices = loaded.events.flatMap(event =>
+      event.type === 'agent/inbox/spliced' ? [event.data] : [])
+    expect(splices.at(-1)).toMatchObject({ target: 'next-turn', removedCount: 1, outcome: 'canceled' })
+    const turnEnds = loaded.events.flatMap(event =>
+      event.type === 'turn/end' ? [event.data.reason.kind] : [])
+    expect(turnEnds).toEqual(['aborted'])
+  })
+
+  it('refuses a kill claimed by a stranger to the live child and leaves the epoch open', async () => {
+    const hold = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([{ chunks: textResponse('working'), gate: hold.promise }])
+    const { ctx, parent } = await setupWith(adapter)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const child = ctx.agents.get(started.childId)!
+    const cancelSpy = vi.spyOn(child, 'cancel')
+
+    expect(() => { ctx.subagents.kill(started.childId, { parentSessionId: SessionId('stranger') }) })
+      .toThrow(/belongs to another parent session/)
+    expect(cancelSpy).not.toHaveBeenCalled()
+    // The refused kill leaves the epoch open: the turn settles naturally.
+    expect(ctx.agents.get(started.childId)).toBe(child)
+    hold.resolve(undefined)
+    await waitNoActivation(ctx, started.childId)
+  })
+
+  it('kills a live one-shot child with the user cause and settles its run as aborted', async () => {
+    const release = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([{ chunks: textResponse('one shot'), gate: release.promise }])
+    const { ctx, parent } = await setupWith(adapter)
+    const run = await ctx.subagents.start('spawn', {
+      label: 'one-shot work',
+      prompt: message('one-shot work'),
+      parent,
+      signal: testSignal,
+    })
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const oneShot = run.localAgent!
+    const cancelSpy = vi.spyOn(oneShot, 'cancel')
+
+    ctx.subagents.kill(run.id, { parentSessionId: parent.id })
+    expect(cancelSpy).toHaveBeenCalledTimes(1)
+    expect(cancelSpy).toHaveBeenCalledWith({ kind: 'user' }, { keepInbox: false })
+
+    release.resolve(undefined)
+    await expect(run.result).resolves.toMatchObject({ stopReason: 'aborted' })
+    await run.dispose()
+    expect(ctx.agents.get(run.id)).toBeUndefined()
+  })
+
+  it('rejects foreign claims over non-subagent and settled targets, and accepts unknown ids as no-ops', async () => {
+    const release = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([{ chunks: textResponse('one shot'), gate: release.promise }])
+    const { ctx, parent } = await setupWith(adapter)
+
+    // A stranger's claim over a live one-shot child is refused without touching it.
+    const run = await ctx.subagents.start('spawn', {
+      label: 'one-shot work',
+      prompt: message('one-shot work'),
+      parent,
+      signal: testSignal,
+    })
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const oneShot = run.localAgent!
+    const cancelSpy = vi.spyOn(oneShot, 'cancel')
+    expect(() => { ctx.subagents.kill(run.id, { parentSessionId: SessionId('stranger') }) })
+      .toThrow(/belongs to another parent session/)
+    expect(cancelSpy).not.toHaveBeenCalled()
+
+    // Non-subagent sessions are never kill targets, whatever parent is claimed.
+    const plain = await ctx.agentLoop.create(SessionId('plain'), { provider: 'mock', model: 'mock' })
+    const plainSpy = vi.spyOn(plain, 'cancel')
+    expect(() => { ctx.subagents.kill(plain.id, { parentSessionId: SessionId('plain') }) })
+      .toThrow(/belongs to another parent session/)
+    expect(plainSpy).not.toHaveBeenCalled()
+
+    // An unknown id is an accepted no-op.
+    expect(() => { ctx.subagents.kill(SessionId('missing'), { parentSessionId: parent.id }) }).not.toThrow()
+
+    // A settled one-shot run is gone from the live registry: an accepted no-op.
+    release.resolve(undefined)
+    await run.result
+    await run.dispose()
+    expect(ctx.agents.get(run.id)).toBeUndefined()
+    expect(() => { ctx.subagents.kill(run.id, { parentSessionId: parent.id }) }).not.toThrow()
+  })
+
+  it('accepts a kill that lost the race with a scoped drain without signalling twice', async () => {
+    const hold = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([{ chunks: textResponse('working'), gate: hold.promise }])
+    const { ctx, parent } = await setupWith(adapter)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const child = ctx.agents.get(started.childId)!
+    const cancelSpy = vi.spyOn(child, 'cancel')
+
+    // Scoped teardown opens the disposal transaction synchronously and issues
+    // its own whole-Activation cancel before this call returns.
+    const drained = ctx.subagents.drainContinuableDescendants([parent])
+    expect(cancelSpy).toHaveBeenCalledTimes(1)
+
+    // Kill after the cutoff: accepted no-op, no second signal, no waiting.
+    ctx.subagents.kill(started.childId, { parentSessionId: parent.id })
+    expect(cancelSpy).toHaveBeenCalledTimes(1)
+
+    hold.resolve(undefined)
+    await drained
+    await waitNoActivation(ctx, started.childId)
+  })
+
+  it('releases a killed child and its live resident grandchild child-first', async () => {
+    const releaseChild = Promise.withResolvers<undefined>()
+    const releaseGrandchild = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('child'), gate: releaseChild.promise },
+      { chunks: textResponse('grandchild'), gate: releaseGrandchild.promise },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const child = ctx.agents.get(started.childId)!
+    const grandchild = await ctx.subagents.startContinuable(startSpec(child))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(2) })
+    const grandchildAgent = ctx.agents.get(grandchild.childId)!
+    const childCancel = vi.spyOn(child, 'cancel')
+    const grandchildCancel = vi.spyOn(grandchildAgent, 'cancel')
+
+    ctx.subagents.kill(started.childId, { parentSessionId: parent.id })
+    // The kill's user cancel lands on the child; the close transaction's
+    // child-first release stops the grandchild with the parent cause before
+    // the call returns.
+    expect(childCancel).toHaveBeenNthCalledWith(1, { kind: 'user' }, { keepInbox: false })
+    expect(grandchildCancel).toHaveBeenCalledTimes(1)
+    expect(grandchildCancel).toHaveBeenCalledWith({ kind: 'parent' })
+
+    releaseChild.resolve(undefined)
+    releaseGrandchild.resolve(undefined)
+    await waitNoActivation(ctx, grandchild.childId)
+    await waitNoActivation(ctx, started.childId)
+
+    const loadedChild = await loadStoredSession(ctx.sessionPersistence, started.childId)
+    const childTurnEnds = loadedChild.events.flatMap(event =>
+      event.type === 'turn/end' ? [event.data.reason] : [])
+    expect(childTurnEnds).toEqual([{ kind: 'aborted', reason: { kind: 'user' } }])
+    const loadedGrandchild = await loadStoredSession(ctx.sessionPersistence, grandchild.childId)
+    const grandchildTurnEnds = loadedGrandchild.events.flatMap(event =>
+      event.type === 'turn/end' ? [event.data.reason] : [])
+    expect(grandchildTurnEnds).toEqual([{ kind: 'aborted', reason: { kind: 'parent' } }])
+  })
+
+  it('logs a kill-triggered teardown failure after the target is released', async () => {
+    const hold = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([{ chunks: textResponse('working'), gate: hold.promise }])
+    const { ctx, parent } = await setupWith(adapter)
+    const warnings: string[] = []
+    ctx.logger.warn = (message: string) => { warnings.push(message) }
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const activation = continuationActivations(ctx).get(started.childId)!
+    const realDispose = activation.handle.dispose.bind(activation.handle)
+    activation.handle.dispose = async () => {
+      await realDispose()
+      throw new Error('kill teardown cleanup failed')
+    }
+
+    ctx.subagents.kill(started.childId, { parentSessionId: parent.id })
+    hold.resolve(undefined)
+    await waitNoActivation(ctx, started.childId)
+    await vi.waitFor(() => {
+      expect(warnings.some(warning => warning.includes('kill teardown cleanup failed'))).toBe(true)
+    }, { timeout: 5_000 })
   })
 })

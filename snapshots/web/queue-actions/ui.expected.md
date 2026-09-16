@@ -22,7 +22,10 @@
   - img
   - text: Context injection @deepseek-ai/dsh-system-prompt
 - paragraph: partial
-- status: Deep diving...
+- status:
+  - text: Deep diving... Generating…
+  - button "Cancel":
+    - img
 - list:
   - listitem:
     - text: Edited queue item

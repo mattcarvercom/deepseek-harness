@@ -1,6 +1,7 @@
 /** Package-local scripted child boundary for deterministic tool-subagent tests. */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {
@@ -40,6 +41,12 @@ export interface Config {
   structured?: unknown
   /** Observes each start; the child's result additionally waits for the returned promise. */
   onStart?: (request: SubagentStartRequest) => Promise<void> | void
+  /**
+   * When set, the returned run is a local run: `localAgent` is this agent
+   * and the run's id is its session id (the local-run contract). Omit for
+   * the default remote shape.
+   */
+  localAgent?: Agent
 }
 
 /** Scripted provider whose result aborts if its signal or disposer wins first. */
@@ -88,9 +95,12 @@ class ScriptedSubagentProvider implements SubagentProvider {
       request.signal.removeEventListener('abort', onAbort)
     })
 
+    const localAgent = this.config.localAgent
     return {
-      id: SessionId(`scripted-subagent:${this.name}:${request.parent.id}`),
-      localAgent: undefined,
+      id: localAgent !== undefined
+        ? localAgent.id
+        : SessionId(`scripted-subagent:${this.name}:${request.parent.id}`),
+      localAgent,
       result,
       dispose(): Promise<void> {
         state.cancelled = true

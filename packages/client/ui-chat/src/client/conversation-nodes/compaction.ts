@@ -13,6 +13,13 @@ declare module '../contract/chat-nodes.ts' {
   }
 }
 
+declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
+  interface ConversationTurnDataMap {
+    /** Epoch ms of the open automatic compaction's `compaction/start`; present while that turn is compacting. */
+    compaction: number
+  }
+}
+
 interface CompactionState {
   readonly summary?: ConversationMatch
   readonly checkpoint?: ConversationMatch
@@ -48,6 +55,17 @@ export const compactionDefinition: ConversationNodeDefinition<CompactionState> =
   },
   start: () => ({}),
   update: (context, match) => updateCompactionState(context.state, match),
+  buildLocationData: (context, scope, previous) => {
+    if (scope !== 'turn') return null
+    const start = context.start
+    if (start === undefined || start.event.type !== 'compaction/start') return previous
+    const turn = start.event.data.turn
+    if (typeof turn !== 'number' || !Number.isSafeInteger(turn) || turn < 0) return previous
+    if (context.matches.some(match => match.event.type === 'compaction/end')) return null
+    if (previous?.kind === 'turn' && previous.key === 'compaction'
+      && previous.turn === turn && previous.value === start.event.time) return previous
+    return { kind: 'turn', turn, key: 'compaction', value: start.event.time }
+  },
   buildViewNode: (context) => {
     const state = context.state ?? fallbackState(context)
     if (state.checkpoint === undefined) return null

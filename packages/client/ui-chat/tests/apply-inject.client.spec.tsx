@@ -43,6 +43,7 @@ function sessionFakeFor() {
     })),
     prompt: vi.fn<ISession['prompt']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
     cancel: vi.fn<ISession['cancel']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
+    killSubagent: vi.fn<ISession['killSubagent']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
   } satisfies SessionBehaviorOverrides
 }
 
@@ -211,6 +212,49 @@ describe('Chat inject API', () => {
     expect(loaded).toEqual(expect.any(String))
     expect(b.session.readAttachment).toHaveBeenCalledWith(ATTACHMENT.attachmentId)
     expect(injected.loadImage.peek?.(ATTACHMENT)).toBe(loaded)
+    await b.runtime.dispose()
+  })
+
+  it('kills a local child through the Session face and stays silent when the kill rejects', async () => {
+    const b = await bench()
+    const { injected } = b.chatViewApi(ROOT)
+    const child = 'child-1' as SessionId
+    injected.killChild(child)
+    await vi.waitFor(() => {
+      expect(b.session.killSubagent).toHaveBeenCalledWith(child)
+    })
+    // A rejected kill is swallowed: the child's activity fact keeps the
+    // pill's action mounted, so a later click retries the kill.
+    b.session.killSubagent.mockImplementationOnce(() => Promise.reject(new Error('transport down')))
+    expect(() => { injected.killChild(child) }).not.toThrow()
+    await b.runtime.dispose()
+  })
+
+  it('cancels the turn through the Session face and stays silent when the cancel rejects', async () => {
+    const b = await bench()
+    const { injected } = b.chatViewApi(ROOT)
+    injected.cancel()
+    await vi.waitFor(() => {
+      expect(b.session.cancel).toHaveBeenCalled()
+    })
+    // A rejected cancel is swallowed: the snapshot already mirrors the
+    // rejection into promptError, so a later click retries the cancel.
+    b.session.cancel.mockImplementationOnce(() => Promise.reject(new Error('transport down')))
+    expect(() => { injected.cancel() }).not.toThrow()
+    await b.runtime.dispose()
+  })
+
+  it('prompts the session through the Session face and stays silent when the prompt rejects', async () => {
+    const b = await bench()
+    const { injected } = b.chatViewApi(ROOT)
+    injected.prompt('do the thing')
+    await vi.waitFor(() => {
+      expect(b.session.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'do the thing' }], 'queue')
+    })
+    // A rejected prompt is swallowed: the snapshot already mirrors the
+    // rejection into promptError, so a later submit retries the prompt.
+    b.session.prompt.mockImplementationOnce(() => Promise.reject(new Error('transport down')))
+    expect(() => { injected.prompt('retry me') }).not.toThrow()
     await b.runtime.dispose()
   })
 })

@@ -1,6 +1,6 @@
 import { Fragment, memo, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { PendingInboxPrompt, PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { fileExtension, FileTypeIcon, fileSizeText, JsonBlock, projectUserText, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
@@ -155,7 +155,8 @@ function TurnMaxTokensItem({ t }: {
 
 /** Right-aligned bubble shared by user and steering rows. */
 function UserStyleBubble({
-  content, renderMessageImages, actions, pending = false, echo = false, referenceLabels = [], skillNames = [],
+  content, renderMessageImages, actions, pending = false, echo = false, inflight = false, footer,
+  referenceLabels = [], skillNames = [],
   previewAttachments, references, t,
 }: {
   content: readonly unknown[]
@@ -166,6 +167,10 @@ function UserStyleBubble({
   pending?: boolean
   /** Whether this is a local submission echo (invisible marker; the echo renders exactly like its durable replacement). */
   echo?: boolean
+  /** Whether the durable in-flight prompt is uncommitted; the row renders muted until its node replaces it. */
+  inflight?: boolean
+  /** Optional right-aligned status line below the actions (the in-flight placement marker). */
+  footer?: ReactNode
   /** Exact session mention labels associated by the adjacent recall node. */
   referenceLabels?: readonly string[]
   /** Skill names the step's `skill-invocation` injections loaded for this message. */
@@ -185,6 +190,7 @@ function UserStyleBubble({
       className={css.userRow}
       data-pending-steering={pending || undefined}
       data-submission-echo={echo || undefined}
+      data-inflight-prompt={inflight || undefined}
     >
       <div className={css.userStack}>
         {attachments.length > 0 && (
@@ -224,7 +230,43 @@ function UserStyleBubble({
         )}
       </div>
       {actions?.(text)}
+      {footer}
     </div>
+  )
+}
+
+/**
+ * Render one durable in-flight user prompt — queued in the Host inbox or
+ * claimed by the running turn but not yet committed — muted, until the
+ * durable transcript node replaces it.
+ * @param props - the in-flight inbox prompt and conversation render seats.
+ * @returns the in-flight prompt bubble.
+ */
+export function PendingInboxPromptBubble({ prompt, renderMessageImages, t }: {
+  prompt: PendingInboxPrompt
+  renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
+  t: ChatViewSlotProps['t']
+}): ReactNode {
+  return (
+    <UserStyleBubble
+      content={prompt.content}
+      renderMessageImages={renderMessageImages}
+      inflight
+      footer={(
+        <span className={css.inflightFooter} role="status">
+          {t(prompt.placement === 'queued' ? 'chat.pendingQueued' : 'chat.pendingSteering')}
+        </span>
+      )}
+      t={t}
+      actions={text => (
+        <MessageIconActions
+          text={text}
+          clock="start"
+          className={css.actions}
+          t={t}
+        />
+      )}
+    />
   )
 }
 

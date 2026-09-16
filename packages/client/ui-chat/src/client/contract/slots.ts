@@ -19,10 +19,14 @@ import type {
   ChatNodeProcessSource, ChatNodeSource, ChatSnapshot, ChatTurnProcessPresentation,
 } from './snapshot.ts'
 import type { TurnProcessSpec } from './turn-process.ts'
+import type { SubagentActivityMap } from './subagent-activity.ts'
 import type { TranscriptViewMode } from '../../chat-settings.ts'
 
 /** Selector hook over the current Conversation binding's Chat target. */
 export type UseChat = SnapshotSelectorHook<ChatSnapshot>
+
+/** Selector hook over the current Session's in-flight subagent activity map. */
+export type UseSubagentActivity = SnapshotSelectorHook<SubagentActivityMap>
 
 /** Per-key selector hook over one Chat Node. */
 export type UseChatNode = KeyedSnapshotSelectorHook<ChatConversationViewNode | undefined>
@@ -153,6 +157,13 @@ export interface ChatViewInjected {
   }
   forkAt: (seq: number) => void
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
+  /** Cancel the running turn; failures mirror into the session snapshot. */
+  cancel: () => void
+  /** Queue one text prompt as the next turn. */
+  prompt: (text: string) => void
+  /** Kill a local subagent child by its durable session id; a failed kill stays
+   *  retryable because the child's activity fact keeps the pill's action mounted. */
+  killChild: (childSessionId: SessionId) => void
 }
 
 /** Full Chat view props. */
@@ -170,6 +181,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SessionStandardProps {
     /** Selector hook over the current Conversation binding's Chat target. */
     useChat: UseChat
+    /** Selector hook over the current Session's in-flight subagent activity map. */
+    useSubagentActivity: UseSubagentActivity
   }
 
   interface LocaleNamespaceMap {

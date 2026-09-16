@@ -2,14 +2,15 @@
  * Minimal Codex app-server 0.153.4 protocol adapter. The shared JSON-RPC
  * transport owns framing and request correlation; this module owns only the
  * product methods, current thread/turn association, unattended approval
- * responses, and terminal-answer selection.
+ * responses, terminal-answer selection, the post-publication activity
+ * watchdog, and unassociated-frame reporting.
  *
  * @module @deepseek-ai/dsh-subagent-codex/wire
  */
 
 import type { Readable, Writable } from 'node:stream'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
+import type { SubagentActivityKind, SubagentResult } from '@deepseek-ai/dsh-subagent'
 import { JsonRpcLineTransport } from '@deepseek-ai/dsh-sdk-protocol'
 import type { CodexPermissionMode } from './run.ts'
 
@@ -54,6 +55,35 @@ function string(value: unknown, label: string): string {
     throw new Error(`subagent-codex: app-server returned invalid ${label}`)
   }
   return value
+}
+
+/**
+ * Classify a Codex app-server notification as the coarse child-run activity
+ * kind a consumer records for UI phase display.
+ * @param method - the notification method.
+ * @param params - the notification parameters.
+ * @returns the activity kind.
+ */
+export function codexNotificationActivityKind(method: string, params: Record<string, unknown>): SubagentActivityKind {
+  if (method === 'item/started' || method === 'item/completed') {
+    const item: unknown = params.item
+    if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
+      switch ((item as JsonObject).type) {
+        case 'commandExecution':
+        case 'fileChange':
+        case 'mcpToolCall':
+        case 'webSearch':
+          return 'tool'
+        case 'agentMessage':
+        case 'reasoning':
+        case 'userMessage':
+          return 'output'
+        default:
+          return 'other'
+      }
+    }
+  }
+  return 'other'
 }
 
 function unattendedDecision(params: JsonObject): 'cancel' | 'decline' {
@@ -219,12 +249,20 @@ export class CodexAppServerWire {
   private inputEnded = false
   private terminalObserved = false
   private closed = false
+  private lastActivity: string | undefined
+  private activityTimer: ReturnType<typeof setTimeout> | undefined
+  private activityTripped = false
+  private failureDetail: string | undefined
 
   constructor(
     private readonly input: Readable,
     output: Writable,
     private readonly permissionMode: CodexPermissionMode,
     private readonly model?: string,
+    private readonly handshakeTimeoutMs = 0,
+    private readonly runActivityTimeoutMs = 0,
+    private readonly onUnassociatedFrame?: (line: string) => void,
+    private readonly onActivity?: (kind: SubagentActivityKind) => void,
   ) {
     this.transport = new JsonRpcLineTransport(input, output)
     // Fatal protocol state can arrive after the current guarded operation has
@@ -261,7 +299,8 @@ export class CodexAppServerWire {
   }
 
   /**
-   * Perform the required app-server initialize/initialized handshake.
+   * Perform the required app-server initialize/initialized handshake. The
+   * request is bounded by the constructor's handshake deadline.
    * @param signal - unpublished-start cancellation.
    */
   async initialize(signal: AbortSignal): Promise<void> {
@@ -275,13 +314,14 @@ export class CodexAppServerWire {
         experimentalApi: false,
         requestAttestation: false,
       },
-    }, signal), signal), 'initialize response')
+    }, { signal, timeoutMs: this.handshakeTimeoutMs }), signal), 'initialize response')
     this.transport.notify('initialized')
     await this.guarded(this.transport.flush(), signal)
   }
 
   /**
-   * Create the run's private ephemeral thread and retain its identity.
+   * Create the run's private ephemeral thread and retain its identity. The
+   * request is bounded by the constructor's handshake deadline.
    * @param cwd - parent Session workspace.
    * @param signal - unpublished-start cancellation.
    */
@@ -291,7 +331,7 @@ export class CodexAppServerWire {
       ephemeral: true,
       ...this.model === undefined ? {} : { model: this.model },
       ...THREAD_PERMISSION_PARAMS[this.permissionMode],
-    }, signal), signal), 'thread/start response')
+    }, { signal, timeoutMs: this.handshakeTimeoutMs }), signal), 'thread/start response')
     const thread = object(response.thread, 'thread/start thread')
     const id = string(thread.id, 'thread/start thread id')
     if (thread.ephemeral !== true) {
@@ -311,6 +351,7 @@ export class CodexAppServerWire {
     texts: readonly string[],
     signal: AbortSignal,
   ): Promise<SubagentResult> {
+    this.armActivityWatchdog()
     const completion = Promise.withResolvers<{
       readonly params: JsonObject
       readonly order: number
@@ -321,11 +362,13 @@ export class CodexAppServerWire {
       const response = object(await this.guarded(this.transport.request('turn/start', {
         threadId,
         input: texts.map(text => ({ type: 'text', text, text_elements: [] })),
-      }, signal), signal), 'turn/start response')
+      }, { signal }), signal), 'turn/start response')
       const turn = object(response.turn, 'turn/start turn')
       this.commitTurnId(string(turn.id, 'turn/start turn id'))
     } catch (error: unknown) {
-      this.recordFailure({ stage: 'turn-start', category: 'unknown' })
+      this.recordFailure(this.activityTripped
+        ? { stage: 'turn-start', category: 'transport' }
+        : { stage: 'turn-start', category: 'unknown' })
       throw error
     }
 
@@ -336,9 +379,12 @@ export class CodexAppServerWire {
     let terminal: JsonObject
     try {
       completed = await this.guarded(completion.promise, signal)
+      this.clearActivityWatchdog()
       terminal = object(completed.params.turn, 'turn/completed turn')
     } catch (error: unknown) {
-      this.recordFailure({ stage: 'turn', category: 'unknown' })
+      this.recordFailure(this.activityTripped
+        ? { stage: 'turn', category: 'transport' }
+        : { stage: 'turn', category: 'unknown' })
       throw error
     }
     const status = terminal.status
@@ -413,10 +459,21 @@ export class CodexAppServerWire {
     return this.failure as CodexWireFailureFacts
   }
 
+  /**
+   * Provider-specific text explaining a transport or association failure.
+   * Call only after a non-completed return or rejection from {@link runTurn}.
+   * @returns a fixed safe detail, when a watchdog trip or a terminal
+   *   association mismatch produced one.
+   */
+  collectFailureDetail(): string | undefined {
+    return this.failureDetail
+  }
+
   /** Detach JSON-RPC listeners and reject outstanding requests. Idempotent. */
   close(): void {
     if (this.closed) return
     this.closed = true
+    this.clearActivityWatchdog()
     this.input.off('end', this.onInputEnd)
     this.transport.close()
   }
@@ -427,6 +484,7 @@ export class CodexAppServerWire {
   }
 
   private fail(error: Error): void {
+    this.clearActivityWatchdog()
     this.fatal.reject(error)
   }
 
@@ -441,6 +499,65 @@ export class CodexAppServerWire {
   private readonly onInputEnd = (): void => {
     this.inputEnded = true
     this.fail(new Error('subagent-codex: app-server protocol stream closed'))
+  }
+
+  /**
+   * Start the post-publication silence timer. The deadline covers the
+   * `turn/start` request and every await after it; every received frame
+   * resets it.
+   */
+  private armActivityWatchdog(): void {
+    if (this.runActivityTimeoutMs <= 0) return
+    this.lastActivity = undefined
+    this.activityTimer = setTimeout(this.onActivityTimeout, this.runActivityTimeoutMs)
+  }
+
+  /** Record that a frame arrived; resets the silence deadline. */
+  private observeActivity(label: string): void {
+    if (this.activityTimer === undefined) return
+    this.lastActivity = label
+    clearTimeout(this.activityTimer)
+    this.activityTimer = setTimeout(this.onActivityTimeout, this.runActivityTimeoutMs)
+  }
+
+  /** Report the frame's coarse activity kind to the consumer, if any. */
+  private reportActivity(kind: SubagentActivityKind): void {
+    this.onActivity?.(kind)
+  }
+
+  private clearActivityWatchdog(): void {
+    if (this.activityTimer === undefined) return
+    clearTimeout(this.activityTimer)
+    this.activityTimer = undefined
+  }
+
+  private readonly onActivityTimeout = (): void => {
+    /* v8 ignore if -- fail() clears the one-shot timer and observeActivity re-arms only while one is pending, so the trip fires once. */
+    if (this.activityTripped) return
+    this.activityTripped = true
+    this.failureDetail = `no app-server protocol activity for ${this.runActivityTimeoutMs}ms after the turn was submitted; last: ${this.lastActivity ?? 'none'}`
+    this.fail(new Error(`subagent-codex: ${this.failureDetail}`))
+  }
+
+  /**
+   * Report a frame that cannot belong to this run without failing it.
+   * @param method - the frame's product method.
+   * @param reason - fixed text naming why the frame is unassociated.
+   */
+  private reportUnassociatedFrame(method: string, reason: string): void {
+    this.onUnassociatedFrame?.(`unassociated frame: ${method} ${reason}`)
+  }
+
+  /**
+   * Fail the run on a terminal frame that cannot belong to this run, since
+   * a dropped terminal would leave the completion await unbounded.
+   * @param method - the frame's product method.
+   * @param reason - fixed text naming why the frame is unassociated.
+   */
+  private failUnassociatedTerminal(method: string, reason: string): void {
+    this.reportUnassociatedFrame(method, reason)
+    this.failureDetail ??= `${method} ${reason}`
+    this.fail(new Error(`subagent-codex: ${this.failureDetail}`))
   }
 
   private observePendingTurnId(id: string): void {
@@ -569,6 +686,8 @@ export class CodexAppServerWire {
   }
 
   private handleServerRequest(method: string, params: JsonObject): Promise<unknown> {
+    this.observeActivity(`request:${method}`)
+    this.reportActivity('other')
     try {
       switch (method) {
         case 'item/commandExecution/requestApproval':
@@ -634,9 +753,17 @@ export class CodexAppServerWire {
     params: JsonObject,
     order?: number,
   ): void {
+    this.observeActivity(`notification:${method}`)
+    this.reportActivity(codexNotificationActivityKind(method, params))
     if (method === 'turn/started') {
       const threadId = string(params.threadId, 'turn/started thread id')
-      if (threadId !== this.threadId) return
+      if (threadId !== this.threadId) {
+        this.reportUnassociatedFrame(
+          'turn/started',
+          `referenced another thread: ${threadId}`,
+        )
+        return
+      }
       const turn = object(params.turn, 'turn/started turn')
       if (this.turnCompleted !== undefined && this.turnId === undefined) {
         this.observePendingTurnId(string(turn.id, 'turn/started turn id'))
@@ -645,7 +772,13 @@ export class CodexAppServerWire {
     }
     if (method === 'item/completed') {
       const threadId = string(params.threadId, 'item/completed thread id')
-      if (threadId !== this.threadId) return
+      if (threadId !== this.threadId) {
+        this.reportUnassociatedFrame(
+          'item/completed',
+          `referenced another thread: ${threadId}`,
+        )
+        return
+      }
       const id = string(params.turnId, 'item/completed turn id')
       if (this.turnId === undefined) {
         if (this.turnCompleted !== undefined) {
@@ -658,7 +791,13 @@ export class CodexAppServerWire {
         }
         return
       }
-      if (id !== this.turnId) return
+      if (id !== this.turnId) {
+        this.reportUnassociatedFrame(
+          'item/completed',
+          `referenced another turn: ${id}`,
+        )
+        return
+      }
       const item = object(params.item, 'item/completed item')
       if (this.recordDeclinedItem(item, order)) return
       if (item.type !== 'agentMessage') return
@@ -676,11 +815,23 @@ export class CodexAppServerWire {
     }
     if (method !== 'turn/completed') return
     const threadId = string(params.threadId, 'turn/completed thread id')
-    if (threadId !== this.threadId) return
+    if (threadId !== this.threadId) {
+      this.failUnassociatedTerminal(
+        'turn/completed',
+        `referenced another thread: ${threadId}`,
+      )
+      return
+    }
     const turn = object(params.turn, 'turn/completed turn')
     const id = string(turn.id, 'turn/completed turn id')
     const turnCompleted = this.turnCompleted
-    if (turnCompleted === undefined) return
+    if (turnCompleted === undefined) {
+      this.failUnassociatedTerminal(
+        'turn/completed',
+        'arrived before the run submitted its turn',
+      )
+      return
+    }
     if (this.turnId === undefined) {
       this.observePendingTurnId(id)
       this.earlyTurnNotifications.push({
@@ -690,7 +841,13 @@ export class CodexAppServerWire {
       })
       return
     }
-    if (id !== this.turnId) return
+    if (id !== this.turnId) {
+      this.failUnassociatedTerminal(
+        'turn/completed',
+        `referenced another turn: ${id}`,
+      )
+      return
+    }
     this.terminalObserved = true
     if (!['completed', 'interrupted', 'failed'].includes(String(turn.status))) {
       throw new Error(`subagent-codex: app-server returned invalid terminal turn status ${String(turn.status)}`)

@@ -1,0 +1,41 @@
+# Agent Note: In-flight prompt visibility in the conversation flow
+
+Status: implemented
+
+English | [中文](2026-09-14-inflight-prompt-visibility.zh.md)
+
+## Problem
+
+When a user sends a prompt from the Web composer, the conversation shows a transient echo that is retired as soon as delivery settles. After that the prompt is invisible anywhere in the conversation until the agent claims it at a turn or step boundary and commits it as the canonical `user/message` node. That gap is exactly the window in which the user needs a signal that their message reached the harness and is queued to reach the model: it can span an entire running turn, and it is extended while the agent is busy — including compaction — before the prompt reaches the next boundary. The state is fully reconstructable from already-logged events: every admission, claim, and discard is an `agent/inbox/spliced` event, and the canonical commit is the `user/message` node — but nothing projected that state to the flow.
+
+## Decision
+
+The Session client owns a memory-only fold of the durable inbox over the window it holds: `PendingInboxPrompts` in [pending-inbox-prompts.ts](../../../../packages/api/session-controller/src/client/sessions/pending-inbox-prompts.ts) mirrors the two pending lists (`next-turn`, `next-step`) by replaying `agent/inbox/spliced` with the same arithmetic as the canonical inbox projection (`toSpliced`, duplicate-id rejection), and tracks claimed prompts — a claim is the no-outcome removal splice a turn or step boundary emits — until the prompt's `user/message` commit or the owning turn's `turn/end` retires them. Commit retirement matches by id and, for compact records that lost their id, by rpcId, and removes the entry from the claimed map and both projection lists, so a window whose claim splice was skipped for divergence cannot keep a committed prompt pending. History pages apply insertion-only splices with per-id dedupe; their removals and turn events describe past states and leave the current fold untouched. The Session snapshot gains `pendingInboxPrompts` (contract in [snapshot.ts](../../../../packages/api/session-controller/src/client/contract/snapshot.ts)): user-source entries ordered next-turn (`queued`), next-step (`steering`), then claimed in claim order, each carrying `id`, `placement`, an optional `rpcId`, `content`, and the shared preview/text derivation in [message-preview.ts](../../../../packages/api/session-controller/src/client/sessions/message-preview.ts) (moved out of the queue mirror for reuse).
+
+[ChatView.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatView.tsx) renders an entry as a `PendingInboxPromptBubble` in the flow's tail group — a user-style bubble at reduced opacity with a locale-owned status footer (`chat.pendingQueued` "Queued"/排队中, `chat.pendingSteering` "Steering"/引导中) — only while the entry sits in the claim→commit window: admitted but unclaimed, or claimed but uncommitted. An entry still present in the queue projection, in either placement, does not render: the queue dock above the composer represents queued prompts and the existing steering bubble represents steering ones, so a prompt is never represented twice in one frame. A committed prompt hides behind its durable node, matched by rpcId or by the node key, which view nodes derive from the message id; the key match also hides a stale fold entry resurrected by an insert-only history prepend, because the committed node remains the sole representation. The transient echo retires the moment the fold confirms inbox admission (reusing the submission's observed-retirement latch), so at most one frame of overlap exists and the render-time rpcId dedupe hides it.
+
+## Alternatives considered
+
+**An in-flow bubble for every fold entry, including prompts still in the queue projection.** The queue dock already renders each queued prompt with its preview and actions, pinned above the composer, and the steering bubble covers steering: an always-on bubble would duplicate every pending prompt across two surfaces at once, break strict single-match queries and accessibility goldens, and force golden re-recording with no user-visible gain. The claim→commit window is the only state no other surface represents; the bubble fills exactly that gap.
+
+**Rendering purely from the queue frame.** The frame derives from the same inbox projection, but it goes blank at claim: the moment a turn or step boundary consumes a prompt the projection drops it, so the queue cannot represent the claim→commit window at all — the window this feature targets.
+
+**A new session event or a dedicated projection key.** The splices already in the log determine the state; logging or projecting it again would duplicate model-visible-iff-logged data and add a wire surface a replaying client can already rebuild.
+
+**Keeping the transient echo as the indicator.** Echoes live in client memory only: a reload mid-window loses them, they cannot distinguish queued from steering, and they cannot span the claim→commit window because they retire on admission.
+
+**Announcing inbox changes over a live channel.** A new `session/follow` frame type for a fact derivable from existing events would change the protocol and still need the log-backed fold for reloads.
+
+## Consequences
+
+No new session events and no protocol change; the canonical `user/message` remains the sole committed representation, and no recorded-session snapshot required re-recording — the replay lane stays byte-identical, including the web goldens, because a prompt still in the queue projection renders through the dock, not the flow. The bubble survives a mid-window reload because the fold reconstructs from the log, and it spans the claim→commit window the queue frame cannot. The bounded window diverges from the full-log core fold in one documented way: a splice whose removed slice predates the fold cannot be validated, so it is skipped rather than thrown on, and a claim it describes is never tracked — that prompt surfaces through its durable commit instead. One residual state escapes both the fold and the view: a prompt whose entire admit→commit span lives outside the window re-folds as pending when the user loads the history page carrying its admit splice — the page's claim and commit events are not folded by the insert-only prepend — and no live event retires the entry; it persists until the next window reset, which re-folds from an empty fold. The bubble renders at reduced opacity so it reads as pending, and the locale dictionaries own its copy.
+
+## Testing
+
+The `pending-inbox-prompts` spec pins the fold arithmetic: admission surfacing, commit retirement by id and by rpcId (including a compact record that lost its id) and of a projection-list entry a diverged window left listed, claimed-through-window with `turn/end` retirement, canceled splices never claimed, in-place replacement, non-user-source skipping, bounded-window skip tolerance, insertion-only prepend dedupe, and snapshot ordering. The `session` spec pins the wiring: window install resets the fold, a live splice appends, and the snapshot carries the list. The `chat-view` spec pins the bubble: its appearance with the status footer, retirement at the durable node by rpcId and by node key, no double render while a queued or steering prompt still sits in the queue projection, claimed-steering display, and echo suppression. The keyless web replay lane passes unchanged: its goldens captured prompts still in the queue projection through the dock, and the narrower render window keeps them byte-identical. `verify-client-ui-i18n` passes on the new copy; `verify-agent-note-format` and `verify-translation-pairing` pass on this note.
+
+## Related
+
+- [Compaction progress subline on the deep-diving pill](2026-09-14-compaction-progress-subline.md) — the sibling user-visible indicator on the same branch.
+- [Local submission echoes](../../archived/architecture/2026-08-26-local-submission-echoes.md) — the echo mechanism whose retirement latch this bubble reuses (archived).
+- [Human inbox controls for continuable subagents](2026-08-27-continuable-subagent-human-inbox-control.md) — the same inbox projection that drives the queue controls this bubble dedupes against.

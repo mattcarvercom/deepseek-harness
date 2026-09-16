@@ -63,6 +63,12 @@
       "path": "../../settings/settings"
     },
     {
+      "path": "../../subagent/subagent"
+    },
+    {
+      "path": "../../subagent/tool-subagent"
+    },
+    {
       "path": "../locale"
     },
     {

@@ -77,11 +77,18 @@
 /* Selection still sets data-selected for details linkage; no outline —
    tool rows match Think chrome (no selected ring). */
 
-/* Turn activity keeps the former loader's one-line footprint. A pale
-   brand-blue band sweeps from left to right; reduced-motion keeps it static. */
-.turnStatus {
+/* Turn activity keeps the former loader's one-line footprint: the shimmer
+   label and its clock, an interpunct, the grey italic phase text, and the
+   compact actions on one line. A pale brand-blue band sweeps from left to
+   right; reduced-motion keeps it static. */
+.turnStatusGroup {
   align-self: flex-start;
   flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.turnStatus {
   display: inline-flex;
   align-items: center;
   height: calc(26px + var(--dsh-content-font-delta, 0px));
@@ -120,6 +127,83 @@
   font-variant-numeric: tabular-nums;
   color: var(--dsw-alias-label-caption);
   -webkit-text-fill-color: var(--dsw-alias-label-caption);
+}
+
+/* Grey progress subline shown while the running turn is compacting; its
+   clock runs from compaction start without the main pill's 15s gate. */
+.turnStatusCompaction {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
+  font-style: italic;
+  color: var(--dsw-alias-label-caption);
+}
+
+/* Phase subline: the same grey italic caption as the compaction one,
+   carrying the retry, child, tool, or assistant-stream phase label. */
+.turnStatusSubline {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
+  font-style: italic;
+  color: var(--dsw-alias-label-caption);
+}
+
+/* Locale-owned interpunct between the shimmer label and the phase text. */
+.turnStatusSeparator {
+  flex: none;
+  margin: 0 8px;
+  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
+  color: var(--dsw-alias-label-caption);
+}
+
+/* Same-line action set: icon-only round buttons — cancel, then the
+   conditional cancel & re-run, show log, and kill child. */
+.turnStatusActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+}
+
+/* Round icon-only action: the running turn's icon set, each carrying the
+   localized action copy as its accessible name. */
+.turnStatusIconButton {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 100px;
+  corner-shape: round;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-interactive-bg-hover);
+  cursor: pointer;
+}
+
+.turnStatusIconButton:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.turnStatusIconButton:active {
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+}
+
+.turnStatusIconButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
 }
 
 @keyframes dsh-turn-status-shimmer {

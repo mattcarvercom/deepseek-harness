@@ -17,6 +17,8 @@ export interface TurnOutlineEntry {
   readonly turn: number
   /** The turn's `turn/start` event seq — paging a window back through this seq loads the whole turn. */
   readonly seq: SessionSeq
+  /** The turn's `turn/start` event time (epoch ms) — durable anchor for a running turn's elapsed clock outside its paged window. */
+  readonly startedAt: number
   /** Bounded first-human-prompt preview (one rail-card line); `''` until an eligible prompt lands. */
   readonly prompt: string
   /** Bounded final-response preview (up to three rail-card lines); `''` until the turn ends with assistant text. */
@@ -43,7 +45,10 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
     turnOutline: TurnOutlineState
   }
   interface SessionProjectionMap {
-    /** Every started turn with its `turn/start` seq and bounded previews, strictly increasing by turn; see {@link TurnOutlineEntry}. */
+    /**
+     * Every started turn with its `turn/start` seq, start time, and bounded
+     * previews, strictly increasing by turn; see {@link TurnOutlineEntry}.
+     */
     turnOutline: readonly TurnOutlineEntry[]
   }
 }

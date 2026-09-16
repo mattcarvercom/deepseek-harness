@@ -4,6 +4,7 @@ import {
   deadline,
   idleWatchdog,
   MAX_TIMER_DELAY_MS,
+  progressDeadline,
   timeoutOf,
   TimeoutReason,
 } from '@deepseek-ai/dsh-timeout'
@@ -287,5 +288,111 @@ describe('idleWatchdog', () => {
     void watchdog.next(iterator)
     await expect(watchdog.next(iterator)).rejects.toThrow(/already outstanding/)
     pending.resolve({ done: true, value: undefined })
+  })
+})
+
+describe('progressDeadline', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  it('arms at construction and aborts with a TimeoutReason when no progress is reported', () => {
+    vi.useFakeTimers()
+    using d = progressDeadline(undefined, 100, 'LLM_STREAM_CONTENT_IDLE_TIMEOUT')
+    expect(d.signal.aborted).toBe(false)
+    vi.advanceTimersByTime(99)
+    expect(d.signal.aborted).toBe(false)
+    vi.advanceTimersByTime(1)
+    expect(d.signal.aborted).toBe(true)
+    const reason = timeoutOf(d.signal, 'LLM_STREAM_CONTENT_IDLE_TIMEOUT')
+    expect(reason).toBeInstanceOf(TimeoutReason)
+    expect(reason?.code).toBe('LLM_STREAM_CONTENT_IDLE_TIMEOUT')
+    expect(reason?.timeoutMs).toBe(100)
+  })
+
+  it('resets on progress, so recurring progress never trips', () => {
+    vi.useFakeTimers()
+    using d = progressDeadline(undefined, 100, 'CODE')
+    for (let i = 0; i < 10; i++) {
+      vi.advanceTimersByTime(99)
+      d.progress()
+      expect(d.signal.aborted).toBe(false)
+    }
+    // The last progress at 989ms reset the deadline to 1089; one ms short, it holds.
+    vi.advanceTimersByTime(99)
+    expect(d.signal.aborted).toBe(false)
+    vi.advanceTimersByTime(1)
+    expect(d.signal.aborted).toBe(true)
+  })
+
+  it('[Symbol.dispose] clears the timer so no abort fires afterward', () => {
+    vi.useFakeTimers()
+    const d = progressDeadline(undefined, 100, 'CODE')
+    d[Symbol.dispose]()
+    vi.advanceTimersByTime(1_000)
+    expect(d.signal.aborted).toBe(false)
+    expect(timeoutOf(d.signal)).toBeUndefined()
+  })
+
+  it('dispose is idempotent and progress after dispose does not re-arm', () => {
+    vi.useFakeTimers()
+    const d = progressDeadline(undefined, 100, 'CODE')
+    d[Symbol.dispose]()
+    d[Symbol.dispose]()
+    d.progress()
+    vi.advanceTimersByTime(1_000)
+    expect(d.signal.aborted).toBe(false)
+  })
+
+  it('progress after the timeout fired does not re-arm', () => {
+    vi.useFakeTimers()
+    using d = progressDeadline(undefined, 100, 'CODE')
+    vi.advanceTimersByTime(100)
+    d.progress()
+    vi.advanceTimersByTime(1_000)
+    expect(d.signal.aborted).toBe(true)
+    expect(timeoutOf(d.signal, 'CODE')?.timeoutMs).toBe(100)
+  })
+
+  it('aborts on upstream cancellation, classified as NOT a timeout', () => {
+    const upstream = new AbortController()
+    using d = progressDeadline(upstream.signal, 60_000, 'CODE')
+    upstream.abort('user cancelled')
+    expect(d.signal.aborted).toBe(true)
+    expect(timeoutOf(d.signal, 'CODE')).toBeUndefined()
+  })
+
+  it('an already-aborted upstream aborts the fused signal immediately', () => {
+    const upstream = new AbortController()
+    upstream.abort('too late')
+    using d = progressDeadline(upstream.signal, 60_000, 'CODE')
+    expect(d.signal.aborted).toBe(true)
+    expect(d.signal.reason).toBe('too late')
+  })
+
+  it('zero timeout arms no timer and forwards upstream only', () => {
+    vi.useFakeTimers()
+    const upstream = new AbortController()
+    using d = progressDeadline(upstream.signal, 0, 'CODE')
+    d.progress()
+    vi.advanceTimersByTime(1_000_000)
+    expect(d.signal.aborted).toBe(false)
+    upstream.abort('user cancelled')
+    expect(d.signal.aborted).toBe(true)
+    expect(timeoutOf(d.signal, 'CODE')).toBeUndefined()
+  })
+
+  it('zero timeout without upstream yields a never-aborting signal', () => {
+    vi.useFakeTimers()
+    using d = progressDeadline(undefined, 0, 'CODE')
+    d.progress()
+    vi.advanceTimersByTime(1_000_000)
+    expect(d.signal.aborted).toBe(false)
+  })
+
+  it('rejects non-finite or oversized intervals', () => {
+    expect(() => progressDeadline(undefined, Number.NaN, 'CODE')).toThrow(/positive finite/)
+    expect(() => progressDeadline(undefined, Number.POSITIVE_INFINITY, 'CODE'))
+      .toThrow(`no greater than ${MAX_TIMER_DELAY_MS}`)
+    expect(() => progressDeadline(undefined, MAX_TIMER_DELAY_MS + 1, 'CODE'))
+      .toThrow(`no greater than ${MAX_TIMER_DELAY_MS}`)
   })
 })

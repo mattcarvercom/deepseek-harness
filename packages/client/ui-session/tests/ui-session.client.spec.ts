@@ -87,6 +87,7 @@ function createSessionsBench(_ctx: Context): SessionsBench {
         lastAgentError: null,
         promptAttempted: false,
         awaitingFirstTurn: false,
+        pendingInboxPrompts: [],
       })
       const projections = new Map<string, HostObservable<unknown>>()
       const session = {

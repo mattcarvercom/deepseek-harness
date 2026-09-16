@@ -79,6 +79,7 @@ export function sessionSnapshot(sessionId: SessionId): SessionSnapshot {
     lastAgentError: null,
     promptAttempted: false,
     awaitingFirstTurn: false,
+    pendingInboxPrompts: [],
   }
 }
 

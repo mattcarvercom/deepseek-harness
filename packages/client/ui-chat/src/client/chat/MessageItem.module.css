@@ -346,3 +346,17 @@
   font-size: 12px;
   line-height: 15px;
 }
+
+/* In-flight prompt: admitted to the durable inbox but not yet committed as
+   the durable node, so the row renders muted until the replacement renders. */
+.userRow[data-inflight-prompt] {
+  opacity: 0.7;
+}
+
+.inflightFooter {
+  white-space: nowrap;
+  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
+  color: var(--dsw-alias-label-caption);
+}

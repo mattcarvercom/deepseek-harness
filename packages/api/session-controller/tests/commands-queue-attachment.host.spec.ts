@@ -3,7 +3,7 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, Inbox, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { createAssistantMessage, createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
+import { HarnessError, createAssistantMessage, createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
 import SessionStore, {
   SESSION_FORMAT_VERSION, Session, SessionId, SessionLogOffset, SessionSeq,
 } from '@deepseek-ai/dsh-session'
@@ -14,7 +14,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ApiSessionAgentController } from '../src/agent.ts'
 import { SessionCommandController } from '../src/commands.ts'
 import { createInboxStub } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
+import { createSessionTestRemote, installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
 
 async function commandHarness(
   childMode?: 'continuable' | 'seeded-continuable' | 'seed-only' | 'one-shot' | 'unknown' | 'corrupt',
@@ -449,5 +449,81 @@ describe('Session attachment authorization', () => {
       sessionId: SessionId('unreadable'), attachmentId: AttachmentId('att'),
     }), 'gateway/internal')
     await ctx.fiber.dispose()
+  })
+})
+
+describe('Session kill-subagent command', () => {
+  const PARENT = SessionId('parent-session')
+  const CHILD = SessionId('child-session')
+
+  function bareController(subagents?: unknown) {
+    const ctx = new Context()
+    if (subagents !== undefined) ctx.provide('subagents', subagents)
+    return new SessionCommandController(ctx, { resolveAgent: vi.fn() } as unknown as ApiSessionAgentController, '/workspace')
+  }
+
+  it('fails loud when the subagent service is not mounted', async () => {
+    const controller = bareController()
+    await expect(Promise.resolve().then(() => controller.killSubagent({ sessionId: PARENT, childSessionId: CHILD })))
+      .rejects.toMatchObject({ code: 'gateway/internal', message: 'subagent service is not mounted' })
+  })
+
+  it('delegates the claimed parent address to the service and acknowledges', async () => {
+    const kill = vi.fn()
+    const controller = bareController({ kill })
+    expect(controller.killSubagent({ sessionId: PARENT, childSessionId: CHILD })).toEqual({ accepted: true })
+    expect(kill).toHaveBeenCalledTimes(1)
+    expect(kill).toHaveBeenCalledWith(CHILD, { parentSessionId: PARENT })
+  })
+
+  it('maps an unauthorized claim to the stable subagent failure code', async () => {
+    const kill = vi.fn(() => { throw new HarnessError('subagent "child" belongs to another parent', 'UNAUTHORIZED') })
+    const controller = bareController({ kill })
+    await expect(Promise.resolve().then(() => controller.killSubagent({ sessionId: PARENT, childSessionId: CHILD })))
+      .rejects.toMatchObject({
+        code: 'subagent/unauthorized',
+        message: 'subagent does not belong to this parent',
+        details: { childSessionId: CHILD },
+      })
+  })
+
+  it('folds any other service failure into an internal error with its cause', async () => {
+    const boom = new Error('activation teardown failed')
+    const kill = vi.fn(() => { throw boom })
+    const controller = bareController({ kill })
+    let caught: unknown
+    try {
+      controller.killSubagent({ sessionId: PARENT, childSessionId: CHILD })
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toMatchObject({
+      code: 'gateway/internal',
+      message: 'subagent kill failed',
+    })
+    expect((caught as { cause?: unknown }).cause).toBe(boom)
+  })
+})
+
+describe('Session killSubagent Remote', () => {
+  const PARENT = SessionId('remote-parent-session')
+  const CHILD = SessionId('remote-child-session')
+
+  it('acknowledges the kill and delegates the claimed parent address to the service', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    const kill = vi.fn()
+    ctx.provide('subagents', { kill } as never)
+    const remote = createSessionTestRemote(ctx, {
+      defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
+      cwd: '/tmp',
+    })
+
+    const result = await remote.killSubagent({ sessionId: PARENT, childSessionId: CHILD })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toEqual({ accepted: true })
+    expect(kill).toHaveBeenCalledTimes(1)
+    expect(kill).toHaveBeenCalledWith(CHILD, { parentSessionId: PARENT })
   })
 })

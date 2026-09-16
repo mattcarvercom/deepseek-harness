@@ -2461,4 +2461,51 @@ describe('built-in conversation node Definitions', () => {
       compaction: { summary: 'manual summary', summaryEventSeq: 20 },
     })
   })
+
+  it('publishes an open automatic compaction start time to its turn', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'compaction/start', { compactionId: 'auto-1', turn: 1 }),
+    ])
+    const current = snapshot(value)
+    expect(current.timeline.turns.get(1)?.data.get('compaction')).toBe(1_700_000_000_002)
+  })
+
+  it('keeps the published compaction start time across the summary event', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'compaction/start', { compactionId: 'auto-1', turn: 1 }),
+      at(3, 'compaction/summary', {
+        compactionId: 'auto-1',
+        summary: [{ type: 'text', text: 'automatic summary' }],
+        shadowedSeqs: [3, 4],
+        shadowedTokenCount: 200,
+      }),
+    ])
+    expect(snapshot(value).timeline.turns.get(1)?.data.get('compaction')).toBe(1_700_000_000_002)
+  })
+
+  it.each(['complete', 'failed'] as const)('clears the published compaction time on end (%s)', (kind) => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'compaction/start', { compactionId: 'auto-1', turn: 1 }),
+      at(3, 'compaction/end', {
+        compactionId: 'auto-1',
+        turn: 1,
+        ...(kind === 'failed' ? { error: 'aborted' } : {}),
+      }),
+    ])
+    expect(snapshot(value).timeline.turns.get(1)?.data.get('compaction')).toBeUndefined()
+  })
+
+  it('publishes nothing for manual and turn-less compactions', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'compaction/start', { compactionId: 'manual-1', sourceCommandId: 'command-1', turn: 1 }),
+      at(3, 'compaction/end', { compactionId: 'manual-1', sourceCommandId: 'command-1', turn: 1 }),
+      at(10, 'compaction/start', { compactionId: 'standalone-1', turn: null }),
+      at(11, 'compaction/end', { compactionId: 'standalone-1', turn: null }),
+    ])
+    expect(snapshot(value).timeline.turns.get(1)?.data.get('compaction')).toBeUndefined()
+  })
 })

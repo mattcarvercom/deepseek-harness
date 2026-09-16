@@ -194,7 +194,7 @@ class FixtureLocationIndex implements ChatLocationNodeIndex {
   }
 }
 
-class FixtureTurnDataStore implements ConversationLocationDataStore<ConversationTurnDataMap> {
+export class FixtureTurnDataStore implements ConversationLocationDataStore<ConversationTurnDataMap> {
   private readonly values = new Map<string, unknown>()
   private readonly sources = new Map<string, FixtureSource<unknown>>()
   private readonly dirtyKeys = new Set<string>()
@@ -218,6 +218,12 @@ class FixtureTurnDataStore implements ConversationLocationDataStore<Conversation
   ): void {
     if (this.values.get(key) === value) return
     this.values.set(key, value)
+    this.dirtyKeys.add(key)
+  }
+
+  remove(key: string): void {
+    if (this.values.get(key) === undefined) return
+    this.values.delete(key)
     this.dirtyKeys.add(key)
   }
 

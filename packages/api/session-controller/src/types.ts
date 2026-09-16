@@ -368,6 +368,19 @@ export interface SessionCancelValue {
   readonly accepted: true
 }
 
+/** Kill request for one subagent child of the addressed Session. */
+export interface SessionKillSubagentRequest {
+  /** The session the caller addresses; its claimed subagent parent. */
+  readonly sessionId: SessionId
+  /** The durable child session to kill. */
+  readonly childSessionId: SessionId
+}
+
+/** Receipt after the kill signal is admitted to the child. */
+export interface SessionKillSubagentValue {
+  readonly accepted: true
+}
+
 /** Request to open one path prepared by a Session-aware caller on the Host desktop. */
 export interface SessionOpenWorkspacePathRequest {
   /** File-manager navigation when requested; omission uses the default application. */

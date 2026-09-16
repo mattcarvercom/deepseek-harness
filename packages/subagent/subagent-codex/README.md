@@ -48,6 +48,8 @@ Removing the package withdraws the provider and its private runtime closure on t
 | `env` | `{}` | Explicit child environment layered over the credential-scrubbed parent environment |
 | `permissionMode` | `never` | Native non-interactive approval and sandbox mode fixed for every thread from this provider instance |
 | `disposeGraceMs` | `3000` | Grace between the shared managed-range owner's termination tiers |
+| `handshakeTimeoutMs` | `60000` | Wall-clock bound for the `initialize` and `thread/start` handshake requests; a silent app-server fails at the deadline with category `transport`; `0` disables the deadline |
+| `runActivityTimeoutMs` | `300000` | Silence bound in milliseconds for app-server protocol frames after the turn is submitted; a silent stream fails at the deadline with category `transport`; `0` leaves the run unbounded |
 
 | `permissionMode` value | `thread/start` fields | Native behavior |
 |---|---|---|
@@ -83,7 +85,7 @@ A foreground call gives the model the selected final Codex answer, or an error w
 
 ### Failure and recovery
 
-An install that omits optional dependencies, uses an unsupported platform, or loses the selected payload leaves the provider dormant and fails the first delegation at `initialize` with a safe `unknown` category and any observed process outcome; there is no host-CLI fallback. Raw wrapper text stays on Host stderr. A cancelled run settles as `aborted`.
+An install that omits optional dependencies, uses an unsupported platform, or loses the selected payload leaves the provider dormant and fails the first delegation at `initialize` with a safe `unknown` category and any observed process outcome; there is no host-CLI fallback. The handshake is bounded by `handshakeTimeoutMs`: a request that receives no response within the deadline fails at its stage with category `transport`, and a liveness detail recorded before teardown says, when observable, whether the app-server process still ran or the child had exited with its managed range still running; `0` restores the unbounded handshake. After the turn is submitted, `runActivityTimeoutMs` bounds protocol silence: every streamed frame or server request resets the deadline, a stream that stays silent past it fails with category `transport` and a detail that names the last observed frame, and `0` restores the unbounded turn. Frames that reference another thread or turn are ignored without failing a non-terminal run, while such a frame on `turn/completed` fails the run. Raw wrapper text stays on Host stderr. A cancelled run settles as `aborted`.
 
 -----
 
@@ -112,7 +114,7 @@ This section explains how the provider drives a real Codex app-server and where 
 
 ### Run flow
 
-A start accepts only a non-empty sequence of text blocks and derives the child cwd from the parent session. It spawns the fixed command through the subprocess seam, performs the `initialize` → `initialized` handshake, maps the Profile-selected mode and optional model into official `thread/start` fields beside `{ cwd, ephemeral: true }`, and publishes the run only after Codex returns a valid ephemeral thread. The published result starts exactly one turn, accepts only notifications for that run's thread and turn, and waits for the authoritative `turn/completed` terminal. The latest `agentMessage` with `phase: "final_answer"` wins; when Codex emits no explicit final phase, the latest message with `phase: null` is the compatibility fallback. A successful turn with no nonblank answer settles as an error. Failed turns use the coarse categories `limit`, `access-policy`, `service`, `transport`, `product-error`, `invalid-result`, or `unknown`; an early app-server exit uses `process`, and applicable connection and stream failures retain a numeric `httpStatusCode`.
+A start accepts only a non-empty sequence of text blocks and derives the child cwd from the parent session. It spawns the fixed command through the subprocess seam, performs the `initialize` → `initialized` handshake, maps the Profile-selected mode and optional model into official `thread/start` fields beside `{ cwd, ephemeral: true }`, with both handshake requests bounded by the provider's `handshakeTimeoutMs` deadline, and publishes the run only after Codex returns a valid ephemeral thread. The published result starts exactly one turn, arms the `runActivityTimeoutMs` silence deadline from submission, resets it on every streamed frame and server request, accepts only notifications for that run's thread and turn, and waits for the authoritative `turn/completed` terminal. The latest `agentMessage` with `phase: "final_answer"` wins; when Codex emits no explicit final phase, the latest message with `phase: null` is the compatibility fallback. A successful turn with no nonblank answer settles as an error. Failed turns use the coarse categories `limit`, `access-policy`, `service`, `transport`, `product-error`, `invalid-result`, or `unknown`; an early app-server exit uses `process`, and applicable connection and stream failures retain a numeric `httpStatusCode`.
 
 </details>
 
@@ -152,7 +154,7 @@ Independent of the parent request cache. Reuse depends only on Codex's own provi
 
 #### What the model sees
 
-Through `dsh-tool-subagent`, a foreground call gives the parent the selected final Codex answer or an error containing the stop reason and optional safe diagnostic for a non-completed result. The diagnostic can distinguish a coarse action category, protocol stage, applicable numeric HTTP status, and observed process outcome without copying product prose or stderr. A background call first returns a Job id; the generic job controls later deliver a completion notice, expose the same final answer or failed status detail through `job_output`, and let `job_kill` request cancellation. Codex commentary, reasoning, tool activity, raw stderr, workspace diffs, usage, product ids, commands, paths, and protocol payloads are not copied into the parent Session.
+Through `dsh-tool-subagent`, a foreground call gives the parent the selected final Codex answer or an error containing the stop reason and optional safe diagnostic for a non-completed result. The diagnostic can distinguish a coarse action category, protocol stage, applicable numeric HTTP status, observed process outcome, a fixed liveness detail for a failed pre-publication handshake, and a silence detail that names the last observed protocol frame for a failed post-publication turn, without copying product prose or stderr. A background call first returns a Job id; the generic job controls later deliver a completion notice, expose the same final answer or failed status detail through `job_output`, and let `job_kill` request cancellation. Codex commentary, reasoning, tool activity, raw stderr, workspace diffs, usage, product ids, commands, paths, and protocol payloads are not copied into the parent Session.
 
 #### Token effect
 
@@ -177,7 +179,7 @@ These limits define when this provider is a poor fit or needs special operationa
 - **No human approval path** — known unattended approval requests are denied and unknown server requests fail closed; the three Profile modes never create a DSH interaction channel or per-call allow policy.
 - **Assistant payload is final text only** — a failed run may additionally expose the separate safe diagnostic; reasoning, commentary, intermediate messages, tool traffic, usage, raw stderr, and workspace diffs remain outside the parent Session, while generic Job ids, notices, and status come from the shared job runtime.
 - **No optional shared capabilities** — `agentOptions`, output schemas, child personas, tool filtering, and harness depth enforcement are rejected by the shared service for this provider.
-- **No wall-clock timeout or side-effect rollback** — the caller cancels long work, and files or external systems changed before cancellation are not restored.
+- **No wall-clock bound on total turn length, and no side-effect rollback** — the pre-publication handshake is bounded by `handshakeTimeoutMs` and post-publication protocol silence by `runActivityTimeoutMs`, but a turn that keeps sending frames has no total-length bound; the caller cancels long work, and files or external systems changed before cancellation are not restored.
 
 <a id="dev-note"></a>
 ### Dev Note

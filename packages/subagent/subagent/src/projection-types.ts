@@ -6,6 +6,14 @@
 
 import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session/types'
 
+/**
+ * Coarse phase a child run was observed in, for durable UI phase display.
+ * Providers classify their native progress markers (streamed content, tool
+ * use, protocol housekeeping) into these three; consumers and the UI own all
+ * finer-grained detail.
+ */
+export type SubagentActivityKind = 'output' | 'tool' | 'other'
+
 /** One current direct-child discovery row materialized from parent facts. */
 export type SubagentCatalogEntry =
   & {

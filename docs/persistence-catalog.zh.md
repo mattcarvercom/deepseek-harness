@@ -778,6 +778,21 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `subagent/*`
 
+<a id="subagentactivity--log-only"></a>
+
+#### `subagent/activity` — log-only
+
+```ts persistence-catalog
+/**
+ * Records one throttled observation of a live child's coarse activity
+ * phase against the calling tool call. UI-only; never model-visible.
+ * @param data - the record payload.
+ */
+'subagent/activity': SubagentActivityData
+```
+
+来源：[`packages/subagent/tool-subagent/src/types.ts:39`](../packages/subagent/tool-subagent/src/types.ts)
+
 <a id="subagentcatalog--log-only"></a>
 
 #### `subagent/catalog` — log-only

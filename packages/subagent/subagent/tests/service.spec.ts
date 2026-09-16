@@ -167,6 +167,15 @@ describe('SubagentRuntime', () => {
     }) }).not.toThrow()
   })
 
+  it('treats kill as an accepted no-op when no manager or Agent registry is bound', async () => {
+    const { subagents } = await service()
+    // Without a continuation manager or an Agent registry there is no live
+    // target to stop, so the claim is not even checked.
+    expect(() => { subagents.kill(SessionId('child'), {
+      parentSessionId: SessionId('parent-1'),
+    }) }).not.toThrow()
+  })
+
   it('rejects continuable operations when their runtime services are absent', async () => {
     const { subagents } = await service()
     await expect(subagents.startContinuable({

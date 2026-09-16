@@ -103,6 +103,16 @@ interface SubagentStartRequest {
    * persona (strict `{{…}}` interpolation against the registered variables).
    */
   readonly persona?: string
+  /**
+   * Observe-only child-run activity observer. One-shot providers call it with
+   * a {@link SubagentActivityKind} as the child produces progress (streamed
+   * content, tool use, protocol housekeeping); consumers own any throttling
+   * and durable recording and never use it for run control. Providers without
+   * an activity source never call it, and the continuable lifecycle does not
+   * forward it.
+   * @param kind - coarse phase the child was last observed in.
+   */
+  readonly onActivity?: (kind: SubagentActivityKind) => void
 }
 ```
 
@@ -155,6 +165,8 @@ Agent 收件箱是唯一队列。每条 Agent 消息都使用 `Agent.steer()`：
 
 `SubagentRuntime.interrupt(targetSessionId, authority)` 是唯一的公开停止操作：它同步完成鉴权，对在线目标发出 `Agent.cancel(cause, { keepInbox: true })`，然后不等待完全停稳即返回。Activation、其尚未领取的待处理 inbox 工作与已发布的后代均不受影响；已被领取进入中断轮次的工作不会重新入队。被中断的 driver 进入 idle 后，一次唤醒发送会恢复被暂停的 FIFO 队列。不存在的目标——未知、一次性或已结算——以及未绑定管理器的组合是被接受的 no-op。对在线目标，错误的 parent 地址或不在其在线祖先链中的调用方会以 `UNAUTHORIZED` 拒绝；陈旧的 ancestor 对象和指向自身的 ancestor 请求会在查找目标前拒绝。
 
+`SubagentRuntime.kill(targetSessionId, authority)` 是唯一的公开硬停止操作：它把声称的直接 parent 地址与存活目标的持久 parent 进行鉴权，以 user 原因取消目标的当前轮次，持久丢弃其待处理 inbox 工作，并通过记忆化的关闭事务关闭驻留可继续目标的驻留 epoch，该事务按 child-first 顺序释放所拥有后代 Activation。fire-and-return：cancel 信号与 dispose 任务在它返回前均已发出，但目标可能继续运行直到观察到该信号。存活的一次性子级通过其自身 Agent 被硬停止，其运行所有者把运行结算为 `aborted` 并释放它。不存在的目标——未知、远程或已结算——以及未绑定管理器的组合是被接受的 no-op；一个正在关闭的 epoch 则交由其自身拆卸处理，该拆卸已经停止了目标并拥有这次释放。对存活目标，不指向其持久直接 parent 的声称会以 `UNAUTHORIZED` 拒绝。
+
 ```ts type-equiv
 /**
  * Authority under which one interrupt request is admitted. `user` carries the
@@ -164,6 +176,15 @@ Agent 收件箱是唯一队列。每条 Agent 消息都使用 `Agent.steer()`：
 type SubagentInterruptAuthority =
   | { readonly kind: 'user'; readonly parentSessionId: SessionId }
   | { readonly kind: 'ancestor'; readonly agent: Agent }
+```
+
+```ts type-equiv
+/**
+ * Authority under which one kill request is admitted: the durable direct-parent
+ * address a human client presented. Kill has no model-authored (ancestor)
+ * consumer, so no kind tag is needed on the single admitted authority.
+ */
+type SubagentKillAuthority = { readonly parentSessionId: SessionId }
 ```
 
 每个 Activation 都拥有自己的 `AgentHandle` 和一个 `ownedChildren: Set<SessionId>`；由于一份会话至多有一个存活 Activation，子会话 id 无需另一个运行时化身引用即可标识存活的子 agent。启动子 agent 或提交源自 parent 的工作，会在子 agent 能够运行之前将其注册到受继续执行管理的父级集合中；只要该集合非空，该父级就无法 settle。顶层或其他非继续执行的 Agent 没有 Activation，处于 waiting 图之外。只有当子 Agent 没有活跃工作、其 Inbox 为空、该子 agent 的每个子级都已 dispose、best-effort 的最终会话 flush 结算完毕，且子 agent 的 `AgentHandle` 完成 dispose 之后，才会释放子 agent。
@@ -435,6 +456,8 @@ interface SubagentProvider {
    * fulfillment; subsequent turn or infrastructure failure settles through
    * the returned run. Distinct starts may overlap; cancellation, failure,
    * result settlement, and disposal remain independent for each run.
+   * `request.onActivity` is observe-only: reporting it never influences
+   * timing, cancellation, or settlement.
    */
   start(request: ResolvedSubagentStartRequest): Promise<SubagentRun>
   /**
@@ -539,6 +562,26 @@ async sendMessage( sender: Agent, targetId: SessionId, content: ContentBlock[], 
  *   live target.
  */
 interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void
+
+/**
+ * Kill one live subagent child under one durable direct-parent address:
+ * the child's current turn is cancelled with the user cause, its pending
+ * inbox work is durably discarded, and a resident continuable child's
+ * residency epoch is closed, releasing its subagent descendants child-first.
+ * Fire-and-return: the cancel signal and the disposal task are issued before
+ * this returns, but the child may keep running until it observes the signal.
+ * A live one-shot child is hard-stopped through its own Agent, whose run
+ * owner settles and releases it as usual; an absent target — including an
+ * already-settled run, a remote run, and an unknown id — is an accepted
+ * no-op, as is an already-closing epoch, whose teardown owns the release.
+ * A composition without a live Agent registry finds no one-shot target and
+ * accepts the no-op as well.
+ * @param targetSessionId - the durable child session id to kill.
+ * @param authority - the human direct-parent address claiming ownership.
+ * @throws {SubagentError} `UNAUTHORIZED` when the claimed parent does not own
+ *   a live target.
+ */
+kill(targetSessionId: SessionId, authority: SubagentKillAuthority): void
 
 /**
  * Close continuable admission below exact live parent Agents, stop only their

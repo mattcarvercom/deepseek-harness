@@ -1,23 +1,27 @@
 // An enclosing `[data-conversation-scroll]` owns scrolling when present;
 // otherwise this view owns it. Each row subscribes to one stable node key.
 
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import type {
-  ConversationTimelineSnapshot, RenderMessageImages,
+  ConversationTimelineSnapshot, RenderMessageImages, TurnLocation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionSeq } from '@deepseek-ai/dsh-session/types'
-import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconChevronDownOutline14, IconCloseFill14, IconListPenOutline16, IconRefreshOutline16, IconStopFill16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SessionJob } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { ChatViewSlotProps, OpenFileOptions } from '../contract/slots.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
-import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
+import { PendingInboxPromptBubble, PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { TurnNavigator } from './TurnNavigator.tsx'
 import { mergeTurnRailItems, type TurnRailItem } from './turn-rail-items.ts'
 import { formatRunDuration } from './message-chrome.ts'
+import { derivePillPhase, firstUserPromptText, hasSettledTool, type PillPhase } from './pill-phase.ts'
+import { useTurnDataValue } from './use-turn-data.ts'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
 const SCROLL_SAMPLE_INTERVAL_MS = 500
+const EMPTY_JOBS: readonly SessionJob[] = []
 
 /** Active column host when present; otherwise the view-local scroller. */
 function scrollerOf(from: HTMLElement): HTMLElement {
@@ -130,7 +134,33 @@ function openFailureMessage(error: unknown, fallback: string): string {
 }
 
 /**
- * Prompt-RPC identities already rendered by durable material: user/steering
+ * Identities of the committed user and steering nodes in the rendered
+ * window: their node keys (message ids) and their user-source prompt-RPC
+ * ids.
+ * @param order - rendered node keys, oldest first.
+ * @param nodes - the keyed node store.
+ * @returns both committed-identity sets.
+ */
+function committedNodeIds(
+  order: readonly string[],
+  nodes: ChatSnapshot['nodes'],
+): { readonly rpcIds: ReadonlySet<string>; readonly messageIds: ReadonlySet<string> } {
+  const rpcIds = new Set<string>()
+  const messageIds = new Set<string>()
+  for (const key of order) {
+    const node = nodes.get(key)
+    if (node === undefined || (node.kind !== 'user' && node.kind !== 'steering')) continue
+    messageIds.add(key)
+    const source = (node.data as { readonly source?: unknown }).source as
+      | { readonly kind?: unknown; readonly rpcId?: unknown }
+      | undefined
+    if (source?.kind === 'user' && typeof source.rpcId === 'string') rpcIds.add(source.rpcId)
+  }
+  return { rpcIds, messageIds }
+}
+
+/**
+ * Prompt-RPC identities already rendered by durable material: committed
  * node sources plus queue occurrences. A submission echo whose identity
  * appears here is hidden in the same render, so the echo→durable swap is
  * atomic — no duplicate, no gap — regardless of when the echo leaves the
@@ -141,34 +171,110 @@ function observedRpcIds(
   nodes: ChatSnapshot['nodes'],
   queue: readonly { readonly rpcId?: string }[],
 ): ReadonlySet<string> {
-  const observed = new Set<string>()
-  for (const key of order) {
-    const node = nodes.get(key)
-    if (node === undefined || (node.kind !== 'user' && node.kind !== 'steering')) continue
-    const source = (node.data as { readonly source?: unknown }).source as
-      | { readonly kind?: unknown; readonly rpcId?: unknown }
-      | undefined
-    if (source?.kind === 'user' && typeof source.rpcId === 'string') observed.add(source.rpcId)
-  }
+  const observed = new Set(committedNodeIds(order, nodes).rpcIds)
   for (const item of queue) {
     if (item.rpcId !== undefined) observed.add(item.rpcId)
   }
   return observed
 }
 
-function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | null {
-  let latest: number | null = null
+function runningTurn(timeline: ConversationTimelineSnapshot): TurnLocation | null {
+  let latest: TurnLocation | null = null
   for (const turn of timeline.turns.values()) {
-    if (turn.status === 'open') latest = turn.start?.time ?? null
+    if (turn.status === 'open') latest = turn
   }
   return latest
 }
 
+/** Localized label for the assistant streaming phase arms. */
+function assistantPhaseText(mode: 'first-token' | 'thinking' | 'generating', t: ChatViewSlotProps['t']): string {
+  if (mode === 'thinking') return t('chat.pill.thinking')
+  if (mode === 'generating') return t('chat.pill.generating')
+  return t('chat.pill.waitingFirstToken')
+}
+
+/** The phase subline within the pill line: one localized line per phase arm. */
+function renderPillSubline(
+  phase: PillPhase,
+  compactionElapsedMs: number,
+  retryRemainingMs: number,
+  t: ChatViewSlotProps['t'],
+): ReactNode {
+  switch (phase.kind) {
+    case 'compaction':
+      return (
+        <div className={css.turnStatusCompaction}>
+          {t('chat.compacting')}
+          <span className={css.turnStatusClock} aria-hidden>
+            {formatRunDuration(compactionElapsedMs, t)}
+          </span>
+        </div>
+      )
+    case 'retry':
+      return (
+        <div className={css.turnStatusSubline}>
+          {phase.max === undefined
+            ? t('chat.pill.retryingNoMax', {
+              retry: phase.retry,
+              failure: phase.failure.message,
+              in: formatRunDuration(retryRemainingMs, t),
+            })
+            : t('chat.pill.retrying', {
+              retry: phase.retry,
+              max: phase.max,
+              failure: phase.failure.message,
+              in: formatRunDuration(retryRemainingMs, t),
+            })}
+        </div>
+      )
+    case 'subagent':
+      return <div className={css.turnStatusSubline}>{t('chat.pill.waitingChild', { label: phase.label })}</div>
+    case 'tool':
+      return <div className={css.turnStatusSubline}>{t('chat.pill.runningTool', { tool: phase.name })}</div>
+    case 'job':
+      return <div className={css.turnStatusSubline}>{t('chat.pill.waitingJob', { label: phase.label })}</div>
+    case 'working':
+      return <div className={css.turnStatusSubline}>{t('chat.pill.working')}</div>
+    case 'assistant':
+      return <div className={css.turnStatusSubline}>{assistantPhaseText(phase.mode, t)}</div>
+  }
+}
+
+/** An icon-only round action on the pill row: the glyph carries no name of
+ *  its own, so the accessible name comes from the localized action copy. */
+function PillIconButton({ label, icon, onClick }: {
+  /** The localized action copy: the button's accessible name. */
+  label: string
+  /** The design-system glyph inside the round target. */
+  icon: ReactNode
+  /** The action's click. */
+  onClick: () => void
+}) {
+  return (
+    <button type="button" className={css.turnStatusIconButton} aria-label={label} onClick={onClick}>
+      {icon}
+    </button>
+  )
+}
+
 /** Turn-level model activity label retained across first-token, tool, and streaming phases. */
-function TurnStatus({ startTime, t }: {
-  /** The running turn's logged `turn/start` time; null falls back to mount
-   *  time when that boundary is outside the window. */
+function TurnStatus({ startTime, phase, rerun, onCancel, onRequestRerun, onInspect, onKillChild, t }: {
+  /** The running turn's start time: the window's logged `turn/start` when in
+   *  scope, else the outline's recorded boundary time; null falls back to
+   *  mount time. */
   startTime: number | null
+  /** The derived phase owning the subline. */
+  phase: PillPhase
+  /** Text resending on cancel & re-run; undefined hides that action. */
+  rerun: string | undefined
+  /** Cancel the running turn. */
+  onCancel: () => void
+  /** Open the cancel & re-run confirmation dialog. */
+  onRequestRerun: () => void
+  /** Open the trajectory view for one call id. */
+  onInspect: (callId: string) => void
+  /** Kill the local child behind the subagent phase; undefined hides the action. */
+  onKillChild?: () => void
   /** The owning view's locale seat. */
   t: ChatViewSlotProps['t']
 }) {
@@ -177,25 +283,55 @@ function TurnStatus({ startTime, t }: {
   // elapsed time and the final footer's Ran-for label matches this clock.
   const anchor = startTime ?? mountedAt
   const [elapsedMs, setElapsedMs] = useState(() => Math.max(0, Date.now() - anchor))
+  const compactingSince = phase.kind === 'compaction' ? phase.since : undefined
+  const [compactionElapsedMs, setCompactionElapsedMs] = useState(() =>
+    compactingSince === undefined ? 0 : Math.max(0, Date.now() - compactingSince))
+  const retryAt = phase.kind === 'retry' ? phase.at : undefined
+  const retryDelayMs = phase.kind === 'retry' ? phase.delayMs : undefined
+  const [retryRemainingMs, setRetryRemainingMs] = useState(() =>
+    retryAt === undefined || retryDelayMs === undefined
+      ? 0
+      : Math.max(0, retryDelayMs - (Date.now() - retryAt)))
   useEffect(() => {
     const tick = (): void => {
       setElapsedMs(Math.max(0, Date.now() - anchor))
+      if (compactingSince !== undefined) setCompactionElapsedMs(Math.max(0, Date.now() - compactingSince))
+      if (retryAt !== undefined && retryDelayMs !== undefined) {
+        setRetryRemainingMs(Math.max(0, retryDelayMs - (Date.now() - retryAt)))
+      }
     }
     tick()
     const id = setInterval(tick, 1000)
     return () => { clearInterval(id) }
-  }, [anchor])
+  }, [anchor, compactingSince, retryAt, retryDelayMs])
   // Short turns keep the plain label; the clock only appears once the turn
   // has clearly been running for a while.
   const showClock = elapsedMs >= 15_000
+  const subline = renderPillSubline(phase, compactionElapsedMs, retryRemainingMs, t)
   return (
-    <div className={css.turnStatus} role="status" aria-live="polite">
-      {t('chat.deepDiving')}
-      {showClock && (
-        <span className={css.turnStatusClock} aria-hidden>
-          {formatRunDuration(elapsedMs, t)}
-        </span>
-      )}
+    <div className={css.turnStatusGroup} role="status" aria-live="polite">
+      <div className={css.turnStatus}>
+        {t('chat.deepDiving')}
+        {showClock && (
+          <span className={css.turnStatusClock} aria-hidden>
+            {formatRunDuration(elapsedMs, t)}
+          </span>
+        )}
+      </div>
+      <span className={css.turnStatusSeparator} aria-hidden>{t('chat.pill.separator')}</span>
+      {subline}
+      <div className={css.turnStatusActions}>
+        <PillIconButton label={t('cancel')} icon={<IconCloseFill14 size={14} />} onClick={onCancel} />
+        {rerun !== undefined && (
+          <PillIconButton label={t('chat.action.cancelRerun')} icon={<IconRefreshOutline16 size={14} />} onClick={onRequestRerun} />
+        )}
+        {phase.kind === 'subagent' && (
+          <PillIconButton label={t('chat.action.showLog')} icon={<IconListPenOutline16 size={14} />} onClick={() => { onInspect(phase.callId) }} />
+        )}
+        {phase.kind === 'subagent' && onKillChild !== undefined && (
+          <PillIconButton label={t('chat.action.killChild')} icon={<IconStopFill16 size={14} />} onClick={onKillChild} />
+        )}
+      </div>
     </div>
   )
 }
@@ -215,9 +351,9 @@ const ChatNodeList = memo(function ChatNodeList({ order, ...seatProps }: ChatNod
  * ordered business Node crosses the keyed renderer seat.
  */
 export function ChatView({
-  useSession, useChat, useChatNode, useChatNodeProcess, useSessions, useStore, actions, renderSlot,
+  useSession, useChat, useChatNode, useChatNodeProcess, useSessions, useSubagentActivity, useStore, actions, renderSlot,
   sessionId, openFile, openSkill, loadOlder, loadThrough, loadImage, openView, chatScroll, forkAt, fileMentions,
-  useTranscriptView, useProjection, t,
+  cancel, prompt, killChild, useTranscriptView, useProjection, t,
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
   const nodeStore = useChat(s => s.nodes)
@@ -233,9 +369,16 @@ export function ChatView({
     [turnNavigationItems, turnOutline],
   )
   const timeline = useChat(s => s.timeline)
+  // The pill's live channels: reference-guarded legacy-slice fields whose
+  // identity moves with every streamed change, so the phase re-derives from
+  // what is actually streaming instead of a frozen node scan.
+  const legacyNodes = useChat(s => s.legacy.nodes)
+  const partial = useChat(s => s.legacy.partial)
+  const runningCalls = useChat(s => s.legacy.runningCalls)
   const inbox = useSession(s => s.queue)
   // Workspace root off the session list row: path summaries display relative to it.
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
+  const jobs = useSessions(s => s.jobsBySession[sessionId])
   const running = useSession(s => s.running)
   const openState = useSession(s => s.openState)
   const openError = useSession(s => s.openError)
@@ -285,21 +428,84 @@ export function ChatView({
     [inbox],
   )
   const pendingSubmissions = useSession(s => s.pendingSubmissions)
+  const pendingInboxPrompts = useSession(s => s.pendingInboxPrompts)
+  // In-flight durable prompts render in the tail group only in the
+  // claim→commit window: an entry still in the queue projection renders
+  // through the queue dock (queued) or the steering bubbles, and a committed
+  // prompt hides behind its durable node, matched by rpcId or by the node
+  // key, which is the message id. No prompt is represented twice in one
+  // render.
+  const inflightPrompts = useMemo(() => {
+    if (pendingInboxPrompts.length === 0) return pendingInboxPrompts
+    const committed = committedNodeIds(order, nodeStore)
+    const projected = new Set(inbox.map(item => item.messageId))
+    return pendingInboxPrompts.filter(prompt => (
+      (prompt.rpcId === undefined || !committed.rpcIds.has(prompt.rpcId))
+      && !committed.messageIds.has(prompt.id)
+      && !projected.has(prompt.id)
+    ))
+  }, [pendingInboxPrompts, order, nodeStore, inbox])
   // Submission echoes still awaiting their durable counterpart. `order` is the
   // recompute trigger: durable user material always arrives as an append, and
-  // every append replaces the order array.
+  // every append replaces the order array. An echo whose prompt already has an
+  // in-flight fold entry hides behind that bubble (one-frame overlap).
   const visibleSubmissions = useMemo(() => {
     if (pendingSubmissions.length === 0) return pendingSubmissions
     const observed = observedRpcIds(order, nodeStore, inbox)
+    const inflight = new Set(
+      inflightPrompts.flatMap(prompt => prompt.rpcId === undefined ? [] : [prompt.rpcId]),
+    )
     return pendingSubmissions.filter(submission => (
-      submission.placement !== 'queued' && !observed.has(submission.requestId)
+      submission.placement !== 'queued'
+      && !observed.has(submission.requestId)
+      && !inflight.has(submission.requestId)
     ))
-  }, [pendingSubmissions, order, nodeStore, inbox])
+  }, [pendingSubmissions, order, nodeStore, inbox, inflightPrompts])
   const renderMessageImages = useCallback<RenderMessageImages>(
     owner => renderSlot('conversation.message.images', { ...owner, loadImage }),
     [loadImage, renderSlot],
   )
-  const runningTurnStart = useMemo(() => runningTurnStartTime(timeline), [timeline])
+  const runningTurnLocation = useMemo(() => running ? runningTurn(timeline) : null, [running, timeline])
+  // The clock anchors to the turn's logged start; when that boundary is
+  // outside the loaded window, the whole-log outline still records the
+  // boundary's time, so a mid-turn reload keeps the real elapsed.
+  const lastOutline = turnOutline?.at(-1)
+  const turnStartAt = runningTurnLocation?.start?.time ?? lastOutline?.startedAt ?? null
+  const turnStartSeq = runningTurnLocation?.start?.seq ?? lastOutline?.seq ?? null
+  // The compaction subline reads the running turn's published start time; the
+  // store is reference-stable per turn, so this subscription is inert outside
+  // a compaction window.
+  const compactingSince = useTurnDataValue(runningTurnLocation?.data, 'compaction')
+  // The pill derives from the running turn's live channels: the durable node
+  // stream, in-flight calls, the streamed partial, the session's job views,
+  // and the durable activity map.
+  const activity = useSubagentActivity(m => m)
+  const phase = useMemo(
+    () => derivePillPhase({
+      nodes: legacyNodes,
+      turnStartSeq,
+      runningCalls,
+      partial,
+      jobs: jobs ?? EMPTY_JOBS,
+      compactingSince,
+      activity,
+    }),
+    [legacyNodes, turnStartSeq, runningCalls, partial, jobs, compactingSince, activity],
+  )
+  // Cancel & re-run resends the turn's own first user message as a new turn;
+  // it earns its confirmation only once the turn has settled tool work.
+  const rerunText = useMemo(
+    () => (hasSettledTool(legacyNodes, turnStartSeq) ? firstUserPromptText(legacyNodes, turnStartSeq) : undefined),
+    [legacyNodes, turnStartSeq],
+  )
+  // The kill action reaches only in-process children: the phase carries the
+  // child's durable session id when the fact latched one, and undefined for
+  // remote runs hides the button.
+  const killChildTarget = phase.kind === 'subagent' ? phase.childSessionId : undefined
+  const [rerunPending, setRerunPending] = useState(false)
+  useEffect(() => {
+    if (!running) setRerunPending(false)
+  }, [running])
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const columnRef = useRef<HTMLDivElement | null>(null)
@@ -805,7 +1011,20 @@ export function ChatView({
               double-render the same wait. */}
           {/* Turn-level loading signal: rides the whole running turn (first-token
               wait, tool execution, streaming) so it never flickers per step. */}
-          {running && <TurnStatus startTime={runningTurnStart} t={t} />}
+          {running && (
+            <TurnStatus
+              startTime={turnStartAt}
+              phase={phase}
+              rerun={rerunText}
+              onCancel={cancel}
+              onRequestRerun={() => { setRerunPending(true) }}
+              onInspect={inspectCall}
+              {...killChildTarget !== undefined
+                ? { onKillChild: () => { killChild(killChildTarget) } }
+                : {}}
+              t={t}
+            />
+          )}
           {pendingSteering.map(item => (
             <PendingSteeringBubble
               key={item.id}
@@ -818,6 +1037,14 @@ export function ChatView({
             <PendingSubmissionBubble
               key={submission.requestId}
               submission={submission}
+              renderMessageImages={renderMessageImages}
+              t={t}
+            />
+          ))}
+          {inflightPrompts.map(prompt => (
+            <PendingInboxPromptBubble
+              key={prompt.id}
+              prompt={prompt}
               renderMessageImages={renderMessageImages}
               t={t}
             />
@@ -849,6 +1076,17 @@ export function ChatView({
           t={t}
         />
       )}
+      {rerunPending && rerunText !== undefined && (
+        <RerunConfirmDialog
+          onClose={() => { setRerunPending(false) }}
+          onConfirm={() => {
+            setRerunPending(false)
+            cancel()
+            prompt(rerunText)
+          }}
+          t={t}
+        />
+      )}
     </div>
   )
 }
@@ -874,6 +1112,29 @@ function FileOpenErrorDialog({
         <>
           <Button variant="outline" className={css.modalAction} onClick={onClose}>{t('cancel')}</Button>
           <Button variant="primary" className={css.modalAction} disabled={busy} onClick={onRetry}>{t('retry')}</Button>
+        </>
+      )}
+    />
+  )
+}
+
+/** Cancels the running turn and resends its first user message as a new turn. */
+function RerunConfirmDialog({ onClose, onConfirm, t }: {
+  onClose: () => void
+  onConfirm: () => void
+  t: ChatViewSlotProps['t']
+}) {
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      closeLabel={t('close')}
+      title={t('chat.rerunConfirm.title')}
+      description={t('chat.rerunConfirm.body')}
+      footer={(
+        <>
+          <Button variant="outline" className={css.modalAction} onClick={onClose}>{t('chat.rerunConfirm.keep')}</Button>
+          <Button variant="primary" className={css.modalAction} onClick={onConfirm}>{t('chat.action.cancelRerun')}</Button>
         </>
       )}
     />
