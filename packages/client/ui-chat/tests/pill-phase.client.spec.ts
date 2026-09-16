@@ -10,6 +10,7 @@ import type {
   PartialAssistant, RunningToolCall, SteeringMessageNode, SubagentActivityFact,
   SubagentActivityMap, ToolResultNode, UserMessageNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SubagentActivityKind } from '@deepseek-ai/dsh-subagent/client'
 import { derivePillPhase, firstUserPromptText, hasSettledTool } from '../src/client/chat/pill-phase.ts'
 
@@ -56,8 +57,11 @@ const job = (label: string, status: SessionJob['status'], startedAt: number): Se
   id: `job-${label}` as SessionJob['id'], kind: 'bash', label, status, startedAt,
 })
 
-const fact = (at: number, kind: SubagentActivityKind, label: string, provider = 'dsh'): SubagentActivityFact =>
-  ({ at, kind, label, provider })
+const fact = (at: number, kind: SubagentActivityKind, label: string, provider = 'dsh', childSessionId?: string): SubagentActivityFact =>
+  ({
+    at, kind, label, provider,
+    ...(childSessionId !== undefined ? { childSessionId: childSessionId as SessionId } : {}),
+  })
 
 interface PhaseOptions {
   turnStartSeq?: number | null
@@ -154,6 +158,26 @@ describe('derivePillPhase', () => {
       c3: fact(T + 5, 'tool', 'Reading'),
     }
     expect(phase([], options)).toEqual({ kind: 'subagent', callId: 'c1', label: 'Producing' })
+  })
+
+  it('carries a latched child session id onto the winning subagent phase', () => {
+    expect(phase([], {
+      runningCalls: [running('c1', 'subagent')],
+      activity: { c1: fact(T + 9, 'tool', 'Running bash', 'dsh', 'child-1') },
+    })).toStrictEqual({ kind: 'subagent', callId: 'c1', label: 'Running bash', childSessionId: 'child-1' })
+    // The newest-fact winner carries its own latched id, not the loser's.
+    expect(phase([], {
+      runningCalls: [running('c1', 'subagent'), running('c2', 'subagent_fork')],
+      activity: {
+        c1: fact(T + 9, 'tool', 'Running bash', 'dsh', 'child-1'),
+        c2: fact(T + 12, 'tool', 'Running read', 'dsh', 'child-2'),
+      },
+    })).toStrictEqual({ kind: 'subagent', callId: 'c2', label: 'Running read', childSessionId: 'child-2' })
+    // An unlatched (remote) fact leaves the key absent.
+    expect(phase([], {
+      runningCalls: [running('c1', 'subagent')],
+      activity: { c1: fact(T + 9, 'tool', 'Running bash') },
+    })).toStrictEqual({ kind: 'subagent', callId: 'c1', label: 'Running bash' })
   })
 
   it('falls through to the tool phase for a delegation without an activity fact', () => {

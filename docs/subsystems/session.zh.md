@@ -832,6 +832,16 @@ workspaceDesktop(): { name: string; available: boolean; fileManager: 'finder' | 
 @Remote('cancel') cancel(request: SessionCancelRequest): SessionCancelValue
 
 /**
+ * Kill one live subagent child of the addressed session: its current turn
+ * is cancelled, its pending inbox work is durably discarded, and a resident
+ * continuable child's residency epoch is closed. An absent child — including
+ * an already-settled one — is an accepted no-op.
+ * @param request - the addressed parent session and the durable child session to kill.
+ * @returns acknowledgement that the kill signal was admitted, not that the child is quiescent.
+ */
+@Remote('killSubagent') killSubagent(request: SessionKillSubagentRequest): SessionKillSubagentValue
+
+/**
  * Read one cold-safe, message-aligned Session history page.
  * @param request - durable address, backward cursor, and page budget.
  * @param signal - cancellation for persistence reads.

@@ -1,4 +1,5 @@
 import type { SubagentActivityKind } from '@deepseek-ai/dsh-subagent/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /**
  * One durable `subagent/activity` observation of a child run, keyed by the
@@ -14,6 +15,11 @@ export interface SubagentActivityFact {
   readonly label: string
   /** Subagent provider name that produced the observation. */
   readonly provider: string
+  /**
+   * The child's durable session id for in-process (local) runs — the target
+   * the parent's kill control reaches. Absent for out-of-process runs.
+   */
+  readonly childSessionId?: SessionId
 }
 
 /**

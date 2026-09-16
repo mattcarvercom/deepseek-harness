@@ -597,6 +597,37 @@ describe('prompt and cancel errors', () => {
   })
 })
 
+describe('killSubagent', () => {
+  const CHILD = 'fk-child' as SessionId
+
+  it('addresses the parent session with the durable child id', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    const result = await session.killSubagent(CHILD)
+    expect(result).toEqual({ ok: true, value: { accepted: true } })
+    expect(mock.log.requests('session/killSubagent')).toEqual([{ sessionId: SID, childSessionId: CHILD }])
+  })
+
+  it('returns a business failure without recording a prompt error on this session', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    mock.remote.session.killSubagent.mockResolvedValue(
+      err(new RemoteError('subagent/unauthorized', 'subagent does not belong to this parent', { childSessionId: CHILD })),
+    )
+    const result = await session.killSubagent(CHILD)
+    expect(result).toMatchObject({ ok: false, error: { code: 'subagent/unauthorized', details: { childSessionId: CHILD } } })
+    expect(session.getSnapshot().promptError).toBeNull()
+  })
+
+  it('receives a carrier throw as the client\'s gateway/internal fold without a prompt error', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    mock.remote.session.killSubagent.mockImplementation(() => Promise.reject(new Error('kill transport down')))
+    const result = await session.killSubagent(CHILD)
+    expect(result).toMatchObject({
+      ok: false, error: { code: 'gateway/internal', message: 'client api: session/killSubagent failed: kill transport down' },
+    })
+    expect(session.getSnapshot().promptError).toBeNull()
+  })
+})
+
 describe('rename', () => {
   it('settles the title projection cell from the unary response (higher-seq-wins vs the push frame)', async ({ mock, start }) => {
     const session = await sessionBench(mock, start, SID)

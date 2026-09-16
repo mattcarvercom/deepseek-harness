@@ -241,7 +241,7 @@ function renderPillSubline(
 }
 
 /** Turn-level model activity label retained across first-token, tool, and streaming phases. */
-function TurnStatus({ startTime, phase, rerun, onCancel, onRequestRerun, onInspect, t }: {
+function TurnStatus({ startTime, phase, rerun, onCancel, onRequestRerun, onInspect, onKillChild, t }: {
   /** The running turn's start time: the window's logged `turn/start` when in
    *  scope, else the outline's recorded boundary time; null falls back to
    *  mount time. */
@@ -256,6 +256,8 @@ function TurnStatus({ startTime, phase, rerun, onCancel, onRequestRerun, onInspe
   onRequestRerun: () => void
   /** Open the trajectory view for one call id. */
   onInspect: (callId: string) => void
+  /** Kill the local child behind the subagent phase; undefined hides the action. */
+  onKillChild?: () => void
   /** The owning view's locale seat. */
   t: ChatViewSlotProps['t']
 }) {
@@ -318,6 +320,16 @@ function TurnStatus({ startTime, phase, rerun, onCancel, onRequestRerun, onInspe
             {t('chat.action.showLog')}
           </Button>
         )}
+        {phase.kind === 'subagent' && onKillChild !== undefined && (
+          <Button
+            variant="outline"
+            size="sm"
+            className={css.turnStatusAction}
+            onClick={onKillChild}
+          >
+            {t('chat.action.killChild')}
+          </Button>
+        )}
       </div>
     </div>
   )
@@ -340,7 +352,7 @@ const ChatNodeList = memo(function ChatNodeList({ order, ...seatProps }: ChatNod
 export function ChatView({
   useSession, useChat, useChatNode, useChatNodeProcess, useSessions, useSubagentActivity, useStore, actions, renderSlot,
   sessionId, openFile, openSkill, loadOlder, loadThrough, loadImage, openView, chatScroll, forkAt, fileMentions,
-  cancel, prompt, useTranscriptView, useProjection, t,
+  cancel, prompt, killChild, useTranscriptView, useProjection, t,
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
   const nodeStore = useChat(s => s.nodes)
@@ -485,6 +497,10 @@ export function ChatView({
     () => (hasSettledTool(legacyNodes, turnStartSeq) ? firstUserPromptText(legacyNodes, turnStartSeq) : undefined),
     [legacyNodes, turnStartSeq],
   )
+  // The kill action reaches only in-process children: the phase carries the
+  // child's durable session id when the fact latched one, and undefined for
+  // remote runs hides the button.
+  const killChildTarget = phase.kind === 'subagent' ? phase.childSessionId : undefined
   const [rerunPending, setRerunPending] = useState(false)
   useEffect(() => {
     if (!running) setRerunPending(false)
@@ -1002,6 +1018,9 @@ export function ChatView({
               onCancel={cancel}
               onRequestRerun={() => { setRerunPending(true) }}
               onInspect={inspectCall}
+              {...killChildTarget !== undefined
+                ? { onKillChild: () => { killChild(killChildTarget) } }
+                : {}}
               t={t}
             />
           )}

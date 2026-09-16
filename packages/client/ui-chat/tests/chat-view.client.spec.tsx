@@ -430,6 +430,7 @@ function makeHarness(
     forkAt,
     cancel: vi.fn(),
     prompt: vi.fn(),
+    killChild: vi.fn(),
     // Absent-service default; mention tests override with a real resolver.
     fileMentions: () => undefined,
     t,
@@ -2549,6 +2550,22 @@ describe('ChatView', () => {
     expect(view.getByRole('status').textContent).toBe('深度求索中...等待子代理 child-a取消查看日志')
     fireEvent.click(view.getByRole('button', { name: '查看日志' }))
     expect(h.openView).toHaveBeenCalledWith('trajectory', 's1')
+  })
+
+  it('offers the kill-child action for a latched local child and routes the click to the inject', () => {
+    const h = makeHarness(
+      {
+        runningCalls: [{ ...runningCall('s1', 'subagent'), turn: 1 }],
+        turnTimings: new Map([[1, { startTime: Date.now() - 1000 }]]),
+      },
+      { running: true },
+    )
+    const childId = 'child-session-1' as SessionId
+    h.setActivity({ s1: { kind: 'output', at: 1_234, label: 'child-a', provider: 'dsh', childSessionId: childId } })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('status').textContent).toBe('深度求索中...等待子代理 child-a取消查看日志终止子代理')
+    fireEvent.click(view.getByRole('button', { name: '终止子代理' }))
+    expect(h.props.killChild).toHaveBeenCalledWith('child-session-1')
   })
 
   it('shows the running tool subline for a non-delegation call', () => {

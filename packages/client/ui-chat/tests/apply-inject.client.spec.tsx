@@ -43,6 +43,7 @@ function sessionFakeFor() {
     })),
     prompt: vi.fn<ISession['prompt']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
     cancel: vi.fn<ISession['cancel']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
+    killSubagent: vi.fn<ISession['killSubagent']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
   } satisfies SessionBehaviorOverrides
 }
 
@@ -211,6 +212,21 @@ describe('Chat inject API', () => {
     expect(loaded).toEqual(expect.any(String))
     expect(b.session.readAttachment).toHaveBeenCalledWith(ATTACHMENT.attachmentId)
     expect(injected.loadImage.peek?.(ATTACHMENT)).toBe(loaded)
+    await b.runtime.dispose()
+  })
+
+  it('kills a local child through the Session face and stays silent when the kill rejects', async () => {
+    const b = await bench()
+    const { injected } = b.chatViewApi(ROOT)
+    const child = 'child-1' as SessionId
+    injected.killChild(child)
+    await vi.waitFor(() => {
+      expect(b.session.killSubagent).toHaveBeenCalledWith(child)
+    })
+    // A rejected kill is swallowed: the child's activity fact keeps the
+    // pill's action mounted, so a later click retries the kill.
+    b.session.killSubagent.mockImplementationOnce(() => Promise.reject(new Error('transport down')))
+    expect(() => { injected.killChild(child) }).not.toThrow()
     await b.runtime.dispose()
   })
 })

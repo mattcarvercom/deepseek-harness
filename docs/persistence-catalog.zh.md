@@ -791,7 +791,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'subagent/activity': SubagentActivityData
 ```
 
-来源：[`packages/subagent/tool-subagent/src/types.ts:32`](../packages/subagent/tool-subagent/src/types.ts)
+来源：[`packages/subagent/tool-subagent/src/types.ts:39`](../packages/subagent/tool-subagent/src/types.ts)
 
 <a id="subagentcatalog--log-only"></a>
 

@@ -1215,6 +1215,53 @@ describe('dsh-tool-subagent background mode', () => {
     expect(events.map(event => event.data.kind)).toEqual(['output', 'tool'])
     expect(events.every(event => event.data.callId === 'activity-background')).toBe(true)
     expect(events.every(event => event.data.provider === 'mock' && event.data.label === 'background work')).toBe(true)
+    // The default scripted run is remote-shaped: no kill-reachable id is latched.
+    expect(events.every(event => !('childSessionId' in event.data))).toBe(true)
+  })
+
+  it('carries the local child session id on background activity records after start resolves', async () => {
+    const child = fakeAgent('bg-local-child')
+    let release!: () => void
+    let request: SubagentStartRequest | undefined
+    const ctx = await backgroundSetup({ provider: 'mock' }, {
+      reply: 'background answer',
+      localAgent: child,
+      onStart: (started) => {
+        request = started
+        // Holding the gate keeps the result's 0ms timer un-armed, so the job
+        // cannot settle (and dispose the recorder) before the observations.
+        return new Promise<void>((resolve) => { release = resolve })
+      },
+    })
+    const parent = ownerAgent(ctx, 'sess-parent')
+
+    const started = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('activity-background-local'),
+      name: 'subagent',
+      arguments: { description: 'background work', prompt: 'go', run_in_background: true },
+      agent: parent,
+    })
+    expect(text(started)).toBe('started background subagent job subagent-1')
+    // The gated start settles in flushed microtasks; the latch follows it.
+    await new Promise<void>(resolve => setTimeout(resolve, 0))
+    request?.onActivity?.('output')
+    request?.onActivity?.('tool')
+    release()
+
+    const settled = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('activity-background-local-collect'),
+      name: 'job_output',
+      arguments: { job_id: 'subagent-1', wait: true },
+      agent: parent,
+    })
+    expect(text(settled)).toBe('background answer\n[status: completed]')
+
+    const events = activityEvents(parent.session)
+    expect(events.map(event => event.data.kind)).toEqual(['output', 'tool'])
+    expect(events.every(event => 'childSessionId' in event.data)).toBe(true)
+    expect(events.every(event => event.data.childSessionId === child.id)).toBe(true)
   })
 
 })
@@ -1571,9 +1618,44 @@ describe('dsh-tool-subagent activity recording', () => {
         expect(event.data.provider).toBe('mock')
         expect(event.data.label).toBe('do a thing')
       }
+      // The default scripted run is remote-shaped: the kill-reachable id is never latched.
+      expect(events.every(event => !('childSessionId' in event.data))).toBe(true)
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('carries the local child session id on foreground records after start resolves (the first record predates the latch)', async () => {
+    let release!: () => void
+    let request: SubagentStartRequest | undefined
+    const child = fakeAgent('local-child')
+    const ctx = await setup({ provider: 'mock' }, {
+      localAgent: child,
+      onStart: (started) => {
+        request = started
+        started.onActivity?.('output')
+        return new Promise<void>((resolve) => { release = resolve })
+      },
+    })
+    const parent = fakeAgent()
+    const pending = ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('activity-local'),
+      name: 'subagent',
+      arguments: { description: 'do a thing', prompt: 'go', run_in_background: false },
+      agent: parent,
+    })
+    // The provider's start settles in flushed microtasks; the latch follows it.
+    await new Promise<void>(resolve => setTimeout(resolve, 0))
+    request?.onActivity?.('tool')
+    release()
+
+    const result = await pending
+    expect(result.isError).toBe(false)
+    const events = activityEvents(parent.session)
+    expect(events.map(event => event.data.kind)).toEqual(['output', 'tool'])
+    expect(events.map(event => 'childSessionId' in event.data)).toEqual([false, true])
+    expect(events[1]?.data.childSessionId).toBe(child.id)
   })
 
   it('warns and disables recording when a record append fails, without failing the run', async () => {

@@ -208,6 +208,13 @@ export function apply(ctx: Context): void {
               // A rejected prompt is already mirrored into snapshot.promptError.
             })
           },
+          killChild: (childSessionId) => {
+            void session.killSubagent(childSessionId).catch(() => {
+              // A failed kill (business or transport) stays retryable: the
+              // child's activity fact keeps the pill's action mounted until
+              // the child settles, and a re-kill is an accepted no-op.
+            })
+          },
         }
       },
     }, ChatView)

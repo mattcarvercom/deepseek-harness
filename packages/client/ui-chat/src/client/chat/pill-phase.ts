@@ -10,6 +10,7 @@ import type {
   RunningToolCall,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { LlmFailure } from '@deepseek-ai/dsh-llm/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SubagentActivityMap } from '../contract/subagent-activity.ts'
 import { isSubagentDelegationTool } from '../contract/turn-process.ts'
 
@@ -40,6 +41,8 @@ export type PillPhase =
     readonly callId: string
     /** The delegation's display label from the activity record. */
     readonly label: string
+    /** The local child's durable session id, present only when the run is in-process. */
+    readonly childSessionId?: SessionId
   }
   | {
     /** The newest running tool owns the turn. */
@@ -125,16 +128,28 @@ export function derivePillPhase(input: PillPhaseInput): PillPhase {
   }
   if (scheduled !== undefined) return scheduled.phase
 
-  let child: { at: number; callId: string; label: string } | undefined
+  let child: { at: number; callId: string; label: string; childSessionId?: SessionId } | undefined
   for (const call of runningCalls) {
     if (!isSubagentDelegationTool(call.name)) continue
     const fact = activity[call.callId]
     if (fact === undefined) continue
     if (child === undefined || fact.at > child.at) {
-      child = { at: fact.at, callId: call.callId, label: fact.label }
+      child = {
+        at: fact.at,
+        callId: call.callId,
+        label: fact.label,
+        ...fact.childSessionId !== undefined ? { childSessionId: fact.childSessionId } : {},
+      }
     }
   }
-  if (child !== undefined) return { kind: 'subagent', callId: child.callId, label: child.label }
+  if (child !== undefined) {
+    return {
+      kind: 'subagent',
+      callId: child.callId,
+      label: child.label,
+      ...child.childSessionId !== undefined ? { childSessionId: child.childSessionId } : {},
+    }
+  }
 
   const tool = runningCalls.at(-1)
   if (tool !== undefined) return { kind: 'tool', callId: tool.callId, name: tool.name }

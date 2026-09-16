@@ -88,7 +88,7 @@ A foreground call awaits `run.result`, maps every non-completed stop reason to a
 
 ### Background routes
 
-One-shot background registers a plain parent-owned Task whose done channel settles the start and keeps the stop reason and optional provider diagnostic in its detail. Continuable background calls `ctx.subagents.startContinuable()`, which resolves at inbox acceptance: the child owns its own turns from there, so the call neither waits for nor collects a result.
+One-shot background registers a plain parent-owned Task whose done channel settles the start and keeps the stop reason and optional provider diagnostic in its detail. Continuable background calls `ctx.subagents.startContinuable()`, which resolves at inbox acceptance: the child owns its own turns from there, so the call neither waits for nor collects a result. A one-shot activity payload carries the child's durable session id once the start latches it, which is what lets the client offer a kill; the first record can predate the latch and omits the field, and out-of-process runs never carry it.
 
 ### Context-sensitive wording
 

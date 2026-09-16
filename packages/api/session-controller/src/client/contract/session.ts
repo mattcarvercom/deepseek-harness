@@ -111,6 +111,17 @@ export interface ISession {
    */
   cancel(): Promise<RemoteResult<{ accepted: true }>>
   /**
+   * Kill one live subagent child of this session: the child's current turn is
+   * cancelled, its pending inbox work is durably discarded, and a resident
+   * continuable child's residency epoch is closed. Idempotent — killing an
+   * already-settled child is an accepted no-op. Failures are returned, not
+   * stored: this is a control operation on a child, not on this session's own
+   * turn, so the caller owns any error display.
+   * @param childSessionId - the durable child session to kill.
+   * @returns the kill result.
+   */
+  killSubagent(childSessionId: SessionId): Promise<RemoteResult<{ accepted: true }>>
+  /**
    * Rename this session (explicit user title; pins it against automatic
    * regeneration).
    * @param title - raw title text (the host normalizes acceptance).

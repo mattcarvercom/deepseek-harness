@@ -165,6 +165,8 @@ Live queue occurrence mutation remains in the Session domain. `session.updateQue
 
 `SubagentRuntime.interrupt(targetSessionId, authority)` is the one public stop: it authorizes synchronously, issues `Agent.cancel(cause, { keepInbox: true })` on the live target, and returns without awaiting quiescence. The Activation, its unclaimed pending inbox work, and published descendants are untouched; work already claimed into the interrupted turn is not requeued. Once the interrupted driver is idle, a waking send resumes the parked FIFO queue. An absent target — unknown, one-shot, or already settled — and a manager-less composition are accepted no-ops. For a live target, a mismatched parent address or caller outside its live ancestry rejects with `UNAUTHORIZED`; stale ancestor objects and self-targeting ancestor requests reject before target lookup.
 
+`SubagentRuntime.kill(targetSessionId, authority)` is the one public hard-stop: it authorizes the claimed direct-parent address against the live target's durable parent, cancels the target's current turn with the user cause, durably discards its pending inbox work, and closes a resident continuable target's residency epoch through the memoized close transaction, which releases owned descendant Activations child-first. Fire-and-return: the cancel signal and the disposal task are issued before it returns, but the target may keep running until it observes the signal. A live one-shot child is hard-stopped through its own Agent, whose run owner settles the run as `aborted` and releases it. An absent target — unknown, remote, or already settled — and a manager-less composition are accepted no-ops, and an already-closing epoch is left to its own teardown, which already stopped the target and owns the release. For a live target, a claim that does not name its durable direct parent rejects with `UNAUTHORIZED`.
+
 ```ts type-equiv
 /**
  * Authority under which one interrupt request is admitted. `user` carries the
@@ -174,6 +176,15 @@ Live queue occurrence mutation remains in the Session domain. `session.updateQue
 type SubagentInterruptAuthority =
   | { readonly kind: 'user'; readonly parentSessionId: SessionId }
   | { readonly kind: 'ancestor'; readonly agent: Agent }
+```
+
+```ts type-equiv
+/**
+ * Authority under which one kill request is admitted: the durable direct-parent
+ * address a human client presented. Kill has no model-authored (ancestor)
+ * consumer, so no kind tag is needed on the single admitted authority.
+ */
+type SubagentKillAuthority = { readonly parentSessionId: SessionId }
 ```
 
 Every Activation owns its `AgentHandle` and an `ownedChildren: Set<SessionId>`; because one Session has at most one live Activation, the child Session id identifies the live child without another runtime-incarnation reference. Starting a child or submitting parent-originated work registers the child in a continuation-managed parent's set before the child can run, and that parent cannot settle while the set is non-empty. A top-level or other non-continuation Agent has no Activation and stays outside the waiting graph. Child release happens only after the child has no active Agent work, its Inbox is empty, every child of that child is disposed, the best-effort final session flush settles, and the child's `AgentHandle` completes disposal.
@@ -547,6 +558,26 @@ async sendMessage( sender: Agent, targetId: SessionId, content: ContentBlock[], 
  *   live target.
  */
 interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void
+
+/**
+ * Kill one live subagent child under one durable direct-parent address:
+ * the child's current turn is cancelled with the user cause, its pending
+ * inbox work is durably discarded, and a resident continuable child's
+ * residency epoch is closed, releasing its subagent descendants child-first.
+ * Fire-and-return: the cancel signal and the disposal task are issued before
+ * this returns, but the child may keep running until it observes the signal.
+ * A live one-shot child is hard-stopped through its own Agent, whose run
+ * owner settles and releases it as usual; an absent target — including an
+ * already-settled run, a remote run, and an unknown id — is an accepted
+ * no-op, as is an already-closing epoch, whose teardown owns the release.
+ * A composition without a live Agent registry finds no one-shot target and
+ * accepts the no-op as well.
+ * @param targetSessionId - the durable child session id to kill.
+ * @param authority - the human direct-parent address claiming ownership.
+ * @throws {SubagentError} `UNAUTHORIZED` when the claimed parent does not own
+ *   a live target.
+ */
+kill(targetSessionId: SessionId, authority: SubagentKillAuthority): void
 
 /**
  * Close continuable admission below exact live parent Agents, stop only their

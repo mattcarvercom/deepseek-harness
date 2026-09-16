@@ -36,6 +36,7 @@ import { SubagentError } from './error.ts'
 import { SubagentInbox } from './inbox.ts'
 import type { SubagentDelivery } from './inbox.ts'
 import type { ActivationObserver, ActivationTerminal } from './lifecycle.ts'
+import type { SubagentKillAuthority } from './types.ts'
 
 /**
  * One residency epoch for a reconstructed continuable child Agent. It directly
@@ -297,6 +298,38 @@ export class ContinuableActivationRegistry {
       authority.kind === 'user' ? { kind: 'user' } : { kind: 'parent' },
       { keepInbox: true },
     )
+  }
+
+  /**
+   * Kill one live continuable child: cancel its current turn with the user
+   * cause, discard its pending inbox work durably, and close its residency
+   * epoch through the memoized close transaction, which releases owned child
+   * Activations child-first. Fire-and-return: both the cancel signal and the
+   * disposal task are issued before this returns. An absent target is an
+   * accepted no-op, as is an epoch already closing, whose teardown already
+   * stopped the target and owns the release.
+   * @param targetSessionId - the durable child session id to kill.
+   * @param authority - the human parent address claiming ownership of the target.
+   * @returns whether a live Activation answered the kill.
+   * @throws {SubagentError} `UNAUTHORIZED` when the claimed parent does not own the live target.
+   */
+  kill(targetSessionId: SessionId, authority: SubagentKillAuthority): boolean {
+    const activation = this.resident.get(targetSessionId)
+    if (activation === undefined) return false
+    if (activation.handle.agent.session.header.parentSession !== authority.parentSessionId) {
+      throw new SubagentError(
+        `subagent "${targetSessionId}" belongs to another parent session`,
+        'UNAUTHORIZED',
+      )
+    }
+    if (activation.inbox.closing !== undefined) return true
+    activation.handle.agent.cancel({ kind: 'user' }, { keepInbox: false })
+    void this.dispose(activation).catch((error: unknown) => {
+      this.ctx.logger.warn(
+        `subagent "${activation.childId}" activation teardown failed: ${errorChain(error)}`,
+      )
+    })
+    return true
   }
 
   /**

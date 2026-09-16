@@ -12,7 +12,9 @@
  * consumer (`@deepseek-ai/dsh-tool-subagent`) are separate packages.
  *
  * Public operations express caller intent: `start` returns one published owned
- * one-shot run, `startContinuable` establishes a durable continuable child, and
+ * one-shot run, `startContinuable` establishes a durable continuable child,
+ * `interrupt` and `kill` stop a live child's current turn (cooperatively and
+ * terminally, respectively) under the owning parent's address, and
  * `sendMessage` steers between adjacent Agents without exposing whether a child
  * is resident. Continuable children never become a {@link SubagentRun}: the
  * continuation manager holds their `AgentHandle` directly and orders every turn
@@ -57,6 +59,7 @@ import type {
   ResolvedSubagentStartRequest,
   SubagentCapabilities,
   SubagentInterruptAuthority,
+  SubagentKillAuthority,
   SubagentProvider,
   SubagentRun,
   SubagentRunEndInfo,
@@ -90,6 +93,7 @@ export type {
   SubagentActivityKind,
   SubagentCapabilities,
   SubagentInterruptAuthority,
+  SubagentKillAuthority,
   SubagentProvider,
   SubagentResult,
   SubagentRun,
@@ -296,6 +300,38 @@ export class SubagentRuntime extends TypertRemoteService {
    */
   interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void {
     this.continuations?.interrupt(targetSessionId, authority)
+  }
+
+  /**
+   * Kill one live subagent child under one durable direct-parent address:
+   * the child's current turn is cancelled with the user cause, its pending
+   * inbox work is durably discarded, and a resident continuable child's
+   * residency epoch is closed, releasing its subagent descendants child-first.
+   * Fire-and-return: the cancel signal and the disposal task are issued before
+   * this returns, but the child may keep running until it observes the signal.
+   * A live one-shot child is hard-stopped through its own Agent, whose run
+   * owner settles and releases it as usual; an absent target — including an
+   * already-settled run, a remote run, and an unknown id — is an accepted
+   * no-op, as is an already-closing epoch, whose teardown owns the release.
+   * A composition without a live Agent registry finds no one-shot target and
+   * accepts the no-op as well.
+   * @param targetSessionId - the durable child session id to kill.
+   * @param authority - the human direct-parent address claiming ownership.
+   * @throws {SubagentError} `UNAUTHORIZED` when the claimed parent does not own
+   *   a live target.
+   */
+  kill(targetSessionId: SessionId, authority: SubagentKillAuthority): void {
+    if (this.continuations?.kill(targetSessionId, authority) === true) return
+    const agent = this.ctx.get('agents')?.get(targetSessionId)
+    if (agent === undefined) return
+    const header = agent.session.header
+    if (header.origin !== 'subagent' || header.parentSession !== authority.parentSessionId) {
+      throw new SubagentError(
+        `subagent "${targetSessionId}" belongs to another parent session`,
+        'UNAUTHORIZED',
+      )
+    }
+    agent.cancel({ kind: 'user' }, { keepInbox: false })
   }
 
   /**

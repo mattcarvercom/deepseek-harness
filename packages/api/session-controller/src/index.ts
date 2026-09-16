@@ -40,6 +40,8 @@ import type {
   SessionFollowRequest,
   SessionForkRequest,
   SessionForkValue,
+  SessionKillSubagentRequest,
+  SessionKillSubagentValue,
   SessionListRequest,
   SessionListValue,
   SessionOpenWorkspacePathRequest,
@@ -396,6 +398,19 @@ export class SessionController extends TypertRemoteService {
   @Remote('cancel')
   cancel(request: SessionCancelRequest): SessionCancelValue {
     return this.commands.cancel(request)
+  }
+
+  /**
+   * Kill one live subagent child of the addressed session: its current turn
+   * is cancelled, its pending inbox work is durably discarded, and a resident
+   * continuable child's residency epoch is closed. An absent child — including
+   * an already-settled one — is an accepted no-op.
+   * @param request - the addressed parent session and the durable child session to kill.
+   * @returns acknowledgement that the kill signal was admitted, not that the child is quiescent.
+   */
+  @Remote('killSubagent')
+  killSubagent(request: SessionKillSubagentRequest): SessionKillSubagentValue {
+    return this.commands.killSubagent(request)
   }
 
   /**

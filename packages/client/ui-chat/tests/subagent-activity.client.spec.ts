@@ -10,7 +10,7 @@ import {
 import type {} from '@deepseek-ai/dsh-tool-subagent/types'
 import type { SubagentActivityFact, SubagentActivityMap } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { SubagentActivityKind } from '@deepseek-ai/dsh-subagent/client'
-import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   SubagentActivityFeed, applySubagentActivity, rebuildSubagentActivity,
 } from '../src/client/subagent-activity.ts'
@@ -24,8 +24,15 @@ const activity = (
   kind: SubagentActivityKind,
   label: string,
   provider = 'dsh',
+  childSessionId?: string,
 ): SessionEvent =>
-  at(seq, { type: 'subagent/activity', data: { callId, provider, kind, label } })
+  at(seq, {
+    type: 'subagent/activity',
+    data: {
+      callId, provider, kind, label,
+      ...(childSessionId !== undefined ? { childSessionId } : {}),
+    },
+  })
 
 const toolResult = (seq: number, callId: string): SessionEvent =>
   at(seq, { type: 'tool/result', data: { message: { source: { callId } } } })
@@ -49,14 +56,43 @@ const chunk = (seq: number): SessionEventLikeEntry =>
 
 const t = (seq: number): number => 1_700_000_000_000 + seq
 
-const fact = (at: number, kind: SubagentActivityKind, label: string, provider = 'dsh'): SubagentActivityFact =>
-  ({ at, kind, label, provider })
+const fact = (at: number, kind: SubagentActivityKind, label: string, provider = 'dsh', childSessionId?: string): SubagentActivityFact =>
+  ({
+    at, kind, label, provider,
+    ...(childSessionId !== undefined ? { childSessionId: childSessionId as SessionId } : {}),
+  })
 
 describe('applySubagentActivity', () => {
   it('upserts an activity fact under the delegating call id', () => {
     const map = {}
     expect(applySubagentActivity(map, entry(activity(1, 'c1', 'tool', 'Running bash', 'dsh')))).toBe(true)
     expect(map).toEqual({ c1: { at: t(1), kind: 'tool', label: 'Running bash', provider: 'dsh' } })
+  })
+
+  it('upserts a latched local child session id onto the fact', () => {
+    const map = {}
+    expect(applySubagentActivity(map, entry(activity(1, 'c1', 'tool', 'Running bash', 'dsh', 'child-1')))).toBe(true)
+    expect(map).toStrictEqual({ c1: { at: t(1), kind: 'tool', label: 'Running bash', provider: 'dsh', childSessionId: 'child-1' } })
+  })
+
+  it('keeps the child id key absent for an unlatched fact', () => {
+    const map = {}
+    expect(applySubagentActivity(map, entry(activity(1, 'c1', 'tool', 'Running bash')))).toBe(true)
+    expect(map).toStrictEqual({ c1: { at: t(1), kind: 'tool', label: 'Running bash', provider: 'dsh' } })
+  })
+
+  it('treats a moved or dropped child id as a changed fact', () => {
+    // Latched → different id: the latch rewrites the fact even when nothing else moved.
+    let map: SubagentActivityMap = { c1: fact(t(1), 'tool', 'Running bash', 'dsh', 'child-1') }
+    expect(applySubagentActivity(map, entry(activity(1, 'c1', 'tool', 'Running bash', 'dsh', 'child-2')))).toBe(true)
+    expect(map).toStrictEqual({ c1: { at: t(1), kind: 'tool', label: 'Running bash', provider: 'dsh', childSessionId: 'child-2' } })
+    // Latched → unlatched and unlatched → latched are changes too.
+    map = { c1: fact(t(1), 'tool', 'Running bash', 'dsh', 'child-1') }
+    expect(applySubagentActivity(map, entry(activity(1, 'c1', 'tool', 'Running bash')))).toBe(true)
+    expect(map).toStrictEqual({ c1: { at: t(1), kind: 'tool', label: 'Running bash', provider: 'dsh' } })
+    map = { c1: fact(t(1), 'tool', 'Running bash') }
+    expect(applySubagentActivity(map, entry(activity(1, 'c1', 'tool', 'Running bash', 'dsh', 'child-1')))).toBe(true)
+    expect(map).toStrictEqual({ c1: { at: t(1), kind: 'tool', label: 'Running bash', provider: 'dsh', childSessionId: 'child-1' } })
   })
 
   it('leaves an identical fact untouched', () => {
@@ -109,6 +145,18 @@ describe('rebuildSubagentActivity', () => {
 
   it('rebuilds an empty window', () => {
     expect(rebuildSubagentActivity([])).toEqual({})
+  })
+
+  it('carries a latched child id through the fold until the call settles', () => {
+    const entries = [
+      entry(activity(2, 'c1', 'output', 'Producing', 'dsh', 'child-1')),
+      entry(activity(3, 'c1', 'tool', 'Running bash', 'dsh', 'child-1')),
+      entry(toolResult(4, 'c1')),
+      entry(activity(5, 'c2', 'tool', 'Running read', 'dsh', 'child-2')),
+    ]
+    expect(rebuildSubagentActivity(entries)).toStrictEqual({
+      c2: { at: t(5), kind: 'tool', label: 'Running read', provider: 'dsh', childSessionId: 'child-2' },
+    })
   })
 })
 

@@ -349,6 +349,19 @@ export class Session implements SessionFace {
   }
 
   /**
+   * Kill one live subagent child of this session: the child's current turn is
+   * cancelled, its pending inbox work is durably discarded, and a resident
+   * continuable child's residency epoch is closed. Failures are returned, not
+   * stored: this is a control operation on a child, not on this session's own
+   * turn, so the caller owns any error display.
+   * @param childSessionId - the durable child session to kill.
+   * @returns the kill result.
+   */
+  async killSubagent(childSessionId: SessionId): Promise<RemoteResult<{ accepted: true }>> {
+    return this.remote.session.killSubagent({ sessionId: this.sessionId, childSessionId })
+  }
+
+  /**
    * Rename: contract session.rename 1:1. On success settle the 'title'
    * projection cell from the response's `{title, seq}` under the store's
    * higher-seq-wins rule (the push frame arriving later is a no-op replay),

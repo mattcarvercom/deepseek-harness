@@ -161,6 +161,9 @@ export interface ChatViewInjected {
   cancel: () => void
   /** Queue one text prompt as the next turn. */
   prompt: (text: string) => void
+  /** Kill a local subagent child by its durable session id; a failed kill stays
+   *  retryable because the child's activity fact keeps the pill's action mounted. */
+  killChild: (childSessionId: SessionId) => void
 }
 
 /** Full Chat view props. */

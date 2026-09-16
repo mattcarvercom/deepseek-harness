@@ -6,7 +6,8 @@
  * calls own a plain Task, while continuable calls use
  * `ctx.subagents.startContinuable()`. One-shot calls also record the live
  * child's coarse activity phase as throttled `subagent/activity` events on
- * the calling session for in-flight UI phase display.
+ * the calling session for in-flight UI phase display, carrying the child's
+ * durable session id for in-process runs so the client can kill it.
  * @module @deepseek-ai/dsh-tool-subagent
  */
 
@@ -19,7 +20,7 @@ import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { SessionSeq } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEventMap, SessionId } from '@deepseek-ai/dsh-session'
 import {
   assertSubagentMaxDepth,
   parentAgentOptionsForDelegation,
@@ -339,7 +340,9 @@ function renderRecordingError(error: unknown): string {
  * appends `subagent/activity` records to the calling parent Session on the
  * first observation, each phase change, and the heartbeat while a phase
  * persists; an append failure warns once and disables emission for the rest
- * of the call without affecting the run.
+ * of the call without affecting the run. When the child's durable session id
+ * is latched (in-process runs only), every subsequent record carries it as
+ * the kill target the parent UI reaches; the key stays absent otherwise.
  * @param session - the calling parent Session that receives the records.
  * @param logger - plugin logger for the failure diagnostic.
  * @param record - the stable per-call identity and display label.
@@ -351,6 +354,8 @@ function createSubagentActivityRecorder(
 ): {
   /** One provider observation; a no-op after disable or dispose. */
   readonly onActivity: (kind: SubagentActivityKind) => void
+  /** Latch the resolved local child's durable session id onto later records. */
+  readonly setChildSession: (childSessionId: SessionId) => void
   /** Drop the per-call state; further observations are ignored. */
   readonly dispose: () => void
 } {
@@ -360,6 +365,7 @@ function createSubagentActivityRecorder(
     event: Event,
     value: SessionEventMap[Event],
   ) => void
+  let childSessionId: SessionId | undefined
   let last: { readonly kind: SubagentActivityKind; readonly at: number } | undefined
   let disabled = false
   return {
@@ -368,13 +374,22 @@ function createSubagentActivityRecorder(
       const now = Date.now()
       if (last !== undefined && last.kind === kind && now - last.at < ACTIVITY_HEARTBEAT_MS) return
       try {
-        append('subagent/activity', { ...record, kind })
+        append('subagent/activity', {
+          ...record,
+          // The key is present only for latched local runs; omitting it for
+          // remote runs keeps the payload key truly absent in the log.
+          ...childSessionId !== undefined ? { childSessionId } : {},
+          kind,
+        })
         last = { kind, at: now }
       } catch (error: unknown) {
         // Observation only: disable recording and leave the run alone.
         disabled = true
         logger.warn(`tool-subagent: stopped recording subagent activity after append failed: ${renderRecordingError(error)}`)
       }
+    },
+    setChildSession(id) {
+      childSessionId = id
     },
     dispose() {
       last = undefined
@@ -643,6 +658,16 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
               run: () => {
                 const controller = new AbortController()
                 const start = runtimeCtx.subagents.start(config.provider, { ...request, signal: controller.signal })
+                // Latch the child's durable session id once start resolves — a
+                // local run's id is the kill target the parent UI reaches. The
+                // rejection arm names a startup failure, which settleStart
+                // already reports as the job outcome.
+                void start.then(
+                  (run) => {
+                    if (run.localAgent !== undefined) activity.setChildSession(run.id)
+                  },
+                  () => { /* startup failure — settleStart owns the report */ },
+                )
                 const done = settleStart(start, controller.signal)
                 // `settleRun` disposes the run before it resolves, so no
                 // observation can outlive the job settlement.
@@ -663,6 +688,11 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
             ...request,
             signal: exec.signal,
           })
+          if (run.localAgent !== undefined) {
+            // A local run's id is the child's durable session — the kill
+            // target the parent UI reaches.
+            activity.setChildSession(run.id)
+          }
           try {
             return await settleForegroundRun(run)
           } finally {

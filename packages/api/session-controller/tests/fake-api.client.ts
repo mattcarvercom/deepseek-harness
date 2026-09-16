@@ -147,6 +147,8 @@ export class FakeApiClient {
     () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, data: 'AA==' }))
   onUpdateQueue: (payload: unknown) => Promise<RemoteResult<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onCancel: (payload: unknown) => Promise<RemoteResult<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
+  onKillSubagent: (payload: unknown) => Promise<RemoteResult<{ accepted: true }>> =
+    () => Promise.resolve(ok({ accepted: true as const }))
   onOpenWorkspacePath: (payload: unknown) => Promise<RemoteResult<{ opened: true }>> =
     () => Promise.resolve(ok({ opened: true as const }))
 
@@ -236,6 +238,7 @@ export class FakeApiClient {
         attachment: payload => this.record('session.attachment', payload, this.onAttachment(payload)),
         updateQueue: payload => this.record('session.updateQueue', payload, this.onUpdateQueue(payload)),
         cancel: payload => this.record('session.cancel', payload, this.onCancel(payload)),
+        killSubagent: payload => this.record('session.killSubagent', payload, this.onKillSubagent(payload)),
         openWorkspacePath: payload => this.record(
           'session.openWorkspacePath',
           payload,

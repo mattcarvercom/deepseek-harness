@@ -69,6 +69,13 @@ export type SubagentInterruptAuthority =
   | { readonly kind: 'user'; readonly parentSessionId: SessionId }
   | { readonly kind: 'ancestor'; readonly agent: Agent }
 
+/**
+ * Authority under which one kill request is admitted: the durable direct-parent
+ * address a human client presented. Kill has no model-authored (ancestor)
+ * consumer, so no kind tag is needed on the single admitted authority.
+ */
+export type SubagentKillAuthority = { readonly parentSessionId: SessionId }
+
 /** Options for one model-authored message between adjacent Agents. */
 export interface SubagentSendMessageOptions {
   /** Caller cancellation, owning the operation only until inbox acceptance. */

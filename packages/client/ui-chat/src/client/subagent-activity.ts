@@ -25,7 +25,7 @@ export function applySubagentActivity(
   if (entry.type !== 'event') return false
   switch (entry.event.type) {
     case 'subagent/activity': {
-      const { callId, kind, label, provider } = entry.event.data
+      const { callId, kind, label, provider, childSessionId } = entry.event.data
       const at = entry.event.time
       const current = map[callId]
       if (
@@ -34,10 +34,16 @@ export function applySubagentActivity(
         && current.kind === kind
         && current.label === label
         && current.provider === provider
+        && current.childSessionId === childSessionId
       ) {
         return false
       }
-      map[callId] = { at, kind, label, provider }
+      // The key mirrors the event payload: present for latched local runs,
+      // absent otherwise (never an explicit undefined).
+      map[callId] = {
+        at, kind, label, provider,
+        ...childSessionId !== undefined ? { childSessionId } : {},
+      }
       return true
     }
     case 'tool/result': {

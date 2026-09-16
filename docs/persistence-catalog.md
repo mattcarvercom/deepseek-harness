@@ -789,7 +789,7 @@ Source: [`packages/core/session/src/types.ts:287`](../packages/core/session/src/
 'subagent/activity': SubagentActivityData
 ```
 
-Source: [`packages/subagent/tool-subagent/src/types.ts:32`](../packages/subagent/tool-subagent/src/types.ts)
+Source: [`packages/subagent/tool-subagent/src/types.ts:39`](../packages/subagent/tool-subagent/src/types.ts)
 
 <a id="subagentcatalog--log-only"></a>
 

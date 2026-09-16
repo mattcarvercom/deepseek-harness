@@ -11,7 +11,7 @@ import type {
 import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
 import {
-  ReasoningEffortId, assistantStreamChunks, createUserMessage, freezeMessage,
+  HarnessError, ReasoningEffortId, assistantStreamChunks, createUserMessage, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
@@ -41,6 +41,8 @@ import type {
   SessionCreateValue,
   SessionForkRequest,
   SessionForkValue,
+  SessionKillSubagentRequest,
+  SessionKillSubagentValue,
   SessionPromptRequest,
   SessionPromptValue,
   SessionRenameRequest,
@@ -61,6 +63,11 @@ interface SessionReadState {
 type PromptContentCandidate =
   | SessionPromptRequest['content'][number]
   | Extract<SessionUpdateQueueRequest['action'], { readonly kind: 'edit' }>['content'][number]
+
+/** The kill face of the optional subagent service, reached through the service store. */
+interface SubagentKillService {
+  kill(targetSessionId: SessionId, authority: { readonly parentSessionId: SessionId }): void
+}
 
 function hasPromptContent(content: readonly PromptContentCandidate[]): boolean {
   return content.some(part => part.type !== 'text' || part.text.trim().length > 0)
@@ -507,6 +514,35 @@ export class SessionCommandController {
       throw apiSessionSubagentOwnershipError(request.sessionId)
     }
     agent.cancel({ kind: 'user' }, { keepInbox: true })
+    return { accepted: true }
+  }
+
+  /**
+   * Kill one live subagent child of the addressed Session: the child's current
+   * turn is cancelled, its pending inbox work is discarded, and a resident
+   * continuable child's residency epoch is closed. An absent child — including
+   * an already-settled one — is an accepted no-op.
+   * @param request - the addressed parent session and the durable child session to kill.
+   * @returns acknowledgement that the kill signal was admitted, not that the child is quiescent.
+   */
+  killSubagent(request: SessionKillSubagentRequest): SessionKillSubagentValue {
+    const subagents = this.ctx.get('subagents') as SubagentKillService | undefined
+    if (subagents === undefined) {
+      throw new RemoteError('gateway/internal', 'subagent service is not mounted', {})
+    }
+    try {
+      subagents.kill(request.childSessionId, { parentSessionId: request.sessionId })
+    } catch (error: unknown) {
+      if (error instanceof HarnessError && error.code === 'UNAUTHORIZED') {
+        throw new RemoteError(
+          'subagent/unauthorized',
+          'subagent does not belong to this parent',
+          { childSessionId: request.childSessionId },
+          { cause: error },
+        )
+      }
+      throw new RemoteError('gateway/internal', 'subagent kill failed', {}, { cause: error })
+    }
     return { accepted: true }
   }
 

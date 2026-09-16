@@ -49,6 +49,7 @@ import type {
   ContinuableStart,
   ContinuableStartSpec,
   SubagentInterruptAuthority,
+  SubagentKillAuthority,
   SubagentSendMessageOptions,
 } from './types.ts'
 
@@ -331,6 +332,20 @@ export class SubagentContinuationManager {
    */
   interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void {
     this.activations.interrupt(targetSessionId, authority)
+  }
+
+  /**
+   * Kill one live continuable child: hard-stop its turn, discard its pending
+   * inbox work, and close its residency epoch. Fire-and-return like
+   * {@link interrupt}: the cancel signal and the disposal task are issued
+   * before this returns, and an absent or already-closing target is an
+   * accepted no-op after authority checks.
+   * @param targetSessionId - the durable child session id to kill.
+   * @param authority - the human parent address claiming ownership of the target.
+   * @returns whether a live Activation answered the kill.
+   */
+  kill(targetSessionId: SessionId, authority: SubagentKillAuthority): boolean {
+    return this.activations.kill(targetSessionId, authority)
   }
 
   /** Deliver one resident continuable child's message to its live direct parent. */
