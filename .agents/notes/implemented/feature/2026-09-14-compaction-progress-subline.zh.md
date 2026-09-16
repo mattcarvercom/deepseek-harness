@@ -1,4 +1,4 @@
-# Agent Note: 深度求索胶囊下的压缩进度副标题
+# Agent Note: 深度求索胶囊上的压缩进度副标题
 
 Status: implemented
 
@@ -12,7 +12,7 @@ Status: implemented
 
 压缩的 Conversation 节点定义现在通过既有的 Location 数据通道，把开放中自动压缩的 `compaction/start` 信封时间发布到所属回合：[compaction.ts](../../../../packages/client/ui-chat/src/client/conversation-nodes/compaction.ts) 的 `buildLocationData` 返回一个回合范围的 `compaction` 值——`ConversationTurnDataMap` 上扩展合并的键，值为 epoch 毫秒的 `number`——在 `compaction/start` 时设置、跨 `compaction/summary` 保留、在 `compaction/end`（无论是否带错误）时清除。手动压缩（携带 `sourceCommandId`）与无回合压缩（`turn: null`）不发布任何值：定义的 `match` 拒绝它们，因此它们不拥有 Context，手动路径保留其命令行呈现。
 
-[ChatView.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatView.tsx) 的 `TurnStatus` 通过 `useTurnDataValue` 读取运行中回合数据 store 里的该值，把它渲染为胶囊下方的一行灰色副标题：`chat.compacting` 文案（`Compacting conversation...` / `正在压缩对话...`）加一个锚定压缩开始时间的独立计时。副标题计时不带 15 秒门槛——压缩才是有意义的状态，那个延迟是为了让普通胶囊在短回合上保持安静——主胶囊计时则保留该门槛。`role="status"` 实时区域从胶囊移到两行分组上，副标题出现时会被播报；两个计时都保持 `aria-hidden`。文案位于聊天 locale 字典中。
+[ChatView.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatView.tsx) 的 `TurnStatus` 通过 `useTurnDataValue` 读取运行中回合数据 store 里的该值，把它渲染为 pill 阶段副标题的压缩分支：`chat.compacting` 文案（`Compacting conversation...` / `正在压缩对话...`）加一个锚定压缩开始时间的独立计时。副标题计时不带 15 秒门槛——压缩才是有意义的状态，那个延迟是为了让普通胶囊在短回合上保持安静——主胶囊计时则保留该门槛。`role="status"` 实时区域位于 pill 分组上，副标题出现时会被播报；两个计时都保持 `aria-hidden`。文案位于聊天 locale 字典中。
 
 ## 考虑过的替代方案
 
@@ -34,5 +34,6 @@ Status: implemented
 
 ## 相关
 
-- [回合耗时标签增加小时单位](2026-09-09-turn-duration-hour-unit.zh.md)——本副标题所在其下的主计时。
+- [单行深度求索 pill](2026-09-15-single-line-deep-diving-pill.zh.md)——取代本 note 两行布局的单行呈现；上述副标题机制不变。
+- [回合耗时标签增加小时单位](2026-09-09-turn-duration-hour-unit.zh.md)——与本副标题并排的主计时。
 - [排队手动压缩](2026-07-30-queued-manual-compaction.zh.md)——有意留在范围之外的手动路径。

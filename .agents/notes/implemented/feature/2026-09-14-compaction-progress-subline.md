@@ -1,4 +1,4 @@
-# Agent Note: Compaction progress subline under the deep-diving pill
+# Agent Note: Compaction progress subline on the deep-diving pill
 
 Status: implemented
 
@@ -12,7 +12,7 @@ While a turn is running, the Web chat shows one indicator: the `Deep diving...` 
 
 The compaction Conversation node definition publishes the open automatic compaction's `compaction/start` envelope time to the owning turn through the existing Location-data channel: `buildLocationData` in [compaction.ts](../../../../packages/client/ui-chat/src/client/conversation-nodes/compaction.ts) returns a turn-scoped `compaction` value — an epoch-ms `number` under a merge-extended `ConversationTurnDataMap` key — set on `compaction/start`, retained across `compaction/summary`, and cleared on `compaction/end` with or without an error. Manual compactions (carrying a `sourceCommandId`) and turn-less compactions (`turn: null`) publish nothing: the definition's `match` rejects them, so they own no Context, and the manual path keeps its command-row presentation.
 
-`TurnStatus` in [ChatView.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatView.tsx) reads the value through `useTurnDataValue` on the running turn's data store and renders it as a grey subline under the pill: the `chat.compacting` copy (`Compacting conversation...` / `正在压缩对话...`) plus its own clock anchored to the compaction start. The subline clock carries no 15-second gate — compaction is the interesting state, and the delay exists to keep the ordinary pill quiet on short turns — while the main pill clock keeps that gate. The `role="status"` live region moves from the pill to the two-line group so the subline's appearance is announced; both clocks stay `aria-hidden`. The copy lives in the chat locale dictionary.
+`TurnStatus` in [ChatView.tsx](../../../../packages/client/ui-chat/src/client/chat/ChatView.tsx) reads the value through `useTurnDataValue` on the running turn's data store and renders it as the compaction arm of the pill's phase subline: the `chat.compacting` copy (`Compacting conversation...` / `正在压缩对话...`) plus its own clock anchored to the compaction start. The subline clock carries no 15-second gate — compaction is the interesting state, and the delay exists to keep the ordinary pill quiet on short turns — while the main pill clock keeps that gate. The `role="status"` live region sits on the pill group, so the subline's appearance is announced; both clocks stay `aria-hidden`. The copy lives in the chat locale dictionary.
 
 ## Alternatives considered
 
@@ -34,5 +34,6 @@ The `conversation-node-definitions` spec covers publishing on start, retaining a
 
 ## Related
 
-- [Turn duration labels gain an hour unit](2026-09-09-turn-duration-hour-unit.md) — the main clock this subline sits beneath.
+- [The single-line deep-diving pill](2026-09-15-single-line-deep-diving-pill.md) — the one-line presentation that replaces this note's two-line layout; the subline mechanism above stands unchanged.
+- [Turn duration labels gain an hour unit](2026-09-09-turn-duration-hour-unit.md) — the main clock this subline sits beside.
 - [Queued manual compaction](2026-07-30-queued-manual-compaction.md) — the manual path that deliberately stays out of scope.

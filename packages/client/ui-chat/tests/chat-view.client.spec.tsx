@@ -2374,7 +2374,7 @@ describe('ChatView', () => {
     expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
     expect(h.toolOwners[0]?.block).toMatchObject({ callId: 'r1', argsRaw: '{"command":"cmd-r1"}' })
     // The pill subline names the newest running tool; the cancel button is always present.
-    expect(view.getByRole('status').textContent).toBe('深度求索中...正在运行 bash取消')
+    expect(view.getByRole('status').textContent).toBe('深度求索中... · 正在运行 bash')
   })
 
   it('keeps the Tool renderer mounted when a running call settles into log order', () => {
@@ -2434,7 +2434,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     // Freshly mounted (as after a reload) yet already past the 15s gate.
     const status = view.getByRole('status')
-    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒等待首个 token…取消$/)
+    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒 · 等待首个 token…$/)
     expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull()
     act(() => {
       h.setSession({ queue: [{
@@ -2446,7 +2446,7 @@ describe('ChatView', () => {
         text: 'also',
       }] })
     })
-    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒等待首个 token…取消$/)
+    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒 · 等待首个 token…$/)
   })
 
   it('the running clock reads hours once the turn passes an hour', () => {
@@ -2457,7 +2457,7 @@ describe('ChatView', () => {
       { running: true },
     )
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.getByRole('status').textContent).toMatch(/^深度求索中\.\.\.1小时05分0\d秒等待首个 token…取消$/)
+    expect(view.getByRole('status').textContent).toMatch(/^深度求索中\.\.\.1小时05分0\d秒 · 等待首个 token…$/)
   })
 
   it('anchors the running clock to the outline when the window lacks turn/start', () => {
@@ -2467,7 +2467,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     // Freshly mounted (as after a reload) yet already past the 15s clock gate:
     // the whole-log outline carries the boundary's time, so the elapsed is real.
-    expect(view.getByRole('status').textContent).toMatch(/^深度求索中\.\.\.2分0\d秒等待首个 token…取消$/)
+    expect(view.getByRole('status').textContent).toMatch(/^深度求索中\.\.\.2分0\d秒 · 等待首个 token…$/)
   })
 
   it('shows the compaction subline with its own clock while the running turn compacts', () => {
@@ -2484,14 +2484,15 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     const status = view.getByRole('status')
     // The main pill is still under its 15s clock gate, but the subline shows from the start.
-    expect(status.textContent).toMatch(/^深度求索中\.\.\.正在压缩对话\.\.\.1分0\d秒取消$/)
-    expect(status.querySelectorAll('[aria-hidden="true"]')).toHaveLength(1)
+    expect(status.textContent).toMatch(/^深度求索中\.\.\. · 正在压缩对话\.\.\.1分0\d秒$/)
+    // The separator and the subline clock are the two aria-hidden spans; the main clock is gated off.
+    expect(status.querySelectorAll('[aria-hidden="true"]')).toHaveLength(2)
     act(() => {
       data.remove('compaction')
       data.publish()
     })
-    expect(status.textContent).toBe('深度求索中...等待首个 token…取消')
-    expect(status.querySelector('[aria-hidden="true"]')).toBeNull()
+    expect(status.textContent).toBe('深度求索中... · 等待首个 token…')
+    expect(status.querySelector('[aria-hidden="true"]')?.textContent).toBe(' · ')
   })
 
   it('keeps the main running clock next to the compaction subline once past the 15s gate', () => {
@@ -2507,7 +2508,7 @@ describe('ChatView', () => {
     const h = makeHarness({}, { running: true }, base)
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByRole('status').textContent)
-      .toMatch(/^深度求索中\.\.\.2分0\d秒正在压缩对话\.\.\.\d秒取消$/)
+      .toMatch(/^深度求索中\.\.\.2分0\d秒 · 正在压缩对话\.\.\.\d秒$/)
   })
 
   it('shows the bounded retry subline with its clamped countdown', () => {
@@ -2517,7 +2518,7 @@ describe('ChatView', () => {
     )
     const view = render(<h.ChatView {...h.props} />)
     // The fixture's logged retry time is far in the past, so the countdown clamps to zero.
-    expect(pillStatus(view).textContent).toBe('深度求索中...正在重试 1/2 · 0秒 · 连接被重置取消')
+    expect(pillStatus(view).textContent).toBe('深度求索中... · 正在重试 1/2 · 0秒 · 连接被重置')
   })
 
   it('shows the unlimited retry subline without a maximum', () => {
@@ -2534,7 +2535,7 @@ describe('ChatView', () => {
       { running: true },
     )
     const view = render(<h.ChatView {...h.props} />)
-    expect(pillStatus(view).textContent).toBe('深度求索中...正在重试 3 · 0秒 · 连接被重置取消')
+    expect(pillStatus(view).textContent).toBe('深度求索中... · 正在重试 3 · 0秒 · 连接被重置')
   })
 
   it('shows the subagent subline with an inspect-log action', () => {
@@ -2547,7 +2548,9 @@ describe('ChatView', () => {
     )
     h.setActivity({ s1: { kind: 'output', at: 1_234, label: 'child-a', provider: 'dsh' } })
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.getByRole('status').textContent).toBe('深度求索中...等待子代理 child-a取消查看日志')
+    expect(view.getByRole('status').textContent).toBe('深度求索中... · 等待子代理 child-a')
+    // The action is icon-only: the glyph carries no text; the name is the aria label.
+    expect(view.getByRole('button', { name: '查看日志' }).textContent).toBe('')
     fireEvent.click(view.getByRole('button', { name: '查看日志' }))
     expect(h.openView).toHaveBeenCalledWith('trajectory', 's1')
   })
@@ -2563,7 +2566,8 @@ describe('ChatView', () => {
     const childId = 'child-session-1' as SessionId
     h.setActivity({ s1: { kind: 'output', at: 1_234, label: 'child-a', provider: 'dsh', childSessionId: childId } })
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.getByRole('status').textContent).toBe('深度求索中...等待子代理 child-a取消查看日志终止子代理')
+    expect(view.getByRole('status').textContent).toBe('深度求索中... · 等待子代理 child-a')
+    expect(view.getByRole('button', { name: '终止子代理' }).textContent).toBe('')
     fireEvent.click(view.getByRole('button', { name: '终止子代理' }))
     expect(h.props.killChild).toHaveBeenCalledWith('child-session-1')
   })
@@ -2577,7 +2581,7 @@ describe('ChatView', () => {
       { running: true },
     )
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.getByRole('status').textContent).toBe('深度求索中...正在运行 bash取消')
+    expect(view.getByRole('status').textContent).toBe('深度求索中... · 正在运行 bash')
   })
 
   it('follows the partial assistant tail between generating and thinking', () => {
@@ -2589,11 +2593,11 @@ describe('ChatView', () => {
       { running: true },
     )
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.getByRole('status').textContent).toBe('深度求索中...生成中…取消')
+    expect(view.getByRole('status').textContent).toBe('深度求索中... · 生成中…')
     act(() => {
       h.setChat({ partial: { turn: 1, step: 1, blocks: [{ kind: 'reasoning', text: 'think' }] } })
     })
-    expect(view.getByRole('status').textContent).toBe('深度求索中...思考中…取消')
+    expect(view.getByRole('status').textContent).toBe('深度求索中... · 思考中…')
   })
 
   it('names a live background job when nothing else is streaming', () => {
@@ -2603,7 +2607,7 @@ describe('ChatView', () => {
     )
     h.setJobs([job('test:web', 'running', 1_000)])
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.getByRole('status').textContent).toBe('深度求索中...等待后台任务 test:web取消')
+    expect(view.getByRole('status').textContent).toBe('深度求索中... · 等待后台任务 test:web')
   })
 
   it('lets a running tool outrank a live background job', () => {
@@ -2616,7 +2620,7 @@ describe('ChatView', () => {
     )
     h.setJobs([job('test:web', 'running', 1_000)])
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.getByRole('status').textContent).toBe('深度求索中...正在运行 bash取消')
+    expect(view.getByRole('status').textContent).toBe('深度求索中... · 正在运行 bash')
   })
 
   it('lets a streaming partial outrank a live background job', () => {
@@ -2629,7 +2633,7 @@ describe('ChatView', () => {
     )
     h.setJobs([job('test:web', 'running', 1_000)])
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.getByRole('status').textContent).toBe('深度求索中...生成中…取消')
+    expect(view.getByRole('status').textContent).toBe('深度求索中... · 生成中…')
   })
 
   it('picks the newest live job and ignores settled ones', () => {
@@ -2643,7 +2647,7 @@ describe('ChatView', () => {
       job('done-job', 'completed', 3_000),
     ])
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.getByRole('status').textContent).toBe('深度求索中...等待后台任务 new-job取消')
+    expect(view.getByRole('status').textContent).toBe('深度求索中... · 等待后台任务 new-job')
   })
 
   it('shows the neutral working subline once the turn has visible assistant output', () => {
@@ -2655,7 +2659,7 @@ describe('ChatView', () => {
       { running: true },
     )
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.getByRole('status').textContent).toBe('深度求索中...工作中…取消')
+    expect(view.getByRole('status').textContent).toBe('深度求索中... · 工作中…')
   })
 
   it('keeps the honest first-token subline for a tool-only assistant step', () => {
@@ -2669,7 +2673,8 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     // No visible assistant content yet, so the first-token claim is honest even
     // though a tool result has settled (the re-run button earns its dialog).
-    expect(view.getByRole('status').textContent).toBe('深度求索中...等待首个 token…取消取消并重试')
+    expect(view.getByRole('status').textContent).toBe('深度求索中... · 等待首个 token…')
+    expect(view.getByRole('button', { name: '取消并重试' }).textContent).toBe('')
   })
 
   it('cancels the running turn from the pill action', () => {
@@ -2693,7 +2698,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     // The settled assistant step made visible output, so the fallback is the
     // neutral working label, not a first-token claim.
-    expect(view.getByRole('status').textContent).toBe('深度求索中...工作中…取消取消并重试')
+    expect(view.getByRole('status').textContent).toBe('深度求索中... · 工作中…')
     await act(async () => {
       fireEvent.click(view.getByRole('button', { name: '取消并重试' }))
     })

@@ -27,7 +27,8 @@
   - text: Think The user wants me to ask them a checkpoint question first, then continue with whatever they interject. Let me do exactly that.
 - status:
   - text: Deep diving... Thinking…
-  - button "Cancel"
+  - button "Cancel":
+    - img
 - text: "Interjection: include the word BANANA in your final reply."
 - button "Copy":
   - img

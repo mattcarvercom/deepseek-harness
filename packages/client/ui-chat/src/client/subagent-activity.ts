@@ -82,12 +82,12 @@ export class SubagentActivityFeed {
   private map: SubagentActivityMap = {}
   private revision = -1
   private disposed = false
-  private disposeFeed: () => void = () => {}
+  private unsubscribe: () => void
 
   constructor(feed: SessionEventSource) {
     this.store = createSnapshotStore(this.map)
     this.replace(feed.getSnapshot())
-    this.disposeFeed = feed.subscribe(() => {
+    this.unsubscribe = feed.subscribe(() => {
       this.accept(feed.getSnapshot())
     })
   }
@@ -96,7 +96,7 @@ export class SubagentActivityFeed {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
-    this.disposeFeed()
+    this.unsubscribe()
   }
 
   private replace(window: SessionEventWindow): void {

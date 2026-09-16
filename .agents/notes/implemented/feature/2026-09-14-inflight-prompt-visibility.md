@@ -36,6 +36,6 @@ The `pending-inbox-prompts` spec pins the fold arithmetic: admission surfacing, 
 
 ## Related
 
-- [Compaction progress subline under the deep-diving pill](2026-09-14-compaction-progress-subline.md) — the sibling user-visible indicator on the same branch.
+- [Compaction progress subline on the deep-diving pill](2026-09-14-compaction-progress-subline.md) — the sibling user-visible indicator on the same branch.
 - [Local submission echoes](../../archived/architecture/2026-08-26-local-submission-echoes.md) — the echo mechanism whose retirement latch this bubble reuses (archived).
 - [Human inbox controls for continuable subagents](2026-08-27-continuable-subagent-human-inbox-control.md) — the same inbox projection that drives the queue controls this bubble dedupes against.

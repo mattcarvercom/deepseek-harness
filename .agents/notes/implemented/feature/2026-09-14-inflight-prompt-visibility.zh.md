@@ -36,6 +36,6 @@ Session 客户端在它所持有的窗口上维护一个纯内存的收件箱折
 
 ## 相关
 
-- [压缩进度子行(深潜徽章下方)](2026-09-14-compaction-progress-subline.zh.md) — 同一分支上的姊妹级用户可见指示。
+- [深度求索胶囊上的压缩进度副标题](2026-09-14-compaction-progress-subline.zh.md) — 同一分支上的姊妹级用户可见指示。
 - [本地提交回显](../../archived/architecture/2026-08-26-local-submission-echoes.md) — 本气泡复用的回显机制及其移除闩(已归档)。
 - [可续跑子代理的人工收件箱控制](2026-08-27-continuable-subagent-human-inbox-control.zh.md) — 与本气泡去重对象相同的队列控制所依据的同一份收件箱投影。

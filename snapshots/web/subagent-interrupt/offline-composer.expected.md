@@ -26,7 +26,8 @@
 - paragraph: partial
 - status:
   - text: Deep diving... Generating…
-  - button "Cancel"
+  - button "Cancel":
+    - img
 - list:
   - listitem:
     - text: Keep working until I stop you again.

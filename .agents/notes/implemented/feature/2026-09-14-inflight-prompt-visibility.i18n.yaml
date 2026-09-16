@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-14-inflight-prompt-visibility.md
-2026-09-14-inflight-prompt-visibility.md: 005d138f78149936fc1bcaf12e9a4c29c6689d40
-2026-09-14-inflight-prompt-visibility.zh.md: 4e25a692ffdb7b9428b854133e6c8f4e190e96e9
+2026-09-14-inflight-prompt-visibility.md: 7f79a171909627e39d864ed89681d101ad1b7299
+2026-09-14-inflight-prompt-visibility.zh.md: d1f223f1ccfa7eb5e18e57a6f5acfeac19f32469

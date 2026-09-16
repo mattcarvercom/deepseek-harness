@@ -24,7 +24,8 @@
 - paragraph: partial
 - status:
   - text: Deep diving... Generating…
-  - button "Cancel"
+  - button "Cancel":
+    - img
 - textbox "Message or run a task, / commands, @ files or sessions":
   - paragraph: Queue this follow-up while the current turn is running.
 - button "Add files or run commands":

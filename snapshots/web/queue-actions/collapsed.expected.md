@@ -24,7 +24,8 @@
 - paragraph: partial
 - status:
   - text: Deep diving... Generating…
-  - button "Cancel"
+  - button "Cancel":
+    - img
 - button "2 queued messages"
 - textbox "Cmd/Ctrl+Enter steers all queued messages"
 - button "Add files or run commands":

@@ -26,7 +26,8 @@
 - code: "const first: number = 1 const second = \"two\" let tail"
 - status:
   - text: Deep diving... Generating…
-  - button "Cancel"
+  - button "Cancel":
+    - img
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands":
   - img

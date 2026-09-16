@@ -6,7 +6,7 @@ import type {
   ConversationTimelineSnapshot, RenderMessageImages, TurnLocation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionSeq } from '@deepseek-ai/dsh-session/types'
-import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconChevronDownOutline14, IconCloseFill14, IconListPenOutline16, IconRefreshOutline16, IconStopFill16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionJob } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { ChatViewSlotProps, OpenFileOptions } from '../contract/slots.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
@@ -193,7 +193,7 @@ function assistantPhaseText(mode: 'first-token' | 'thinking' | 'generating', t: 
   return t('chat.pill.waitingFirstToken')
 }
 
-/** The phase subline under the pill: one localized line per phase arm. */
+/** The phase subline within the pill line: one localized line per phase arm. */
 function renderPillSubline(
   phase: PillPhase,
   compactionElapsedMs: number,
@@ -238,6 +238,23 @@ function renderPillSubline(
     case 'assistant':
       return <div className={css.turnStatusSubline}>{assistantPhaseText(phase.mode, t)}</div>
   }
+}
+
+/** An icon-only round action on the pill row: the glyph carries no name of
+ *  its own, so the accessible name comes from the localized action copy. */
+function PillIconButton({ label, icon, onClick }: {
+  /** The localized action copy: the button's accessible name. */
+  label: string
+  /** The design-system glyph inside the round target. */
+  icon: ReactNode
+  /** The action's click. */
+  onClick: () => void
+}) {
+  return (
+    <button type="button" className={css.turnStatusIconButton} aria-label={label} onClick={onClick}>
+      {icon}
+    </button>
+  )
 }
 
 /** Turn-level model activity label retained across first-token, tool, and streaming phases. */
@@ -290,6 +307,7 @@ function TurnStatus({ startTime, phase, rerun, onCancel, onRequestRerun, onInspe
   // Short turns keep the plain label; the clock only appears once the turn
   // has clearly been running for a while.
   const showClock = elapsedMs >= 15_000
+  const subline = renderPillSubline(phase, compactionElapsedMs, retryRemainingMs, t)
   return (
     <div className={css.turnStatusGroup} role="status" aria-live="polite">
       <div className={css.turnStatus}>
@@ -300,35 +318,18 @@ function TurnStatus({ startTime, phase, rerun, onCancel, onRequestRerun, onInspe
           </span>
         )}
       </div>
-      {renderPillSubline(phase, compactionElapsedMs, retryRemainingMs, t)}
+      <span className={css.turnStatusSeparator} aria-hidden>{t('chat.pill.separator')}</span>
+      {subline}
       <div className={css.turnStatusActions}>
-        <Button variant="outline" size="sm" className={css.turnStatusAction} onClick={onCancel}>
-          {t('cancel')}
-        </Button>
+        <PillIconButton label={t('cancel')} icon={<IconCloseFill14 size={14} />} onClick={onCancel} />
         {rerun !== undefined && (
-          <Button variant="outline" size="sm" className={css.turnStatusAction} onClick={onRequestRerun}>
-            {t('chat.action.cancelRerun')}
-          </Button>
+          <PillIconButton label={t('chat.action.cancelRerun')} icon={<IconRefreshOutline16 size={14} />} onClick={onRequestRerun} />
         )}
         {phase.kind === 'subagent' && (
-          <Button
-            variant="outline"
-            size="sm"
-            className={css.turnStatusAction}
-            onClick={() => { onInspect(phase.callId) }}
-          >
-            {t('chat.action.showLog')}
-          </Button>
+          <PillIconButton label={t('chat.action.showLog')} icon={<IconListPenOutline16 size={14} />} onClick={() => { onInspect(phase.callId) }} />
         )}
         {phase.kind === 'subagent' && onKillChild !== undefined && (
-          <Button
-            variant="outline"
-            size="sm"
-            className={css.turnStatusAction}
-            onClick={onKillChild}
-          >
-            {t('chat.action.killChild')}
-          </Button>
+          <PillIconButton label={t('chat.action.killChild')} icon={<IconStopFill16 size={14} />} onClick={onKillChild} />
         )}
       </div>
     </div>

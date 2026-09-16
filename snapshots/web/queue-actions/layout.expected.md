@@ -30,7 +30,8 @@
 - paragraph: partial
 - status:
   - text: Deep diving... Generating…
-  - button "Cancel"
+  - button "Cancel":
+    - img
 - region "To-dos":
   - button "To-dos 1 completed · 1 in progress"
 - img

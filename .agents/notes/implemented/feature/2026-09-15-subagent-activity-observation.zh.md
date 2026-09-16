@@ -44,7 +44,7 @@ pill 的经过时钟锚定在轮次的日志化启动时刻上：当 `turn/start
 ## 相关
 
 - [Subagent 运行活动看门狗](2026-09-15-subagent-run-activity-watchdog.zh.md) —— 同一运行上的孪生边界：看门狗让沉默的已发布运行失败；本 note 观察活着的运行。
-- [深度求索 pill 下的压缩进度 subline](2026-09-14-compaction-progress-subline.zh.md) —— pill subline 的先例；它的分支是本 note 阶段链的开头。
+- [深度求索胶囊上的压缩进度副标题](2026-09-14-compaction-progress-subline.zh.md) —— pill subline 的先例；它的分支是本 note 阶段链的开头。
 - [会话流中的在途 prompt 可见性](2026-09-14-inflight-prompt-visibility.zh.md) —— 共享运行轮次作用域的邻近轮次级折叠。
 - [Web 后台任务展示](2026-08-08-web-background-job-display.zh.md) —— pill 的 job 分支所读取的 job 视图。
 - [保留 ignorable 外部会话事件](../architecture/2026-08-30-retain-ignorable-external-session-events.zh.md) —— 规定这个新仅日志事件在未知构建上行为的"默认必读"规则。

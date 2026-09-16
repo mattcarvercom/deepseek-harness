@@ -24,7 +24,8 @@
 - paragraph: partial
 - status:
   - text: Deep diving... Generating…
-  - button "Cancel"
+  - button "Cancel":
+    - img
 - button "2 queued messages" [disabled] [expanded]
 - list:
   - listitem:

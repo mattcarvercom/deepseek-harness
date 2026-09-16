@@ -44,7 +44,7 @@ The tool spec pins the recorder's first-observation, phase-change, and heartbeat
 ## Related
 
 - [Subagent run activity watchdog](2026-09-15-subagent-run-activity-watchdog.md) — the sibling bound on the same run: the watchdog fails a silent published run; this note observes a live one.
-- [Compaction progress subline under the deep-diving pill](2026-09-14-compaction-progress-subline.md) — the pill-subline precedent; its arm opens this note's phase chain.
+- [Compaction progress subline on the deep-diving pill](2026-09-14-compaction-progress-subline.md) — the pill-subline precedent; its arm opens this note's phase chain.
 - [In-flight prompt visibility in the conversation flow](2026-09-14-inflight-prompt-visibility.md) — the neighboring turn-scoped fold sharing the running-turn scope.
 - [Web background-job display](2026-08-08-web-background-job-display.md) — the job views the pill's job arm reads.
 - [Retain ignorable external session events](../architecture/2026-08-30-retain-ignorable-external-session-events.md) — the required-on-read rule governing how this new log-only event behaves on unknown builds.
