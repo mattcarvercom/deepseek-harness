@@ -532,6 +532,7 @@ export class CodexAppServerWire {
   }
 
   private readonly onActivityTimeout = (): void => {
+    /* v8 ignore if -- fail() clears the one-shot timer and observeActivity re-arms only while one is pending, so the trip fires once. */
     if (this.activityTripped) return
     this.activityTripped = true
     this.failureDetail = `no app-server protocol activity for ${this.runActivityTimeoutMs}ms after the turn was submitted; last: ${this.lastActivity ?? 'none'}`

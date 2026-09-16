@@ -1743,6 +1743,98 @@ describe('automatic listener and loader composition', () => {
     expect(warnings).toContainEqual(expect.stringContaining('retrying from the replacement surface'))
   })
 
+  it('preserves the original overflow error when a durable prune leaves the surface over threshold', async () => {
+    const ctx = createContext(1_000)
+    const warnings: string[] = []
+    ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
+    void new ToolResultPruner(ctx, {
+      thresholdChars: 100,
+      headChars: 20,
+      tailChars: 10,
+    })
+    const compact = new TestCompactionEngine(ctx, {
+      thresholdRatio: 0.8,
+      retainTokens: 80,
+    })
+    const session = Session.create(SessionId('pruned-text'))
+    const callId = ToolCallId('pruned-text')
+    session.append('turn/start', { turn: 1 })
+    session.append('step/start', { turn: 1, step: 1 })
+    session.append('request/header', {
+      header: { config: { provider: MODEL, model: MODEL } },
+      reason: 'initial',
+    })
+    session.append('assistant/message', {
+      stream: [],
+      turn: 1,
+      step: 1,
+      message: createMessage({
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'analysis '.repeat(500) },
+          { type: 'tool-call', id: callId, name: 'bash', arguments: '{}' },
+        ],
+        source: {
+          kind: 'model',
+          ...{ provider: MODEL, model: MODEL },
+        },
+      }),
+    }, { surfaceOp: 'append' })
+    session.append('tool/call', { turn: 1, step: 1, callId, name: 'bash', arguments: '{}' })
+    session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId,
+        content: [{ type: 'text', text: 'X'.repeat(3_000) }],
+        isError: false,
+      }),
+      meta: { presentation: 'preserved' },
+    }, { surfaceOp: 'append' })
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('turn/start', { turn: 2 })
+
+    expect(await recover(ctx, agent(session, MODEL), overflow())).toBe(false)
+    expect(session.surface.replaceGeneration).toBe(1)
+    expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(false)
+    expect(compact.calls).toHaveLength(0)
+    expect(warnings).toContainEqual(
+      expect.stringContaining('remains at or above its pressure threshold'),
+    )
+  })
+
+  it('retries overflow recovery when the post-compaction capacity is unknown', async () => {
+    const ctx = createContext(10_000)
+    vi.spyOn(ctx.llm, 'resolveModelInfo').mockImplementation((provider, model) => Promise.resolve({
+      provider,
+      id: model,
+      name: model,
+    }))
+    void new TestCompactionEngine(ctx, {
+      thresholdRatio: 1,
+      retainTokens: 900,
+    })
+    const session = conversation(3)
+
+    expect(await recover(ctx, agent(session, MODEL), overflow())).toBe(true)
+    expect(session.surface.replaceGeneration).toBe(1)
+    expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(true)
+  })
+
+  it('retries overflow recovery when the post-compaction spec is invalid', async () => {
+    const ctx = createContext(10_000)
+    void new TestCompactionEngine(ctx, {
+      thresholdRatio: 0.5,
+      retainTokens: 5_000,
+    })
+    const session = conversation(3)
+
+    expect(await recover(ctx, agent(session, MODEL), overflow())).toBe(true)
+    expect(session.surface.replaceGeneration).toBe(1)
+    expect(session.snapshotEvents().some(event => event.type === 'compaction/summary')).toBe(true)
+  })
+
   it('lets cancellation win when summary throws after a durable prune', async () => {
     const ctx = createContext(10_000)
     const controller = new AbortController()

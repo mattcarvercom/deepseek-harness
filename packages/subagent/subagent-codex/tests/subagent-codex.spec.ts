@@ -2745,6 +2745,50 @@ describe('run lifecycle and quiescence', () => {
     await run.dispose()
     await ctx.fiber.dispose()
   })
+
+  it('warns through the provider logger on a frame that cannot belong to the run', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(LocalSubprocessRuntime)
+    const child = fakeChild()
+    vi.spyOn(ctx.subprocess, 'spawn').mockReturnValue(child.handle)
+    const warnings: string[] = []
+    ctx.logger.warn = ((message: unknown) => {
+      warnings.push(String(message))
+    }) as typeof ctx.logger.warn
+    await ctx.plugin(codex, {
+      env: {},
+      disposeGraceMs: 3_000,
+      handshakeTimeoutMs: DEFAULT_HANDSHAKE_TIMEOUT_MS,
+      runActivityTimeoutMs: 0,
+    })
+
+    const starting = ctx.subagents.start('codex', request())
+    const initialize = await child.peer.nextMethod('initialize')
+    child.peer.respond(initialize, { userAgent: 'codex-cli 0.153.4' })
+    await child.peer.nextMethod('initialized')
+    const threadStart = await child.peer.nextMethod('thread/start')
+    child.peer.respond(threadStart, { thread: { id: 'thread-1', ephemeral: true } })
+    const run = await starting
+    const turnStart = await child.peer.nextMethod('turn/start')
+    child.peer.respond(turnStart, { turn: { id: 'turn-1' } })
+    await nextTask()
+    child.peer.send(
+      { method: 'turn/started', params: { threadId: 'thread-2', turn: { id: 'turn-2' } } },
+      agentMessage('answer', 'final_answer'),
+      turnCompleted('completed'),
+    )
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'answer' }],
+      stopReason: 'completed',
+    })
+    expect(warnings).toContain(
+      'subagent-codex "codex": unassociated frame: turn/started referenced another thread: thread-2',
+    )
+    await run.dispose()
+    await ctx.fiber.dispose()
+  })
 })
 
 describe('disposeCodexChild', () => {

@@ -232,9 +232,14 @@ function createRunActivityWatchdog(
       timer = undefined
     },
     tripped: () => tripped,
-    detail: () => tripped
-      ? `no SDK stream activity for ${deadlineMs}ms after the query was submitted; last: ${lastLabel ?? 'none'}`
-      : undefined,
+    detail() {
+      /* v8 ignore else -- detail() is only called after tripped() confirms the trip, and the flag never unsets. */
+      if (tripped) {
+        return `no SDK stream activity for ${deadlineMs}ms after the query was submitted; last: ${lastLabel ?? 'none'}`
+      }
+      /* v8 ignore next -- paired with the trip-confirmed branch above. */
+      return undefined
+    },
   }
 }
 
