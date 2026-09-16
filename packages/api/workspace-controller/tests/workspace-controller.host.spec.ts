@@ -226,10 +226,9 @@ describe('WorkspaceController commands', () => {
       .resolves.toEqual({ archivedSessionIds: [session.id] })
     await expect(controller.archiveSession({ sessionId: SessionId('unknown') }))
       .rejects.toMatchObject({ code: 'session/not-found' })
-
-    // Unarchive is a pure set removal: known, unknown, and repeat all resolve.
     await expect(controller.unarchiveSession({ sessionId: session.id }))
       .resolves.toEqual({ archivedSessionIds: [] })
+    // Unarchive is idempotent: an id that is not archived is not an error.
     await expect(controller.unarchiveSession({ sessionId: session.id }))
       .resolves.toEqual({ archivedSessionIds: [] })
     await expect(controller.unarchiveSession({ sessionId: SessionId('unknown') }))
@@ -304,6 +303,11 @@ describe('WorkspaceController follow', () => {
     await controller.archiveSession({ sessionId: session.id })
     await expect(nextFrame(iterator)).resolves.toEqual({
       type: 'archived', archivedSessionIds: [session.id],
+    })
+    // Unarchive rides the same complete-set increment: no new frame type.
+    await controller.unarchiveSession({ sessionId: session.id })
+    await expect(nextFrame(iterator)).resolves.toEqual({
+      type: 'archived', archivedSessionIds: [],
     })
     await controller.delete({ workspaceId: second.workspace.workspaceId })
     await expect(nextFrame(iterator)).resolves.toEqual({

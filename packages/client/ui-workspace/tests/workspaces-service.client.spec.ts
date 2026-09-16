@@ -110,7 +110,6 @@ class FakeSessions {
   readonly create: ReturnType<typeof vi.fn<ISessions['create']>>
   readonly open: ReturnType<typeof vi.fn<(id: SessionId) => void>>
   readonly clear: ReturnType<typeof vi.fn<() => void>>
-  readonly delete: ReturnType<typeof vi.fn<ISessions['delete']>>
   readonly fork = vi.fn<ISessions['fork']>(async () => sid('forked'))
 
   constructor(initial: SessionListState) {
@@ -123,20 +122,20 @@ class FakeSessions {
     this.clear = vi.fn(() => {
       this.list.update(state => ({ ...state, current: undefined }))
     })
-    this.delete = vi.fn<ISessions['delete']>(async () => {})
   }
 }
 
 class FakeWorkspaces implements IWorkspaces {
   readonly list: MutableSource<WorkspaceSnapshot>
   readonly archiveCalls: SessionId[] = []
+  readonly unarchiveCalls: SessionId[] = []
   onArchive: IWorkspaces['archiveSession'] = async (sessionId) => {
     this.list.update(state => ({
       ...state,
       archivedSessionIds: [...state.archivedSessionIds, sessionId],
     }))
   }
-  readonly unarchiveCalls: SessionId[] = []
+
   onUnarchive: IWorkspaces['unarchiveSession'] = async (sessionId) => {
     this.list.update(state => ({
       ...state,
@@ -570,27 +569,13 @@ describe('UiWorkspaceService', () => {
   it('forwards unarchive commands and preserves failures', async () => {
     const idle = sid('idle')
     const b = bench()
-    b.workspaces.list.update(state => ({ ...state, archivedSessionIds: [idle] }))
 
     await b.uiWorkspace.unarchiveSession(idle)
     expect(b.workspaces.unarchiveCalls).toEqual([idle])
-    expect(b.workspaces.list.getSnapshot().archivedSessionIds).toEqual([])
 
     b.workspaces.onUnarchive = () => Promise.reject(new Error('unarchive rejected'))
     await expect(b.uiWorkspace.unarchiveSession(idle)).rejects.toThrow('unarchive rejected')
     expect(b.workspaces.unarchiveCalls).toEqual([idle, idle])
-  })
-
-  it('forwards session deletion to the sessions service and preserves failures', async () => {
-    const idle = sid('idle')
-    const b = bench()
-
-    await b.uiWorkspace.deleteSession(idle)
-    expect(b.sessions.delete).toHaveBeenCalledWith(idle)
-
-    b.sessions.delete.mockImplementation(() => Promise.reject(new Error('delete rejected')))
-    await expect(b.uiWorkspace.deleteSession(idle)).rejects.toThrow('delete rejected')
-    expect(b.sessions.delete).toHaveBeenCalledTimes(2)
   })
 
   it('passes directory operations to the Host and preserves structured browse failures', async () => {

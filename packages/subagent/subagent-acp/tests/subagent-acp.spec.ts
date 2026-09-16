@@ -88,6 +88,7 @@ async function waitForFile(file: string, timeoutMs: number): Promise<void> {
 
 function rejectFinalExitWait(child: SubprocessHandle, message: string): SubprocessHandle {
   return {
+    control: child.control,
     stdin: child.stdin,
     stdout: child.stdout,
     stderr: child.stderr,
@@ -111,6 +112,7 @@ function rejectFinalExitWaitAfterExit(child: SubprocessHandle, message: string):
 
 function tapBoundedExitWait(child: SubprocessHandle, onWait: () => void): SubprocessHandle {
   return {
+    control: child.control,
     stdin: child.stdin,
     stdout: child.stdout,
     stderr: child.stderr,
@@ -132,6 +134,7 @@ function replaceProtocolStreams(
   if (child.stdin === undefined) throw new Error('expected piped child stdin')
   stdin.pipe(child.stdin)
   return {
+    control: child.control,
     stdin,
     stdout,
     stderr: child.stderr,
@@ -169,6 +172,7 @@ function closeProtocolOnPrompt(child: SubprocessHandle, onClose: () => void = ()
 
 function replaceProcessOutcome(child: SubprocessHandle, outcome: SubprocessOutcome): SubprocessHandle {
   return {
+    control: child.control,
     stdin: child.stdin,
     stdout: child.stdout,
     stderr: child.stderr,
@@ -311,6 +315,7 @@ describe('disposeAcpChild (the backend-owned teardown ladder over seam verbs)', 
     const stdin = new PassThrough()
     const calls: string[] = []
     const child: SubprocessHandle = {
+      control: undefined,
       stdin,
       stdout: undefined,
       stderr: undefined,
@@ -373,6 +378,7 @@ describe('disposeAcpChild (the backend-owned teardown ladder over seam verbs)', 
       .mockResolvedValueOnce(true)
     const terminate = vi.fn()
     const child: SubprocessHandle = {
+      control: undefined,
       stdin: new PassThrough(),
       stdout: undefined,
       stderr: undefined,
@@ -394,6 +400,7 @@ describe('disposeAcpChild (the backend-owned teardown ladder over seam verbs)', 
       .mockRejectedValueOnce(initialFailure)
       .mockRejectedValueOnce(finalFailure)
     const child: SubprocessHandle = {
+      control: undefined,
       stdin: new PassThrough(),
       stdout: undefined,
       stderr: undefined,
@@ -420,6 +427,7 @@ describe('disposeAcpChild (the backend-owned teardown ladder over seam verbs)', 
     const stdin = new PassThrough()
     const stdout = new PassThrough()
     const child: SubprocessHandle = {
+      control: undefined,
       stdin,
       stdout,
       stderr: undefined,
@@ -857,6 +865,7 @@ describe('dsh-subagent-acp', () => {
       disposeEofGraceMs: 50,
       disposeGraceMs: 50,
       spawn: () => ({
+        control: undefined,
         stdin,
         stdout,
         stderr: undefined,
@@ -1342,6 +1351,7 @@ describe('dsh-subagent-acp', () => {
         const child = spawnSubprocess(spec)
         realChild = child
         return closeProtocolOnPrompt({
+          control: child.control,
           stdin: child.stdin,
           stdout: child.stdout,
           stderr: child.stderr,

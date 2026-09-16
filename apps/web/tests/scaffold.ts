@@ -5,7 +5,7 @@
 // layer stack the profile boot composes), patched the
 // snapshot way — so a real chromium exercises the real HTTP uplink/WebSocket
 // downlink, api-gateway, agent loop, tools, and persistence. Modes ride $DSH_SNAPSHOT:
-// replay (default, keyless: normally disables the llm-deepseek row and
+// replay (default, keyless: normally disables the direct DeepSeek rows and
 // inserts dsh-llm-replay in providers mode), record (real adapter + key,
 // harvests fixtures from live session memory), refresh (keyless replay that
 // rewrites goldens). A first-run option keeps the real adapter mounted while
@@ -18,13 +18,13 @@
 // disabled (recorded fixtures must not embed this repo's AGENTS.md);
 // session-title-llm disabled (its fire-and-forget title call would race the
 // loop for the session's replay cursor); webserver pinned to port 0 with the
-// built dist; ordinary keyless modes disable llm-deepseek and fill the open
+// built dist; ordinary keyless modes disable both direct adapters and fill the open
 // llm seam post-boot with installLlmReplay on the settled root ctx
 // (the plugin-row path discards the ReplayHandle; the direct install keeps
 // assertConsumed for the teardown fixture-consumption check).
 import { existsSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -57,11 +57,14 @@ import {
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
 import {
-  assertEntriesLoaded,
+  auditStartupEntries,
   composeEntries,
+  createProfileResolutionGeneration,
   healProfilesModuleFallback,
   loadOverlayPatches,
+  PluginPackages,
   type Profile,
+  type ProfileResolutionMode,
 } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
@@ -89,6 +92,25 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-agent'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { REPO_ROOT, requireDist } from './support.ts'
+
+// Host-side web e2e cannot import a browser package: doing so would pull that
+// package's complete TS project into this graph. Mirrored from
+// packages/client/ui-settings-models/src/onboarding-copy.ts; drift makes the
+// default pre-acknowledgement stop suppressing the notice and fails loudly.
+// import {
+//   WELCOME_NOTICE_ACK_FIELD, WELCOME_NOTICE_SETTINGS_NAMESPACE,
+//   WELCOME_NOTICE_VERSION, WELCOME_NOTICE_COPY,
+// } from '@deepseek-ai/dsh-client-ui-settings-models'
+export const WELCOME_NOTICE_SETTINGS_NAMESPACE = 'ui-onboarding'
+export const WELCOME_NOTICE_ACK_FIELD = 'welcomeNoticeVersion'
+export const WELCOME_NOTICE_VERSION = '2026-08-13.1'
+export const WELCOME_NOTICE_COPY = {
+  zh: {
+    title: '内测声明',
+    body: 'DeepSeek Harness 目前的 0.1 版本仍处在面向 Harness 开发者进行测试的阶段，还有许多地方需要持续改进和打磨，希望听取广大开发者的反馈建议。预计 DeepSeek Harness 的核心插件以及基础 API 都会在接下来的一段时间内快速迭代、持续演化。\n\n我们期待与全球开发者一起，在开源、开放、可复用、可组合的基础设施之上，共同探索智能上限。欢迎全球 Harness 开发者加入 DSH 插件生态。',
+    continueLabel: '继续',
+  },
+} as const
 
 /** Snapshot mode for the lane, from $DSH_SNAPSHOT (same vocabulary as the other snapshot suites). */
 export type WebSnapshotMode = 'replay' | 'record' | 'refresh'
@@ -167,7 +189,7 @@ const WEB_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml
 const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
 
 // Replay publishes the provider catalog the gateway routes to (providers
-// mode, never catch-all: with llm-deepseek disabled no adapter exists, so a
+// mode, never catch-all: with both direct adapters disabled no adapter exists, so a
 // catch-all would leave resolveModelInfo unroutable and compaction-basic's
 // post-step pressure check would warn every step). The published
 // contextWindow keeps that pressure path provably inert for small fixtures.
@@ -228,11 +250,14 @@ class RouteOnlyAdapter extends LlmAdapter {
   }
 }
 
-function replayProviders(contextWindow: number | undefined): typeof REPLAY_PROVIDERS {
-  if (contextWindow === undefined) return REPLAY_PROVIDERS
+function replayProviders(contextWindow: number | undefined, messages: boolean): typeof REPLAY_PROVIDERS {
   return REPLAY_PROVIDERS.map(provider => ({
     ...provider,
-    models: provider.models.map(model => ({ ...model, contextWindow })),
+    id: messages ? 'deepseek-messages' : provider.id,
+    models: provider.models.map(model => ({
+      ...model,
+      ...contextWindow === undefined ? {} : { contextWindow },
+    })),
   }))
 }
 
@@ -266,6 +291,8 @@ export interface WebScaffold {
 
 /** Options for {@link launchWebScaffold}. */
 export interface LaunchOptions {
+  /** Profile resolver backend used by this test Host; defaults to runtime coverage. */
+  profileResolutionMode?: Extract<ProfileResolutionMode, 'dual' | 'runtime'>
   /** Enable the real Open In rows with deterministic launch-environment facts. */
   openInAppEnvironment?: LaunchEnvironmentSnapshot
   /** Compare the replayed root session with `replayFixture`; defaults on for a manifest-owned canonical recording. */
@@ -285,7 +312,7 @@ export interface LaunchOptions {
    * Replay fixture (session.jsonl) served by the inserted dsh-llm-replay row
    * in replay/refresh modes; ignored in record mode (the real adapter
    * answers). Omit for scenarios issuing no model calls — a stray stream then
-   * fails loud with NO_ADAPTER (llm-deepseek is disabled and no replay row
+   * fails loud with NO_ADAPTER (both direct adapters are disabled and no replay row
    * mounts). With {@link replayProvidersOnly}, the fixture must record no
    * model calls (its header alone mounts the catalog).
    */
@@ -326,7 +353,7 @@ export interface LaunchOptions {
   /**
    * Tool presentation mode patched onto the shipped `tools` row (`code`
    * collapses the wire to run_code + the SDK prompt section). Omit for the
-   * yml default. The code runtime row is always in the tree, so no extra
+   * yml default. The PTC runtime row is always in the tree, so no extra
    * insertion is needed.
    */
   toolsMode?: 'native' | 'ptc' | 'both'
@@ -342,6 +369,10 @@ export interface LaunchOptions {
    * keyless first-run configuration lane; the default disables the adapter.
    */
   deepSeekMissingCredential?: boolean
+  /** Record or replay a Messages scenario; older scenarios explicitly retain their recorded Chat Completions route. */
+  deepSeekMessages?: boolean
+  /** Leave the current welcome notice pending; ordinary scenarios pre-acknowledge it before browser boot. */
+  welcomeNoticePending?: boolean
   /**
    * Patch the shipped DeepSeek search row to a deterministic endpoint and
    * credential reference. Browser search scenarios keep the real provider and
@@ -421,6 +452,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     throw new Error('deepSeekMissingCredential is a keyless replay/refresh option')
   }
   const maskDeepSeekCredential = mode !== 'record' && options.deepSeekMissingCredential === true
+  const messages = options.deepSeekMessages === true
   const originalDeepSeekCredential = process.env.DEEPSEEK_API_KEY
   let credentialEnvironmentRestored = false
   const restoreCredentialEnvironment = (): void => {
@@ -494,10 +526,14 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   const patches: PatchOptions[] = [
     ...basePatches,
     ...surfacePatches,
-    // Keyless scenarios retain the recorded default; explicit scenario overlays win.
-    ...mode === 'record' || options.deepSeekMissingCredential === true
-      ? []
-      : [{ id: 'agent-default-model', config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } }],
+    { id: 'session-log-deepseek', config: { enabled: false } },
+    // The historical Messages fixture retains its recorded route during replay;
+    // live configuration uses the shared DeepSeek route. Explicit overlays win.
+    ...messages
+      ? [{ id: 'agent-default-model', config: { provider: mode === 'record' || maskDeepSeekCredential ? 'deepseek-official' : 'deepseek-messages', model: maskDeepSeekCredential ? 'deepseek-flash' : 'deepseek-v4-flash' } }]
+      : mode === 'record' || options.deepSeekMissingCredential === true
+        ? []
+        : [{ id: 'agent-default-model', config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } }],
     ...extraOverlayPatches,
     // The roster's shipped presets are the plugin's own, bundled inside
     // `dsh-agent-presets` and prepended by it. Pin only the machine-local
@@ -612,9 +648,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
           baseURL: options.deepSeekSearch.baseURL,
         },
       }],
-    ...mode === 'record' || options.deepSeekMissingCredential === true
-      ? []
-      : [{ id: 'llm-deepseek', disabled: true }],
+    ...maskDeepSeekCredential && !messages ? [] : [
+      { id: 'llm-deepseek', disabled: mode !== 'record' && !maskDeepSeekCredential,
+        config: messages ? {} : { protocol: 'chat-completions' } },
+    ],
   ]
 
   // Sessions inherit the gateway's process.cwd() default; run the boot from
@@ -640,6 +677,11 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         throw new Error(`web scaffold extra install anchor has no package name: ${anchor}`)
       }
       const packageDir = dirname(anchor)
+      // A real profile already has each bundle installed by `dsh plugin add`.
+      // Reproduce that link so a private bundle can import its own plugin.
+      const installedLink = join(profileDir, 'node_modules', manifest.name)
+      await mkdir(dirname(installedLink), { recursive: true })
+      await symlink(packageDir, installedLink, 'junction')
       return {
         packageName: manifest.name,
         packageDir,
@@ -647,21 +689,19 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         patches: [],
       }
     }))
-    // Mirror the production launcher: the shared installation closure keeps
-    // its carrier-specific fallback, while private bundle dependencies stay
-    // isolated to this synthetic scaffold profile.
-    await healProfilesModuleFallback({
-      installAnchor: INSTALL_ANCHOR,
-      home: harnessHome,
-      profile: {
-        name: 'scaffold',
-        dir: profileDir,
-        layers: extraLayers,
-        patchPath: join(profileDir, 'cordis.patch.yml'),
-        patches: [],
-        patchReload: 'startup',
-      },
-    })
+    const profile: Profile = {
+      name: 'scaffold',
+      dir: profileDir,
+      layers: extraLayers,
+      patchPath: join(profileDir, 'cordis.patch.yml'),
+      patches: [],
+      patchReload: 'startup',
+    }
+    const profileResolutionMode = options.profileResolutionMode ?? 'runtime'
+    const resolutionOptions = { installAnchor: INSTALL_ANCHOR, home: harnessHome, profile }
+    const resolution = profileResolutionMode === 'runtime'
+      ? await createProfileResolutionGeneration(resolutionOptions)
+      : await healProfilesModuleFallback(resolutionOptions)
     await mkdir(profileDir, { recursive: true })
     const rootConfig = join(profileDir, 'cordis.yml')
     await writeFile(rootConfig, '[]\n')
@@ -678,6 +718,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         throw new Error(`web e2e scaffold: the web app requested exit ${String(code)} with no arguments to reject`)
       },
     })
+    await ctx.plugin(PluginPackages, {
+      generation: resolution,
+      behavior: profileResolutionMode === 'dual' ? 'verify' : 'enforce',
+    })
     await ctx.plugin(Loader)
     ctx.loader.builtins.include = Include
     // `cordis:group` beside it, exactly as `boot()` registers it: a group row is
@@ -690,7 +734,12 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       config: { path: pathToFileURL(rootConfig).href, patches },
     })
     await ctx.loader.await()
-    assertEntriesLoaded(ctx, 'web e2e scaffold')
+    await auditStartupEntries(ctx, 'web e2e scaffold')
+    if (options.welcomeNoticePending !== true) {
+      await ctx.settings.mutate(WELCOME_NOTICE_SETTINGS_NAMESPACE, [{
+        op: 'set', path: [WELCOME_NOTICE_ACK_FIELD], value: WELCOME_NOTICE_VERSION,
+      }])
+    }
     const boundPort = ctx.get('webServer')?.port
     if (boundPort === undefined) {
       throw new Error('web e2e scaffold: webServer service missing after settled boot')
@@ -698,7 +747,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     port = boundPort
 
     // Fill the open llm seam on the settled root ctx. Ordinary keyless modes
-    // disable llm-deepseek; the first-run lane keeps it mounted but has no
+    // disable the direct adapter; the first-run lane keeps the selected adapter but has no
     // replay fixture and never streams. The direct install, unlike the plugin
     // row, returns the ReplayHandle for the teardown consumption check.
     if (options.replayProvidersOnly) {
@@ -735,7 +784,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     if (mode !== 'record' && replayFixture !== undefined) {
       replayHandle = installLlmReplay(ctx, {
         file: replayFixture,
-        providers: (options.replayProviders ?? replayProviders(options.replayContextWindow)).map(provider => ({
+        providers: (options.replayProviders ?? replayProviders(options.replayContextWindow, messages)).map(provider => ({
           ...provider,
           ...(options.replayRetryPolicy === undefined ? {} : { retryPolicy: options.replayRetryPolicy }),
         })),
@@ -750,8 +799,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       // a fixture would, with streaming that still fails loud: the scenario
       // issues no model calls, and one that slipped in must not pass quietly.
       ctx.effect(() => ctx.llm.registerAdapter(
-        replayProviders(options.replayContextWindow).map(provider => provider.id),
-        new RouteOnlyAdapter(replayProviders(options.replayContextWindow)),
+        replayProviders(options.replayContextWindow, messages).map(provider => provider.id),
+        new RouteOnlyAdapter(replayProviders(options.replayContextWindow, messages)),
       ), 'web e2e scaffold: route-only adapter')
     }
     baseUrl = `http://${browserHost}:${String(port)}`

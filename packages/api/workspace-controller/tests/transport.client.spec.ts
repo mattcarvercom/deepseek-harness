@@ -329,6 +329,7 @@ describe('WorkspaceController', () => {
     expect(mock.log.requests('workspace/insertBefore')).toEqual([{ workspaceId: 'one' }])
     expect(mock.log.requests('workspace/insertSessionBefore')).toEqual([{ workspaceId: 'one', sessionId: 'session' }])
     expect(mock.log.requests('workspace/archiveSession')).toEqual([{ sessionId: 'session' }])
+    expect(mock.log.requests('workspace/unarchiveSession')).toEqual([{ sessionId: 'session' }])
     expect(mock.log.requests('workspace/delete')).toEqual([{ workspaceId: 'one' }])
   })
 

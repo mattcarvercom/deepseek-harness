@@ -49,8 +49,7 @@ export interface UiWorkspace {
    */
   archiveSession(sessionId: SessionId): Promise<void>
   /**
-   * Remove a Session from the registry-global archive set, restoring it to
-   * every grouping surface.
+   * Unarchive a Session, restoring it to its recorded Workspace position.
    * @param sessionId - Session to unarchive.
    */
   unarchiveSession(sessionId: SessionId): Promise<void>

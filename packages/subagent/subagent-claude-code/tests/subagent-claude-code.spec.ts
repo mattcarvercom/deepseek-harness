@@ -169,6 +169,7 @@ function fakeChild(options: FakeChildOptions = {}): FakeChild {
     })
   })
   const handle: SubprocessHandle = {
+    control: undefined,
     stdin,
     stdout,
     stderr: undefined,

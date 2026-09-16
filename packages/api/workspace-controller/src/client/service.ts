@@ -63,7 +63,7 @@ export interface IWorkspaces {
    */
   archiveSession(sessionId: SessionId): Promise<void>
   /**
-   * Remove a Session from the archived set, restoring its Workspace position.
+   * Unarchive a Session from the archived Session list.
    * @param sessionId - Session to unarchive.
    */
   unarchiveSession(sessionId: SessionId): Promise<void>

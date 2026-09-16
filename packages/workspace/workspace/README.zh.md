@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-使用此包为产品提供项目列表：用户工作的命名目录、每个目录中运行的会话、稳定顺序，以及在不丢失会话的前提下将其隐藏的能力。每项操作背后的 API 约定放在实现章节中。
+使用此包为产品提供项目列表：用户工作的命名目录、每个目录中运行的会话、稳定顺序，以及在不丢失会话的前提下将其隐藏或重新取回的能力。每项操作背后的 API 约定放在实现章节中。
 
 ### 何时使用
 
@@ -63,9 +63,9 @@ ctx.workspaceRegistry.list() // shows the project, newest first
 
 会话加入它运行目录所在的项目：在项目目录中创建会话，它就会出现在该项目下，新到旧排列。一个会话只能属于一个项目。目录无法校验的会话——没有记录目录，或目录被移动、删除——无法加入，保持 Ungrouped。
 
-### 隐藏会话与移除项目
+### 隐藏、恢复会话与移除项目
 
-当会话不应再出现在分组中时隐藏它：它会从可见列表中消失，但其会话、历史与在项目中的位置都保持不变。`unarchiveSession(id)` 把被隐藏的会话重新提回：它离开归档集合，保留的记账槽位让它回到项目中的原位置。它是纯集合移除——不在归档集合中的 id 是幂等空操作，日志此后消失的会话也能干净地取消归档。项目不再需要时移除它：它离开列表，而其文件夹、文件与会话历史绝不受影响——这些会话变成 Ungrouped。之后再次添加同一目录会从空项目开始，不会带回旧会话。
+当会话不应再出现在分组中时隐藏它：它会从可见列表中消失，但其会话、历史与在项目中的位置都保持不变。`unarchiveSession(id)` 恢复被隐藏的会话：它会回到其项目下记录的位置；不属于任何项目时则回到 Ungrouped，保留的记账槽位让它回到原位。它是纯集合移除——不在归档集合中的 id 是幂等空操作，日志此后消失的会话也能干净地取消归档。项目不再需要时移除它：它离开列表，而其文件夹、文件与会话历史绝不受影响——这些会话变成 Ungrouped。之后再次添加同一目录会从空项目开始，不会带回旧会话。
 
 当会话的日志已被销毁时，把它从全部记账中剥离：`removeSession(id)` 将它从每个项目记录中分离，从归档集合中清除，并移除其 header 索引条目，使后续的列表刷新无法在任何成员投影中复活该 id。它返回是否有记录或归档集合被修改；未记账的 id 是幂等空操作（索引条目仍被移除）。隐藏与剥离可组合：被隐藏的会话也可以被剥离，剥离同时清除其隐藏状态。
 
@@ -89,7 +89,7 @@ ctx.workspaceRegistry.list() // shows the project, newest first
 
 ### API 行为
 
-该 API 是一个由两个所有者构成的小家族：`WorkspaceRegistry` 负责创建、排序与删除项目并管理其会话记账；`Workspace` 实体暴露显示标题、目录状态与会话投影。各方法的精确约定在代码中，而非本 README——参见 [src/index.ts](src/index.ts) 与 [src/entity.ts](src/entity.ts)。
+该 API 是一个由两个所有者构成的小家族：`WorkspaceRegistry` 负责创建、排序与删除项目、管理其会话记账，以及归档或恢复单个会话；`Workspace` 实体暴露显示标题、目录状态与会话投影。各方法的精确约定在代码中，而非本 README——参见 [src/index.ts](src/index.ts) 与 [src/entity.ts](src/entity.ts)。
 
 ### 源码地图
 
@@ -104,7 +104,7 @@ ctx.workspaceRegistry.list() // shows the project, newest first
 
 ### 持久形态
 
-注册表打开 `workspace` 领域（版本 2）：一张以 `WorkspaceId` 为键的 `workspaces` 表，加上一个持有 `workspaceIds`（权威显示顺序）、`archivedSessionIds` 与可选 `pendingMutation` 标记的全局状态。在 `archivedSessionIds` 存在之前写入的记录会通过 schema 默认值解析为空集合。
+注册表打开 `workspace` 领域（版本 2）：一张以 `WorkspaceId` 为键的 `workspaces` 表，加上一个持有 `workspaceIds`（权威显示顺序）、`archivedSessionIds` 与可选 `pendingMutation` 标记的全局状态。在 `archivedSessionIds` 存在之前写入的记录会通过 schema 默认值解析为空集合。归档与取消归档都只重写该全局状态，因此恢复就是对同一字段的一次过滤写入；取消归档不做会话存在性探测，因为从集合中移除 id 不可能引入未知 id，而归档会在加入前校验会话。
 
 ### 生命周期
 
@@ -162,7 +162,7 @@ ctx.workspaceRegistry.list() // shows the project, newest first
 - **移除绝不删除数据**——移除项目会保留其文件夹、文件与会话历史；这些会话变成 Ungrouped，而会话删除与文件夹移除是彼此独立且尚未提供的功能（参见[决策记录](../../../.agents/notes/implemented/feature/2026-07-27-workspace-registration-deletion.zh.md)）。
 - **只有带记录目录的会话才能加入**——只有记录中带有可解析为项目路径的目录的会话才属于项目；没有目录的会话保持 Ungrouped，来自其他目录的会话无法移入。
 - **外部变更延迟可见**——如果另一进程删除或损坏目录，项目只能在下次刷新或重启后反映出来。
-- **归档集合只保存 id**——注册表把已归档 Session id 存为持久的显示过滤器，不保存每个会话的归档元数据；`archiveSession` 隐藏、`unarchiveSession` 提回，被隐藏会话的历史与保留位置在此过程中都保持不变。
+- **归档与取消归档执行不同的会话校验，且归档集合只保存 id**——注册表把已归档 Session id 存为持久的显示过滤器，不保存每个会话的归档元数据；恢复只是从归档集合中移除 id，因此会话已不存在的条目仍能取消归档，也不会留下未知引用，而 `archiveSession` 会拒绝既非实时也未持久化的会话；`removeSession` 同时清除记账记录与归档条目。
 - **重新添加目录从空开始**——移除后再次添加同一目录会创建空会话列表的新项目；旧会话不会自动回来。
 
 <a id="dev-note"></a>
