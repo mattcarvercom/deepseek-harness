@@ -15,8 +15,8 @@ import type { ToolFileInjected } from '../tool/file-menu.ts'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /**
-     * Key by wire name, including custom tools; a typo never renders. Unclaimed keys use the generic row.
-     * Use `key: '<tool name>'` to replace the view; phase data has `name` and lazy, possibly partial `args`.
+     * Key by wire name (`key: '<tool name>'`, a typo never renders); unclaimed keys use the
+     * generic row. Phase data has `name` and lazy, possibly partial `args`.
      */
     'tool.call.toolview': {
       kind: 'keyed'
@@ -26,15 +26,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /**
      * Durable images of a settled image-bearing Tool call, rendered through
      * the attachment presentation plugin. The Tool layer never imports an
-     * attachment implementation: a toolview declares this slot as a child and
-     * renders it with the image card's references plus the Gateway-authorized
-     * loader it received in its owner, and the attachment plugin fills the
-     * gallery. Composing no attachment presentation plugin renders nothing,
-     * which is why the image card keeps its own envelope text beside the
-     * gallery. A child slot is declared by exactly one entry: registering a
-     * second toolview that declares the same child throws at load, so a
-     * future image-bearing tool must reuse this entry or own a distinct
-     * slot.
+     * attachment implementation: the `tool-call` chat node declares this slot
+     * and hands its dispatcher to every atomic Tool view through
+     * `ToolCallOwnerProps.renderImages`, so any image-bearing row — the
+     * read_image card or a generic tool result carrying image blocks — draws
+     * the same gallery from the card's references plus the Gateway-authorized
+     * loader it received in its owner. Composing no attachment presentation
+     * plugin renders nothing, which is why the image card keeps its own text
+     * beside the gallery. A child slot is declared by exactly one entry: the
+     * chat node owns this declaration, and a toolview that declared the same
+     * child would throw at load.
      */
     'tool.call.images': { kind: 'single'; scope: 'session'; owner: ToolImagesOwnerProps }
   }
@@ -60,23 +61,23 @@ export interface ToolCallCommonProps {
   toolName: string
   /** Session workspace root for relative summaries. */
   cwd?: string | undefined
-  /** Host account home; POSIX home-rooted summaries display as `~`. */
   home?: string | undefined
   /** Open an argument path at its optional requested line. */
   openFile: (path: string, options?: OpenFileOptions) => void
   /** Chat-supplied, Gateway-authorized loader for durable images; Tool views do not manage attachment URLs. */
   loadImage: MessageImageLoader
+  renderImages?: PropsRenderSlots<'tool.call.images'>['renderSlot'] | undefined
   /** Inspect this call in the trajectory view when available. */
   inspect?: (() => void) | undefined
 }
 
-/** Stage-specific tool data; only start/result expose the dispatched call material. */
+/** Tool stage data; only start/result carry dispatched call material. */
 export type ToolCallPhaseProps =
   | { readonly phase: 'preparing'; readonly block: PreparingToolCall }
   | { readonly phase: 'start'; readonly block: StartedToolCall }
   | { readonly phase: 'result'; readonly block: ToolResultNode }
 
-/** Common owner callbacks and the data admitted at the current tool stage. */
+/** Owner callbacks and the call data admitted at the current stage. */
 export type ToolCallOwnerProps = ToolCallCommonProps & ToolCallPhaseProps
 
 /** Full props of a registered atomic Tool view. */
@@ -147,6 +148,6 @@ export type ToolHostInfoInjected = {
 
 /** Full props of the Tool call-tree renderer registered as a tool-call Chat Node. */
 export type ToolTreeProps = PropsRuntime<'conversation.chat.node', 'tool-call'>
-  & PropsRenderSlots<'tool.call.toolview'>
+  & PropsRenderSlots<'tool.call.toolview' | 'tool.call.images'>
   & PropsLocale<'conversation'>
   & InjectFace<ToolHostInfoInjected & ToolFileInjected>

@@ -7,7 +7,7 @@ import type {
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { LlmAttemptId, MessageId } from '@deepseek-ai/dsh-llm/types'
-import type { LlmModelBadge, TextBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, LlmModelBadge } from '@deepseek-ai/dsh-llm'
 import type { SessionId, SessionSeq, SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionMap, SessionProjectionSummaryExcluded, SessionProjectionSummaryValues } from '@deepseek-ai/dsh-session-projection/types'
 import type { Principal } from '@deepseek-ai/dsh-typert-protocol'
@@ -136,8 +136,13 @@ export interface ModelCatalog {
 export type QueueAction =
   | {
     readonly kind: 'edit'
-    /** Non-empty text-only replacement content. */
-    readonly content: readonly TextBlock[]
+    /**
+     * Replacement content: the item's own image and file blocks, in stored
+     * order and position, followed by at most one text block. The text block
+     * must carry non-whitespace text for a text-only item and may be blank or
+     * omitted while at least one attachment remains.
+     */
+    readonly content: readonly ContentBlock[]
   }
   | { readonly kind: 'remove' }
   | { readonly kind: 'steer' }
@@ -310,6 +315,16 @@ export interface SessionForkRequest {
 /** Identity of a newly forked Session. */
 export interface SessionForkValue {
   readonly sessionId: SessionId
+}
+
+/** Session deletion request. */
+export interface SessionDeleteRequest {
+  readonly sessionId: SessionId
+}
+
+/** Receipt after one Session is deleted durably and unrecoverably. */
+export interface SessionDeleteValue {
+  readonly deleted: true
 }
 
 /** Session prompt request. */
