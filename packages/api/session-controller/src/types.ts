@@ -6,7 +6,7 @@ import type {
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { LlmAttemptId, MessageId } from '@deepseek-ai/dsh-llm/brand'
-import type { TextBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId, SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
@@ -167,8 +167,13 @@ export interface ModelCatalog {
 export type QueueAction =
   | {
     readonly kind: 'edit'
-    /** Non-empty text-only replacement content. */
-    readonly content: readonly TextBlock[]
+    /**
+     * Replacement content: the item's own image and file blocks, in stored
+     * order and position, followed by at most one text block. The text block
+     * must carry non-whitespace text for a text-only item and may be blank or
+     * omitted while at least one attachment remains.
+     */
+    readonly content: readonly ContentBlock[]
   }
   | { readonly kind: 'remove' }
   | { readonly kind: 'steer' }
