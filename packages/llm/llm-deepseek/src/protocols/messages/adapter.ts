@@ -5,10 +5,11 @@ import type { GenerateOptions, ImageAttachmentAccessResolver, PreparedAdapterCal
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { DeepSeekLlmApiJson } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { boundByContentProgress, contentIdleDeadline } from '../../common/content-idle.ts'
 import { catalogModelInfo, modelInfo } from '../../common/model-info.ts'
 import type { DeepSeekAdapterOptions, DeepSeekConnectionOptions as Connection } from '../../common/types.ts'
 import type { DeepSeekFileStore } from '../../common/file-store.ts'
-import { MESSAGES_FILES_BETA } from '../../common/files-api.ts'
+import { MESSAGES_FILES_BETA, messagesApiRoot } from '../../common/messages-api.ts'
 import { FileResolutionFailure, RequestFiles } from '../../common/request-files.ts'
 import { prepareRequestExtensions } from '../../common/request-extensions.ts'
 import { imagePricing, inlineImages, prepareFileIds, prepareImages } from './images.ts'
@@ -61,7 +62,13 @@ export class DeepSeekMessagesAdapter extends LlmAdapter {
     return this.generate(options, this.dependencies.connection())
   }
 
-  private async * generate(options: GenerateOptions, connection: Connection): AsyncGenerator<StreamChunk> {
+  private generate(options: GenerateOptions, connection: Connection): AsyncIterable<StreamChunk> {
+    const progress = contentIdleDeadline(options.signal, connection.streamContentIdleTimeoutMs)
+    const upstream = this.rawGenerate({ ...options, signal: progress.signal }, connection)
+    return boundByContentProgress(upstream, progress, connection.streamContentIdleTimeoutMs, options.signal)
+  }
+
+  private async * rawGenerate(options: GenerateOptions, connection: Connection): AsyncGenerator<StreamChunk> {
     const consumer = new AbortController()
     const signal = options.signal === undefined ? consumer.signal : AbortSignal.any([consumer.signal, options.signal])
     using watchdog = idleWatchdog(signal, connection.streamIdleTimeoutMs, 'MESSAGES_IDLE')
@@ -119,7 +126,7 @@ export class DeepSeekMessagesAdapter extends LlmAdapter {
         ...options.purpose === undefined ? {} : { purpose: options.purpose },
       }, this.dependencies.prepareExtensions)
       signal.throwIfAborted()
-      const response = await fetch(`${connection.baseURL.replace(/\/+$/u, '')}/v1/messages`, {
+      const response = await fetch(`${messagesApiRoot(connection.baseURL)}/messages`, {
         method: 'POST', signal, body: extensions.payload, redirect: 'error',
         headers: {
           ...attributionHeaders(),

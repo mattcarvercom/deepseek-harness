@@ -1,6 +1,6 @@
 import { Fragment, memo, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { PendingInboxPrompt, PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { fileExtension, FileTypeIcon, fileSizeText, JsonBlock, projectUserText, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
@@ -232,41 +232,6 @@ function UserStyleBubble({
       {actions?.(text)}
       {footer}
     </div>
-  )
-}
-
-/**
- * Render one durable in-flight user prompt — queued in the Host inbox or
- * claimed by the running turn but not yet committed — muted, until the
- * durable transcript node replaces it.
- * @param props - the in-flight inbox prompt and conversation render seats.
- * @returns the in-flight prompt bubble.
- */
-export function PendingInboxPromptBubble({ prompt, renderMessageImages, t }: {
-  prompt: PendingInboxPrompt
-  renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
-  t: ChatViewSlotProps['t']
-}): ReactNode {
-  return (
-    <UserStyleBubble
-      content={prompt.content}
-      renderMessageImages={renderMessageImages}
-      inflight
-      footer={(
-        <span className={css.inflightFooter} role="status">
-          {t(prompt.placement === 'queued' ? 'chat.pendingQueued' : 'chat.pendingSteering')}
-        </span>
-      )}
-      t={t}
-      actions={text => (
-        <MessageIconActions
-          text={text}
-          clock="start"
-          className={css.actions}
-          t={t}
-        />
-      )}
-    />
   )
 }
 

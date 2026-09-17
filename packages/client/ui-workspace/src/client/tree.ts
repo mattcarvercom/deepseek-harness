@@ -8,7 +8,7 @@ import {
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {
-  SessionPendingInteractionBase,
+  SessionStatusSnapshot,
 } from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-schedule/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -36,7 +36,12 @@ export function owningGroupKey(
 
 /** Pending interaction kinds with dedicated Workspace-row presentation. */
 export type SessionPendingInteractionStatus = 'approval' | 'plan-review' | 'question'
-type SessionPendingInteractions = ReadonlyMap<SessionId, SessionPendingInteractionBase>
+type SessionStatuses = SessionStatusSnapshot
+
+function mainSessionId(list: SessionListState): SessionId | undefined {
+  return Object.values(list.byId)
+    .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
+}
 
 /** One top-level session row in a group or the flat list. */
 export interface SessionNode {
@@ -271,6 +276,7 @@ function groupByWorkspace(
   ungroupedOrder: readonly string[] | undefined,
   showArchived: boolean,
 ): Group[] {
+  const current = mainSessionId(list)
   const groups: Group[] = []
   const accounted = new Set<SessionId>()
   for (const workspace of workspaces) {
@@ -279,7 +285,7 @@ function groupByWorkspace(
       const summary = list.byId[id]
       if (summary === undefined) continue // account may lead the list pull; the row appears when the summary lands
       accounted.add(id)
-      if (!sessionVisible(summary, list.current, archived, showArchived)) continue
+      if (!sessionVisible(summary, current, archived, showArchived)) continue
       members.push(summary)
     }
     groups.push(buildGroup(
@@ -290,7 +296,7 @@ function groupByWorkspace(
   const stray = list.ids
     .map(id => list.byId[id])
     .filter((s): s is SessionSummary =>
-      s !== undefined && !accounted.has(s.id) && sessionVisible(s, list.current, archived, showArchived))
+      s !== undefined && !accounted.has(s.id) && sessionVisible(s, current, archived, showArchived))
   if (stray.length > 0) {
     groups.push(buildGroup(
       UNGROUPED_KEY,
@@ -319,17 +325,18 @@ function visiblePendingKind(kind: string | undefined): SessionPendingInteraction
 function sessionNode(
   s: SessionSummary,
   descendants: ReadonlyMap<SessionId, SubagentDescendantSummary>,
-  pendingInteractions: SessionPendingInteractions,
+  statuses: SessionStatuses,
   archived: ReadonlySet<SessionId>,
 ): SessionNode {
-  const pendingInteraction = visiblePendingKind(pendingInteractions.get(s.id)?.kind)
+  const status = statuses.get(s.id)
+  const pendingInteraction = visiblePendingKind(status?.pendingInteraction?.kind)
   return {
     id: s.id,
     title: sessionTitle(s),
     blank: s.blank,
-    running: s.running,
+    running: status?.running ?? s.running,
     runningSubagentCount: descendants.get(s.id)?.runningCount ?? 0,
-    completed: s.completed === true,
+    completed: status?.completionUnread === true,
     hasActiveSchedule: hasActiveSchedule(s),
     archived: archived.has(s.id),
     updatedAt: s.updatedAt,
@@ -345,10 +352,10 @@ function sessionNode(
  * provisional New Session row; archived sessions are excluded everywhere.
  * Content search lives outside this derivation
  * (see {@link deriveSearchResults}).
- * @param list - sessions list snapshot (`current` feeds containsCurrent).
+ * @param list - sessions list snapshot (`mainView` retention feeds containsCurrent).
  * @param workspaces - real Workspaces in Host group order with caller-projected Session order.
  * @param archivedSessionIds - registry-global archive set.
- * @param pendingInteractions - pending UI interactions by Session.
+ * @param statuses - unified UI status by Session.
  * @param view - local expansion arrays.
  * @returns group sections in render order.
  */
@@ -356,15 +363,16 @@ export function deriveGroups(
   list: SessionListState,
   workspaces: readonly WorkspaceView[],
   archivedSessionIds: readonly SessionId[],
-  pendingInteractions: SessionPendingInteractions,
+  statuses: SessionStatuses,
   view: TreeView,
 ): GroupNode[] {
   const archived = new Set(archivedSessionIds)
   const expandedGroups = new Set(view.expandedGroups)
   const descendants = indexSubagentDescendants(list.byId)
-  const currentGroup = list.current === undefined
+  const current = mainSessionId(list)
+  const currentGroup = current === undefined
     ? undefined
-    : owningGroupKey(workspaces, list.current)
+    : owningGroupKey(workspaces, current)
   const groups: GroupNode[] = []
   for (const g of groupByWorkspace(list, workspaces, archived, view.ungroupedOrder, view.showArchived === true)) {
     const expanded = expandedGroups.has(g.key)
@@ -378,7 +386,7 @@ export function deriveGroups(
       expanded,
       containsCurrent: g.key === currentGroup,
       sessions: expanded
-        ? g.sessions.map(session => sessionNode(session, descendants, pendingInteractions, archived))
+        ? g.sessions.map(session => sessionNode(session, descendants, statuses, archived))
         : [],
     })
   }
@@ -397,9 +405,10 @@ export function visibleSessionIds(
   showArchived = false,
 ): SessionId[] {
   const archived = new Set(archivedSessionIds)
+  const current = mainSessionId(list)
   return list.ids.filter((id) => {
     const s = list.byId[id]
-    return s !== undefined && sessionVisible(s, list.current, archived, showArchived)
+    return s !== undefined && sessionVisible(s, current, archived, showArchived)
   })
 }
 
@@ -407,19 +416,19 @@ export function visibleSessionIds(
  * Derive flat rows from the browser's ordered visible Session ids.
  * @param list - sessions list snapshot used to select the ids.
  * @param sessionIds - known visible members in render order, including any pinned blank.
- * @param pendingInteractions - pending UI interactions by Session.
+ * @param statuses - unified UI status by Session.
  * @returns flat rows in the supplied order with current status indicators.
  */
 export function deriveFlat(
   list: SessionListState,
   sessionIds: readonly SessionId[],
-  pendingInteractions: SessionPendingInteractions,
+  statuses: SessionStatuses,
   archivedSessionIds: readonly SessionId[] = [],
 ): SessionNode[] {
   const descendants = indexSubagentDescendants(list.byId)
   const archived = new Set(archivedSessionIds)
   return sessionIds
-    .map(id => sessionNode(list.byId[id] as SessionSummary, descendants, pendingInteractions, archived))
+    .map(id => sessionNode(list.byId[id] as SessionSummary, descendants, statuses, archived))
 }
 
 /**
@@ -430,7 +439,7 @@ export function deriveFlat(
  * @param workspaces - Workspace membership and display labels.
  * @param query - caller text; surrounding whitespace is ignored.
  * @param archivedSessionIds - registry-global archive set (members never match).
- * @param pendingInteractions - pending UI interactions by Session.
+ * @param statuses - unified UI status by Session.
  * @param content - ranked Host content-search page.
  * @param limit - protocol-owned maximum merged row count.
  * @returns bounded deduplicated flat rows and a refine-query hint bit.
@@ -440,7 +449,7 @@ export function deriveSearchResults(
   workspaces: readonly WorkspaceView[],
   query: string,
   archivedSessionIds: readonly SessionId[],
-  pendingInteractions: SessionPendingInteractions,
+  statuses: SessionStatuses,
   content: { items: readonly SessionSearchResultItem[]; hasMore: boolean },
   limit: number,
 ): SearchResultSet {
@@ -448,6 +457,7 @@ export function deriveSearchResults(
   if (q === '') return { items: [], hasMore: false }
   const archived = new Set(archivedSessionIds)
   const descendants = indexSubagentDescendants(list.byId)
+  const current = mainSessionId(list)
 
   const workspaceBySession = new Map<SessionId, string>()
   for (const workspace of workspaces) {
@@ -467,7 +477,7 @@ export function deriveSearchResults(
     const summary = list.byId[id]
     // Blank placeholders never match a query (their canonical title displays
     // localized, so matching it would tie search to one language).
-    if (summary === undefined || summary.blank || !sessionVisible(summary, list.current, archived, false)) continue
+    if (summary === undefined || summary.blank || !sessionVisible(summary, current, archived, false)) continue
     if (
       sessionTitle(summary).toLowerCase().includes(q)
       || labelOf(summary).toLowerCase().includes(q)
@@ -489,27 +499,55 @@ export function deriveSearchResults(
   for (const summary of orderedLocal) include(summary)
   for (const item of content.items) {
     const summary = list.byId[item.sessionId]
-    if (summary !== undefined && !summary.blank && sessionVisible(summary, list.current, archived, false)) include(summary)
+    if (summary !== undefined && !summary.blank && sessionVisible(summary, current, archived, false)) include(summary)
   }
 
   return {
     items: ordered.slice(0, limit).map((summary) => {
       const match = contentBySession.get(summary.id)
-      const pendingInteraction = visiblePendingKind(pendingInteractions.get(summary.id)?.kind)
+      const status = statuses.get(summary.id)
+      const pendingInteraction = visiblePendingKind(status?.pendingInteraction?.kind)
       return {
         id: summary.id,
         title: sessionTitle(summary),
         workspace: labelOf(summary),
-        running: summary.running,
+        running: status?.running ?? summary.running,
         runningSubagentCount: descendants.get(summary.id)?.runningCount ?? 0,
         ...(pendingInteraction === undefined
           ? {}
           : { pendingInteraction }),
-        completed: summary.completed === true,
+        completed: status?.completionUnread === true,
         hasActiveSchedule: hasActiveSchedule(summary),
         ...match === undefined ? {} : { snippet: match.snippet },
       }
     }),
     hasMore: content.hasMore || ordered.length > limit,
   }
+}
+
+/** Normalize separators for comparison without interpreting POSIX backslashes as separators. */
+function folderPath(path: string): string {
+  const windows = /^[A-Za-z]:[/\\]/.test(path) || path.startsWith('\\\\')
+  return (windows ? path.replaceAll('\\', '/') : path).replace(/\/+$/, '')
+}
+
+/**
+ * Find the nearest registered ancestor, excluding the Workspace directory itself.
+ * Paths use Host spelling; matching is case-sensitive, like Workspace identity.
+ * @param path - Workspace directory.
+ * @param parents - registered Workspace directory paths.
+ * @returns the owning parent path, or undefined when no parent contains the Workspace.
+ */
+export function owningParentFolder(path: string, parents: readonly string[]): string | undefined {
+  const child = folderPath(path)
+  let owner: string | undefined
+  let length = -1
+  for (const parent of parents) {
+    const root = folderPath(parent)
+    if (root.length > length && child !== root && child.startsWith(`${root}/`)) {
+      owner = parent
+      length = root.length
+    }
+  }
+  return owner
 }

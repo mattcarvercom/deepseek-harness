@@ -5,17 +5,18 @@
  * proxies and is answered by endpoint name.
  */
 
-import { describe, expect, vi } from 'vitest'
+import { describe, expect, onTestFinished, vi } from 'vitest'
 import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session/types'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteStreamCarrierError } from '@deepseek-ai/dsh-api-gateway/client'
 import { RemoteError, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { ok, type RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
-import { JUMP_PAGE_MESSAGES, type Session } from '../src/client/sessions/session.ts'
+import { JUMP_PAGE_MESSAGES, Session } from '../src/client/sessions/session.ts'
 import { SessionEventStream } from '../src/client/transport.ts'
 import type { SessionFollowRequest, SessionPage, SessionPageRequest } from '../src/types.ts'
-import { entries, ev, historyValue, inboxUserMessage, plainTurn } from './event-script.client.ts'
+import { entries, ev, historyValue, plainTurn } from './event-script.client.ts'
 import { sessionBench } from './remote/bench.client.ts'
 import {
   FOLLOW, PAGE, err, followScript, followSnapshot, frame, history, pageRule, pushEvent,
@@ -40,6 +41,15 @@ function eventSeqs(session: Session): number[] {
 }
 
 describe('Session open', () => {
+  it('rejects a second scope binding until the owned scope is unbound', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    const client = await start()
+    session.bindScope(client.ctx)
+    expect(() => { session.bindScope(client.ctx.extend()) }).toThrow('already has a bound scope')
+    session.unbindScope()
+    expect(() => { session.bindScope(client.ctx.extend()) }).not.toThrow()
+  })
+
   it('keeps a bare Session blank until an authoritative lifecycle signal arrives', async ({ mock, start }) => {
     const session = await sessionBench(mock, start, SID)
     expect(session.getSnapshot()).toMatchObject({ blank: true, promptAttempted: false, running: false })
@@ -161,40 +171,6 @@ describe('live event path', () => {
     })
   })
 
-  it('folds inbox splice events into pendingInboxPrompts on window install and on live append', async ({ mock, start }) => {
-    // A prompt admitted to the durable inbox before a turn that never claimed it
-    // (rejection closes the turn without a step), so it is still in flight after open.
-    const window = [
-      ev.inboxSplice(SessionSeq(0), {
-        target: 'next-turn', start: 0, inserted: [inboxUserMessage('m-q1', 'first prompt', 'req-q1')],
-      }),
-      ev.turnStart(SessionSeq(1), 1),
-      ev.turnEnd(SessionSeq(2), 1),
-    ]
-    const session = await opened(mock, start, window)
-    expect(session.getSnapshot().pendingInboxPrompts).toEqual([
-      {
-        id: 'm-q1', placement: 'queued', rpcId: 'req-q1',
-        content: [{ type: 'text', text: 'first prompt' }],
-        preview: 'first prompt', text: 'first prompt',
-      },
-    ])
-    await pushEvent(mock, ev.inboxSplice(SessionSeq(3), {
-      target: 'next-step', start: 0, inserted: [inboxUserMessage('m-s1', 'steer me', 'req-s1')],
-    }))
-    expect(session.getSnapshot().pendingInboxPrompts).toEqual([
-      {
-        id: 'm-q1', placement: 'queued', rpcId: 'req-q1',
-        content: [{ type: 'text', text: 'first prompt' }],
-        preview: 'first prompt', text: 'first prompt',
-      },
-      {
-        id: 'm-s1', placement: 'steering', rpcId: 'req-s1',
-        content: [{ type: 'text', text: 'steer me' }],
-        preview: 'steer me', text: 'steer me',
-      },
-    ])
-  })
 })
 
 describe('paging', () => {
@@ -595,6 +571,31 @@ describe('prompt and cancel errors', () => {
       sessionId: SID, attachmentId: 'attachment-1',
     }])
   })
+
+  it('forwards attachment rejection without trying to decode absent bytes', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    const failure = new RemoteError('gateway/internal', 'attachment unavailable', {})
+    mock.remote.session.attachment.mockResolvedValueOnce(err(failure))
+    await expect(session.readAttachment(AttachmentId('missing'))).resolves.toMatchObject({ ok: false, error: failure })
+  })
+
+  it('reports an unmatched command and forwards execution failures without opening history', async ({ mock, start }) => {
+    const client = await start()
+    // The Gateway-only assembly has no commands contribution; this facade test supplies its unary dependency.
+    const session = new Session(SID, {
+      session: client.ctx.remote.session,
+      subagents: client.ctx.remote.subagents,
+      commands: mock.remote.commands,
+      $stream: client.ctx.remote.$stream.bind(client.ctx.remote),
+    })
+    onTestFinished(() => session.dispose())
+    mock.remote.commands.execute.mockResolvedValueOnce(ok(undefined))
+    await expect(session.command('/unknown')).resolves.toEqual({ ok: true, value: { matched: false } })
+    const failure = new RemoteError('gateway/internal', 'command unavailable', {})
+    mock.remote.commands.execute.mockResolvedValueOnce(err(failure))
+    await expect(session.command('/failed')).resolves.toMatchObject({ ok: false, error: failure })
+    expect(mock.log.requests(FOLLOW)).toHaveLength(0)
+  })
 })
 
 describe('killSubagent', () => {
@@ -727,7 +728,7 @@ describe('remaining branches', () => {
     expect(notified).toBe(seen)
   })
 
-  it('rejects an opening page that does not end at the opening cursor', async ({ mock, start }) => {
+  it('records an opening page that does not end at the opening cursor', async ({ mock, start }) => {
     const session = await sessionBench(mock, start, SID)
     mock.stream(FOLLOW, followScript(history(plainTurn(SessionSeq(0), 0, 'a', 'b')), { cursor: 11 }))
     await session.open()
@@ -788,7 +789,7 @@ describe('remaining branches', () => {
     expect(eventSeqs(session)).toHaveLength(6)
   })
 
-  it('doOpen transport throw of a stale generation is swallowed (generation guard in catch)', async ({ mock, start }) => {
+  it('drops a stale opening without replacing the new generation error state', async ({ mock, start }) => {
     const session = await sessionBench(mock, start, SID)
     const stale = Promise.withResolvers<RemoteResult<SessionPage>>()
     mock.stream(FOLLOW, followScript(() => stale.promise))
@@ -834,11 +835,6 @@ describe('remaining branches', () => {
     const result = await session.cancel()
     expect(result.ok).toBe(true)
     expect(session.getSnapshot().promptError).toBeNull()
-  })
-
-  it('dispose is a reserved no-op on resident instances', async ({ mock, start }) => {
-    const session = await sessionBench(mock, start, SID)
-    await expect(session.dispose()).resolves.toBeUndefined()
   })
 
   it('carries raw history and follow events through the event feed', async ({ mock, start }) => {

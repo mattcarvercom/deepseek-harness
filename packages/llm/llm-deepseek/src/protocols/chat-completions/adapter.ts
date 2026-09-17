@@ -28,6 +28,7 @@ import type {
 } from '@deepseek-ai/dsh-attachment'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { boundByContentProgress, contentIdleDeadline } from '../../common/content-idle.ts'
 import type {
   DeepSeekLlmApiJson,
 } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
@@ -167,7 +168,16 @@ export class ChatCompletionsAdapter extends LlmAdapter {
     return this.streamWithConnection(options, this.config.options())
   }
 
-  private async * streamWithConnection(
+  private streamWithConnection(
+    options: GenerateOptions,
+    connection: DeepSeekConnectionOptions,
+  ): AsyncIterable<StreamChunk> {
+    const progress = contentIdleDeadline(options.signal, connection.streamContentIdleTimeoutMs)
+    const upstream = this.rawStreamWithConnection({ ...options, signal: progress.signal }, connection)
+    return boundByContentProgress(upstream, progress, connection.streamContentIdleTimeoutMs, options.signal)
+  }
+
+  private async * rawStreamWithConnection(
     options: GenerateOptions,
     connection: DeepSeekConnectionOptions,
   ): AsyncIterable<StreamChunk> {

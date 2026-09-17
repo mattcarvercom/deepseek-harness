@@ -1,23 +1,9 @@
 /** Session-owned observable state excluding Conversation target data. */
-import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type { RemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionRequestId } from '../../types.ts'
-
-/** One transient inbox occurrence from the authoritative queue snapshot. */
-export interface QueuedMessage {
-  readonly id: MessageId
-  readonly messageId: MessageId
-  readonly placement: 'queued' | 'steering' | 'context'
-  /** Prompt-RPC identity of a browser-submitted occurrence; correlates the local submission echo. */
-  readonly rpcId?: SessionRequestId
-  readonly content: readonly ContentBlock[]
-  readonly preview: string
-  readonly text: string | null
-}
 
 /** One image displayed by a local submission echo before durable admission. */
 export interface PendingSubmissionImage {
@@ -70,17 +56,6 @@ export interface PendingSubmission {
   readonly attachments: readonly PendingSubmissionAttachment[]
 }
 
-/** One in-flight user prompt: admitted to the durable inbox, not yet committed as `user/message`. */
-export interface PendingInboxPrompt {
-  readonly id: MessageId
-  readonly placement: 'queued' | 'steering'
-  /** Prompt-RPC identity when the prompt came from a browser submission. */
-  readonly rpcId?: SessionRequestId
-  readonly content: readonly ContentBlock[]
-  readonly preview: string
-  readonly text: string | null
-}
-
 /** History-open lifecycle of a Session event window. */
 export type OpenState = 'cold' | 'loading' | 'open' | 'error'
 
@@ -93,18 +68,8 @@ export interface PromptError {
 /** Immutable Session lifecycle and control snapshot. */
 export interface SessionSnapshot {
   readonly sessionId: SessionId
-  readonly queue: readonly QueuedMessage[]
   /** Local prompt-submission echoes not yet observed as durable events or queue occurrences. */
   readonly pendingSubmissions: readonly PendingSubmission[]
-  /**
-   * User prompts admitted to the durable inbox and not yet committed as
-   * `user/message`; survives reload and the claim→commit (compaction) window.
-   *
-   * Consumer contract: entries still present in the queue projection render
-   * through the queue dock and steering bubbles; views render the remaining
-   * (claimed, uncommitted) entries only.
-   */
-  readonly pendingInboxPrompts: readonly PendingInboxPrompt[]
   readonly running: boolean
   readonly subagent: {
     readonly address: SubagentAddress

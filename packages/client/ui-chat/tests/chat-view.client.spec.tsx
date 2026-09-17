@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -21,7 +22,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { KeyedSnapshotSelectorHook, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -64,10 +65,13 @@ beforeEach(() => {
 const SID = 's1' as SessionId
 type RoutedChatNodeOwner = ChatNodeOwnerProps & { readonly node: ChatNode }
 
-function sessionSnapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
+interface TestSessionSnapshot extends SessionSnapshot {
+  readonly testInbox?: InboxState
+}
+
+function sessionSnapshot(overrides: Partial<TestSessionSnapshot> = {}): TestSessionSnapshot {
   return {
     sessionId: SID,
-    queue: [],
     pendingSubmissions: [],
     running: false,
     removed: false,
@@ -81,17 +85,16 @@ function sessionSnapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnaps
     lastAgentError: null,
     promptAttempted: true,
     awaitingFirstTurn: false,
-    pendingInboxPrompts: [],
     ...overrides,
   }
 }
 
 /** Scripted Session source: set() swaps the top-level object like the real Controller binding. */
-function makeSessionSource(init: Partial<SessionSnapshot> = {}) {
+function makeSessionSource(init: Partial<TestSessionSnapshot> = {}) {
   let snap = sessionSnapshot(init)
   const subs = new Set<() => void>()
   return {
-    set: (next: Partial<SessionSnapshot>) => {
+    set: (next: Partial<TestSessionSnapshot>) => {
       snap = { ...snap, ...next }
       for (const fn of [...subs]) fn()
     },
@@ -108,7 +111,7 @@ function makeSessionSource(init: Partial<SessionSnapshot> = {}) {
 type ChatSlice = Partial<LegacyConversationSlice> & {
   readonly turnUsages?: NonNullable<Parameters<typeof chatSnapshotFixture>[0]>['turnUsages']
 }
-type HarnessUpdate = ChatSlice & Partial<SessionSnapshot> & { readonly chat?: ChatSnapshot }
+type HarnessUpdate = ChatSlice & Partial<TestSessionSnapshot> & { readonly chat?: ChatSnapshot }
 
 /** Scripted Chat target source, independent from Session lifecycle state. */
 function makeChatSource(init: ChatSlice = {}, snapshot?: ChatSnapshot) {
@@ -214,7 +217,7 @@ const compaction = (over: Partial<CompactionSummaryNode> = {}): CompactionSummar
 /** Sessions-list source for the global standard-kit seat; tests feed jobs. */
 function makeSessionsSource() {
   const store = createSnapshotStore<SessionListState>(
-    { ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined })
+    { ids: [], byId: {}, phase: 'ready', subagentsByParent: {}, jobsBySession: {} })
   return {
     use: bindSnapshotSelector(store),
     setJobs: (jobs: readonly SessionJob[]) => {
@@ -248,7 +251,7 @@ function bindKeyedSnapshotSelector<Value>(
 
 function makeHarness(
   init: HarnessUpdate = {},
-  sessionOverrides: Partial<SessionSnapshot> = {},
+  sessionOverrides: Partial<TestSessionSnapshot> = {},
   chatSnapshot?: ChatSnapshot,
 ) {
   const {
@@ -264,6 +267,7 @@ function makeHarness(
     ...(turnUsages === undefined ? {} : { turnUsages }),
   }
   const session = makeSessionSource({ ...sessionInit, ...sessionOverrides })
+  const useTestSession = bindSnapshotSelector(session.source)
   const chatSource = makeChatSource(chatSlice, initialChat ?? chatSnapshot)
   const useChatNode = bindKeyedSnapshotSelector(
     key => chatSource.source.getSnapshot().nodes.source(key),
@@ -300,8 +304,6 @@ function makeHarness(
   }> = []
   const renderCommandSlot = ((_key: string, _owner: object, opts?: { fallback?: React.ReactNode }) =>
     opts?.fallback ?? null) as unknown as React.ComponentProps<typeof CommandNodeView>['renderSlot']
-  const renderTurnTail = ((_key: string, _owner: object) => null) as unknown as
-    React.ComponentProps<typeof TurnTailNodeView>['renderSlotChain']
   const renderTurnTailSlot = (() => null) as unknown as
     React.ComponentProps<typeof TurnTailNodeView>['renderSlot']
   let nodeSlotOverride: React.ComponentProps<typeof ChatNodeSeat>['renderSlot'] | undefined
@@ -353,7 +355,6 @@ function makeHarness(
           <TurnTailNodeView
             {...nodeProps<'turn-tail'>()}
             renderSlot={renderTurnTailSlot}
-            renderSlotChain={renderTurnTail}
             SessionProvider={props.SessionProvider}
           />
         )
@@ -399,12 +400,16 @@ function makeHarness(
     useConversation: bindSnapshotSelector(createSnapshotStore(EMPTY_CONVERSATION_SNAPSHOT)),
     useTrajectory: (() => { throw new Error('unused') }),
     useSessions: sessionsSource.use,
+    useSessionRetainInfo: () => undefined,
     useResource,
-    useSessionPendingInteraction: bindSnapshotSelector(
-      createSnapshotStore<SessionPendingInteractionSnapshot>(new Map()),
+    useSessionStatus: bindSnapshotSelector(
+      createSnapshotStore<SessionStatusSnapshot>(new Map()),
     ),
     useWorkspaces: emptyWorkspaces(),
-    useProjection: () => outlineValue,
+    useProjection: (key: string) => {
+      const inbox = useTestSession(snapshot => snapshot.testInbox)
+      return key === 'inbox' ? inbox : outlineValue
+    },
     useInput: (() => { throw new Error('unused') }),
     inputActions: {
       setDraft: () => {},
@@ -423,6 +428,7 @@ function makeHarness(
     completeViewRequest: () => {},
     openFile,
     openSkill,
+    openExternalLink: vi.fn(),
     loadOlder,
     loadThrough,
     loadImage: vi.fn(() => Promise.reject(new Error('not used'))),
@@ -534,6 +540,16 @@ function installScrollMetrics(element: HTMLElement, initialHeight: number, clien
 }
 
 describe('Chat node rendering', () => {
+
+  it('opens Markdown references to unmodified files with line navigation', () => {
+    const h = makeHarness({
+      nodes: [user(1, 'explain'), assistant(2, '[source](src/index.ts#L24-L30)', 1)],
+      turnEnds: new Map([[1, 2]]),
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    fireEvent.click(view.getByRole('button', { name: 'source' }))
+    expect(h.openFile).toHaveBeenCalledWith('src/index.ts', { line: 24 })
+  })
 
   it('threads the injected file-mention vocabulary into the closing prose only', () => {
     const wrote = (seq: number, callId: string): ToolResultNode => ({
@@ -998,23 +1014,23 @@ describe('ChatView', () => {
     })
     const pending = {
       id: 'steer-occurrence' as never,
-      messageId: 'steer-message' as never,
-      placement: 'steering' as const,
+      role: 'user' as const,
+      source: { kind: 'user' as const },
       content: [{ type: 'text' as const, text: 'interrupt now' }],
       preview: 'interrupt now',
       text: 'interrupt now',
     }
     const queued = {
       id: 'queued-occurrence' as never,
-      messageId: 'queued-message' as never,
-      placement: 'queued' as const,
+      role: 'user' as const,
+      source: { kind: 'user' as const },
       content: [{ type: 'text' as const, text: 'later' }],
       preview: 'later',
       text: 'later',
     }
     const h = makeHarness(
       { nodes: [assistant(1, 'working')] },
-      { queue: [queued, pending], running: true },
+      { testInbox: { 'next-turn': [queued], 'next-step': [pending] }, running: true },
     )
     const view = render(<h.ChatView {...h.props} />)
 
@@ -1029,12 +1045,12 @@ describe('ChatView', () => {
       & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
 
     act(() => {
-      h.setSession({ queue: [queued] })
+      h.setSession({ testInbox: { 'next-turn': [queued], 'next-step': [] } })
       h.setChat({
         nodes: [
           assistant(1, 'working'),
           {
-            kind: 'steering', messageId: pending.messageId,
+            kind: 'steering', messageId: pending.id,
             seq: 2, time: 2_000,
             content: [{ type: 'text', text: 'interrupt now' }], source: null,
           },
@@ -1066,8 +1082,8 @@ describe('ChatView', () => {
   it('keeps a later pending occurrence visible when it reuses a durable MessageId', () => {
     const pending = {
       id: 'steer-occurrence-later' as never,
-      messageId: 'shared-steer-message' as never,
-      placement: 'steering' as const,
+      role: 'user' as const,
+      source: { kind: 'user' as const },
       content: [{ type: 'text' as const, text: 'same steering' }],
       preview: 'same steering',
       text: 'same steering',
@@ -1077,7 +1093,7 @@ describe('ChatView', () => {
         kind: 'user', seq: 2, time: 2_000,
         content: pending.content, source: null,
       }],
-    }, { queue: [pending], running: true })
+    }, { testInbox: { 'next-turn': [], 'next-step': [pending] }, running: true })
     const view = render(<h.ChatView {...h.props} />)
 
     expect(view.getAllByText('same steering')).toHaveLength(2)
@@ -1143,15 +1159,12 @@ describe('ChatView', () => {
 
     act(() => {
       h.setSession({
-        queue: [{
+        testInbox: { 'next-turn': [], 'next-step': [{
           id: 'steer-occurrence' as never,
-          messageId: 'steer-message' as never,
-          placement: 'steering',
-          rpcId: 'req-steer' as never,
           content: [{ type: 'text', text: '带图纠偏' }],
-          preview: '带图纠偏',
-          text: '带图纠偏',
-        }],
+
+          role: 'user', source: { kind: 'user', rpcId: 'req-steer' as never },
+        }] },
       })
     })
     expect(view.getAllByText('带图纠偏')).toHaveLength(1)
@@ -1159,224 +1172,6 @@ describe('ChatView', () => {
     expect(view.container.querySelector('[data-pending-steering]')).not.toBeNull()
   })
 
-  it('renders a durable in-flight queued prompt at the flow tail with its placement status', () => {
-    const h = makeHarness(
-      { nodes: [assistant(1, 'working')] },
-      {
-        pendingInboxPrompts: [{
-          id: 'inbox-m1' as never,
-          placement: 'queued' as const,
-          rpcId: 'req-q1' as never,
-          content: [{ type: 'text' as const, text: '排队中的提示' }],
-          preview: '排队中的提示',
-          text: '排队中的提示',
-        }],
-      },
-    )
-    const view = render(<h.ChatView {...h.props} />)
-    const row = view.getByText('排队中的提示').closest('[data-inflight-prompt]')
-    expect(row).not.toBeNull()
-    expect(within(row as HTMLElement).getByRole('status').textContent).toContain('排队中')
-  })
-
-  it('hides the in-flight bubble once the prompt commits as a durable node', () => {
-    const h = makeHarness(
-      { nodes: [assistant(1, 'working')] },
-      {
-        pendingInboxPrompts: [{
-          id: 'inbox-m1' as never,
-          placement: 'queued' as const,
-          rpcId: 'req-q1' as never,
-          content: [{ type: 'text' as const, text: '排队的提示' }],
-          preview: '排队的提示',
-          text: '排队的提示',
-        }],
-      },
-    )
-    const view = render(<h.ChatView {...h.props} />)
-    expect(view.container.querySelector('[data-inflight-prompt]')).not.toBeNull()
-
-    act(() => {
-      h.setChat({
-        nodes: [
-          assistant(1, 'working'),
-          {
-            kind: 'user', seq: 2, time: 2_000,
-            content: [{ type: 'text', text: '排队的提示' }] as never,
-            source: { kind: 'user', rpcId: 'req-q1' },
-          },
-        ],
-      })
-    })
-    expect(view.getAllByText('排队的提示')).toHaveLength(1)
-    expect(view.container.querySelector('[data-inflight-prompt]')).toBeNull()
-  })
-
-  it('hides an in-flight prompt whose committed node key matches its message id', () => {
-    // Production view nodes derive their key from the message id, so a fold
-    // entry with that id meets the committed node on key. Mirror the
-    // relationship without an rpcId by pointing the pending prompt at the
-    // fixture node's key.
-    const fixture = chatSnapshotFixture({
-      nodes: [{ ...user(2, '提交的提示'), source: { kind: 'user' } }],
-    })
-    const h = makeHarness(
-      {},
-      {
-        running: true,
-        pendingInboxPrompts: [{
-          id: 'fixture:user:2' as never,
-          placement: 'queued' as const,
-          content: [{ type: 'text' as const, text: '提交的提示' }],
-          preview: '提交的提示',
-          text: '提交的提示',
-        }],
-      },
-      fixture,
-    )
-    const view = render(<h.ChatView {...h.props} />)
-    expect(view.getAllByText('提交的提示')).toHaveLength(1)
-    expect(view.container.querySelector('[data-inflight-prompt]')).toBeNull()
-  })
-
-  it('does not double-render a steering prompt still in the queue projection', () => {
-    const h = makeHarness(
-      { nodes: [assistant(1, 'working')] },
-      {
-        running: true,
-        queue: [{
-          id: 'occ-1' as never,
-          messageId: 'msg-s1' as never,
-          placement: 'steering' as const,
-          content: [{ type: 'text' as const, text: '纠偏引导' }],
-          preview: '纠偏引导',
-          text: '纠偏引导',
-        }],
-        pendingInboxPrompts: [{
-          id: 'msg-s1' as never,
-          placement: 'steering' as const,
-          content: [{ type: 'text' as const, text: '纠偏引导' }],
-          preview: '纠偏引导',
-          text: '纠偏引导',
-        }],
-      },
-    )
-    const view = render(<h.ChatView {...h.props} />)
-    expect(view.getAllByText('纠偏引导')).toHaveLength(1)
-    expect(view.container.querySelector('[data-inflight-prompt]')).toBeNull()
-    expect(view.container.querySelector('[data-pending-steering]')).not.toBeNull()
-  })
-
-  it('does not double-render a queued prompt still in the queue projection', () => {
-    const h = makeHarness(
-      { nodes: [assistant(1, 'working')] },
-      {
-        running: true,
-        queue: [{
-          id: 'q-occ' as never,
-          messageId: 'msg-q1' as never,
-          placement: 'queued' as const,
-          content: [{ type: 'text' as const, text: '等待排队' }],
-          preview: '等待排队',
-          text: '等待排队',
-        }],
-        pendingInboxPrompts: [{
-          id: 'msg-q1' as never,
-          placement: 'queued' as const,
-          content: [{ type: 'text' as const, text: '等待排队' }],
-          preview: '等待排队',
-          text: '等待排队',
-        }],
-      },
-    )
-    const view = render(<h.ChatView {...h.props} />)
-    // The queued occurrence renders through the queue dock, never the flow.
-    expect(view.container.querySelector('[data-inflight-prompt]')).toBeNull()
-    expect(view.queryByText('等待排队')).toBeNull()
-  })
-
-  it('keeps a claimed steering prompt visible with its steering status after the queue frame drops it', () => {
-    const h = makeHarness(
-      { nodes: [assistant(1, 'working')] },
-      {
-        running: true,
-        queue: [],
-        pendingInboxPrompts: [{
-          id: 'msg-s2' as never,
-          placement: 'steering' as const,
-          content: [{ type: 'text' as const, text: '轮内的引导' }],
-          preview: '轮内的引导',
-          text: '轮内的引导',
-        }],
-      },
-    )
-    const view = render(<h.ChatView {...h.props} />)
-    const row = view.getByText('轮内的引导').closest('[data-inflight-prompt]')
-    expect(row).not.toBeNull()
-    expect(within(row as HTMLElement).getByRole('status').textContent).toContain('引导中')
-  })
-
-  it('hides a steering echo whose prompt already has an in-flight fold entry', () => {
-    const h = makeHarness(
-      { nodes: [assistant(1, 'working')] },
-      {
-        running: true,
-        pendingSubmissions: [{
-          requestId: 'req-e' as never,
-          placement: 'steering',
-          time: 5_000,
-          text: '回显与气泡',
-          attachments: [],
-        }],
-        pendingInboxPrompts: [{
-          id: 'msg-e' as never,
-          placement: 'steering' as const,
-          rpcId: 'req-e' as never,
-          content: [{ type: 'text' as const, text: '回显与气泡' }],
-          preview: '回显与气泡',
-          text: '回显与气泡',
-        }],
-      },
-    )
-    const view = render(<h.ChatView {...h.props} />)
-    expect(view.getAllByText('回显与气泡')).toHaveLength(1)
-    expect(view.container.querySelector('[data-submission-echo]')).toBeNull()
-    expect(view.container.querySelector('[data-inflight-prompt]')).not.toBeNull()
-  })
-
-  it('keeps multiple in-flight prompts in their fold order', () => {
-    const h = makeHarness(
-      { nodes: [assistant(1, 'working')] },
-      {
-        pendingInboxPrompts: [
-          {
-            id: 'a' as never, placement: 'queued' as const,
-            content: [{ type: 'text' as const, text: '第一个' }],
-            preview: '第一个', text: '第一个',
-          },
-          {
-            id: 'b' as never, placement: 'steering' as const,
-            content: [{ type: 'text' as const, text: '第二个' }],
-            preview: '第二个', text: '第二个',
-          },
-          {
-            id: 'c' as never, placement: 'queued' as const,
-            content: [{ type: 'text' as const, text: '第三个' }],
-            preview: '第三个', text: '第三个',
-          },
-        ],
-      },
-    )
-    const view = render(<h.ChatView {...h.props} />)
-    expect([...view.container.querySelectorAll('[data-inflight-prompt]')].map(row => row.textContent))
-      .toEqual(['第一个排队中', '第二个引导中', '第三个排队中'])
-  })
-
-  it('renders no in-flight rows for an empty fold', () => {
-    const h = makeHarness({ nodes: [assistant(1, 'working')] })
-    const view = render(<h.ChatView {...h.props} />)
-    expect(view.container.querySelector('[data-inflight-prompt]')).toBeNull()
-  })
 
   it('keeps a queued echo out of the Chat flow before and after Host admission', () => {
     const h = makeHarness(
@@ -1395,15 +1190,12 @@ describe('ChatView', () => {
     expect(view.queryByText('排队中')).toBeNull()
     act(() => {
       h.setSession({
-        queue: [{
+        testInbox: { 'next-step': [], 'next-turn': [{
           id: 'q-occurrence' as never,
-          messageId: 'q-message' as never,
-          placement: 'queued' as const,
-          rpcId: 'req-q' as never,
           content: [{ type: 'text' as const, text: '排队中' }],
-          preview: '排队中',
-          text: '排队中',
-        }],
+
+          role: 'user', source: { kind: 'user', rpcId: 'req-q' as never },
+        }] },
       })
     })
     // The queued occurrence and its local predecessor both belong to the
@@ -2437,14 +2229,12 @@ describe('ChatView', () => {
     expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒 · 等待首个 token…$/)
     expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull()
     act(() => {
-      h.setSession({ queue: [{
+      h.setSession({ testInbox: { 'next-turn': [], 'next-step': [{
         id: 'steering-occurrence' as never,
-        messageId: 'steering-message' as never,
-        placement: 'steering',
         content: [{ type: 'text', text: 'also' }],
-        preview: 'also',
-        text: 'also',
-      }] })
+
+        role: 'user', source: { kind: 'user' },
+      }] } })
     })
     expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒 · 等待首个 token…$/)
   })

@@ -51,7 +51,6 @@ function record(
 function sessionSnapshot(openState: SessionSnapshot['openState']): SessionSnapshot {
   return {
     sessionId: SESSION,
-    queue: [],
     pendingSubmissions: [],
     running: false,
     subagent: null,
@@ -65,7 +64,6 @@ function sessionSnapshot(openState: SessionSnapshot['openState']): SessionSnapsh
     lastAgentError: null,
     promptAttempted: false,
     awaitingFirstTurn: false,
-    pendingInboxPrompts: [],
   }
 }
 

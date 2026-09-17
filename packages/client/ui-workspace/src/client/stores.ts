@@ -10,8 +10,8 @@ import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-sto
 /** Browser-local order account for the hierarchy-free flat Session list. */
 export const FLAT_SESSION_ORDER_KEY = '__flat_session_order__'
 
-/** Session-list grouping mode: workspace sections or one flat recency list. */
-export type SessionGroupBy = 'workspace' | 'flat'
+/** Session-list grouping mode: sibling Workspace sections, a Workspace tree, or one flat list. */
+export type SessionGroupBy = 'workspace' | 'workspace-tree' | 'flat'
 /** Session order: saved manual positions or current recency. */
 export type SessionOrderBy = 'manual' | 'updated'
 
@@ -21,7 +21,7 @@ type WorkspaceViewState = {
   orderBy: SessionOrderBy
   /** Registry-archived Sessions render in their groups (dimmed) instead of hiding. */
   showArchived: boolean
-  /** Explicit zero-or-five-session state keyed by Workspace group identity. */
+  /** Explicit group expansion keyed by Workspace identity, including descendants in tree mode. */
   groupExpansion: Record<string, boolean>
   /** Saved manual order per Workspace group plus the browser-local flat-list account. */
   sessionOrderByAccount: Record<string, string[]>
