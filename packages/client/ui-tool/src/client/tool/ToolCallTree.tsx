@@ -30,8 +30,9 @@ const ToolCall = memo(function ToolCall({
     cwd,
     home,
     loadImage,
+    renderImages: renderSlot,
     inspect: () => { inspectCall(callId) },
-  }), [callId, toolName, block, openFile, cwd, home, loadImage, inspectCall])
+  }), [callId, toolName, block, openFile, cwd, home, loadImage, renderSlot, inspectCall])
   // Only an in-flight subagent delegation records an activity fact under its
   // own call id; every other row's lookup stays undefined and shows no subline.
   const fact = useSubagentActivity(m => m[callId])

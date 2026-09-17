@@ -299,6 +299,9 @@ importers:
       '@deepseek-ai/dsh-tool-ask-user':
         specifier: workspace:^
         version: link:../../packages/interaction/tool-ask-user
+      '@deepseek-ai/dsh-tool-attachment':
+        specifier: workspace:^
+        version: link:../../packages/attachment/tool-attachment
       '@deepseek-ai/dsh-tool-bash':
         specifier: workspace:^
         version: link:../../packages/shell/tool-bash
@@ -1383,6 +1386,30 @@ importers:
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:^
         version: link:../../util/home-paths
+
+  packages/attachment/tool-attachment:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-attachment':
+        specifier: workspace:^
+        version: link:../attachment
+      '@deepseek-ai/dsh-attachment-local':
+        specifier: workspace:^
+        version: link:../attachment-local
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
 
   packages/boot/app-boot:
     dependencies:

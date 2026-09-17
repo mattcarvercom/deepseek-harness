@@ -47,6 +47,7 @@ import * as ToolPwshPersistent from '@deepseek-ai/dsh-tool-pwsh-persistent'
 import CordisHostRunner from '@deepseek-ai/dsh-cordis-host-runner'
 import * as ToolCordis from '@deepseek-ai/dsh-tool-cordis'
 import * as ToolPresent from '@deepseek-ai/dsh-tool-present'
+import * as ToolAttachment from '@deepseek-ai/dsh-tool-attachment'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
 import * as ToolStrReplaceEditor from '@deepseek-ai/dsh-tool-str-replace-editor'
@@ -378,6 +379,20 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The read-before-write/edit policy is added by `@deepseek-ai/dsh-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. The image tool is not registered without `ctx.attachments`; its schema is route-independent, and execution refuses unless the exact routed model declares image input.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-attachment',
+    dir: 'tool-attachment',
+    source: 'packages/attachment/tool-attachment/src/index.ts',
+    requires: ['ctx.tools', 'ctx.attachments (registration and execution)'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      // Registration is gated on the attachment store; the catalog seam
+      // marker satisfies the inject without any attachment I/O.
+      await ctx.plugin(CatalogAttachmentStore)
+      await ctx.plugin(ToolAttachment)
+    },
+    note: 'Returns read-only host paths for the images and files attached to the most recent human message; the tool is not registered without a mounted attachment store.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-fs-search',

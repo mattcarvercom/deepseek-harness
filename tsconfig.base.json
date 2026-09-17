@@ -294,6 +294,7 @@
       "@deepseek-ai/dsh-atomic-write": ["./packages/util/atomic-write/src"],
       "@deepseek-ai/dsh-attachment": ["./packages/attachment/attachment/src"],
       "@deepseek-ai/dsh-attachment-local": ["./packages/attachment/attachment-local/src"],
+      "@deepseek-ai/dsh-tool-attachment": ["./packages/attachment/tool-attachment/src"],
       "@deepseek-ai/dsh-authorization": ["./packages/credentials/authorization/src"],
       "@deepseek-ai/dsh-authorization/invariant": ["./packages/credentials/authorization/src/invariant.ts"],
       "@deepseek-ai/dsh-base": ["./packages/bundle/base/src"],

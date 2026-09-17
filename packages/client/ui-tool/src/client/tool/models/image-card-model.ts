@@ -13,7 +13,10 @@ import { parsedToolCall } from './raw-tool-call.ts'
  * it nor derives a path from it.
  */
 export interface ImageCardModel {
-  /** Card label: the read path, shortened the way every other card's is. */
+  /**
+   * Card label: the read path, shortened the way every other card's is; for a
+   * generic image-bearing result, the producing tool's wire name.
+   */
   label: string
   /** The durable images this result returned, in result order. */
   images: readonly { readonly attachment: ImageAttachmentRef }[]
@@ -238,4 +241,47 @@ export function imageCardModel(
     images: refs.map(ref => ({ attachment: ref })),
     text,
   }
+}
+
+/**
+ * Derive the image card for a settled tool result that carries image blocks
+ * but is not `read_image` — an MCP image tool, or any other image-producing
+ * tool. A generic result has no persisted display path and no model-facing
+ * envelope, so the label is the producing tool's wire name and the text is
+ * the result's own text blocks joined in order.
+ *
+ * The same content gates as `imageCardModel` apply: result-side only, text
+ * and image blocks only (any other block would be silently hidden), and at
+ * least one durable reference. Everything else falls back to the generic
+ * text body.
+ * @param block - running or settled Tool block.
+ * @returns the image-card props, or null for the generic text body.
+ */
+export function genericImageCardModel(block: ToolCallBlock): ImageCardModel | null {
+  if (!('kind' in block) || block.isError) return null
+  const name = parsedToolCall(block)?.name
+  if (name === undefined || name === '') return null
+  if (!fullyRendered(block.content)) return null
+  const refs = imageReferences(block.content)
+  if (refs === null) return null
+  return {
+    label: name,
+    images: refs.map(ref => ({ attachment: ref })),
+    text: joinedTexts(block.content),
+  }
+}
+
+/**
+ * Join every text block of a settled result in order, '' when it carries
+ * none. Trusts the `fullyRendered` gate, which already required every text
+ * block to hold a string.
+ * @param content - the settled result's content blocks.
+ * @returns the joined text.
+ */
+function joinedTexts(content: readonly { type: string; text?: string }[]): string {
+  const parts: string[] = []
+  for (const part of content) {
+    if (part.type === 'text') parts.push(part.text as string)
+  }
+  return parts.join('\n')
 }

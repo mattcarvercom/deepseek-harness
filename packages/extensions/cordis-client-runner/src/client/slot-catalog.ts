@@ -883,6 +883,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'useSessionPendingInteraction: UseSessionPendingInteraction',
       'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
       'useChat: UseChat',
+      'useSubagentActivity: UseSubagentActivity',
       'useConversation: UseConversation',
       'useInput: SnapshotSelectorHook<InputState>',
       'inputActions: InputActions',
@@ -2502,6 +2503,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'useSessionPendingInteraction: UseSessionPendingInteraction',
       'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
       'useChat: UseChat',
+      'useSubagentActivity: UseSubagentActivity',
       'useConversation: UseConversation',
       'useInput: SnapshotSelectorHook<InputState>',
       'inputActions: InputActions',
@@ -2675,7 +2677,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     kind: 'single',
     scope: 'session',
     summary: 'Durable images of a settled image-bearing Tool call, rendered through the attachment presentation plugin.',
-    doc: 'Durable images of a settled image-bearing Tool call, rendered through\nthe attachment presentation plugin. The Tool layer never imports an\nattachment implementation: a toolview declares this slot as a child and\nrenders it with the image card\'s references plus the session-authorized\nloader it received in its owner, and the attachment plugin fills the\ngallery. Composing no attachment presentation plugin renders nothing,\nwhich is why the image card keeps its own envelope text beside the\ngallery. A child slot is declared by exactly one entry: registering a\nsecond toolview that declares the same child throws at load, so a\nfuture image-bearing tool must reuse this entry or own a distinct\nslot.',
+    doc: 'Durable images of a settled image-bearing Tool call, rendered through\nthe attachment presentation plugin. The Tool layer never imports an\nattachment implementation: the `tool-call` chat node declares this slot\nand hands its dispatcher to every atomic Tool view through\n`ToolCallOwnerProps.renderImages`, so any image-bearing row — the\nread_image card or a generic tool result carrying image blocks — draws\nthe same gallery from the card\'s references plus the session-authorized\nloader it received in its owner. Composing no attachment presentation\nplugin renders nothing, which is why the image card keeps its own text\nbeside the gallery. A child slot is declared by exactly one entry: the\nchat node owns this declaration, and a toolview that declared the same\nchild would throw at load.',
     registerOptions: [],
     ownerProps: [
       '/** Owner currency of the Tool image gallery slot: references plus the loader. */\nexport interface ToolImagesOwnerProps {\n  /** Durable references or submission-echo previews in result order. */\n  images: readonly MessageImageSource[]\n  /** Session-authorized image URL loader for the durable arm. */\n  loadImage: MessageImageLoader\n  /** Horizontal placement inside the owning record. */\n  align: \'start\' | \'end\'\n}',
@@ -2704,13 +2706,13 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     keyDomain: '',
     hookContext: '',
     slotInject: '',
-    declaredBy: 'an entry in \'tool.call.toolview\' (client-ui-tool), so it exists while that entry is mounted',
+    declaredBy: 'an entry in \'conversation.chat.node\' (client-ui-tool), so it exists while that entry is mounted',
     occupants: [
       'client-ui-attachment MessageImages',
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'tool.call.images\', () => ctx.slots.register(\n      { name: \'tool.call.images\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-tool/src/client/contract/slots.ts:40',
+    source: 'packages/client/ui-tool/src/client/contract/slots.ts:41',
   },
   {
     key: 'tool.call.toolview',
@@ -2727,12 +2729,13 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Standard owner currency supplied to every atomic Tool view. */\nexport interface ToolCallOwnerProps {\n  /** Tool call identity, stable across running and settled forms. */\n  callId: string\n  /** Wire Tool name and keyed dispatch value. */\n  toolName: string\n  /** Frozen running call or settled result node. */\n  block: ToolCallBlock\n  /** Session workspace root for relative summaries. */\n  cwd?: string | undefined\n  /** Host account home; POSIX home-rooted summaries display as `~`. */\n  home?: string | undefined\n  /**\n   * Open a Tool argument path. A view that knows which line the call was about\n   * passes it, and the opened surface lands there.\n   */\n  openFile: (path: string, options?: OpenFileOptions) => void\n  /**\n   * Session-authorized image loader for the `tool.call.images` slot, supplied\n   * by the chat node that owns this call. A composed chat node always\n   * supplies it (`ChatNodeOwnerProps.loadImage` is required), so the tool\n   * layer never imports an attachment implementation nor handles URL\n   * authorization.\n   */\n  loadImage: MessageImageLoader\n  /** Inspect this call in the trajectory view when available. */\n  inspect?: (() => void) | undefined\n}',
+      '/** Standard owner currency supplied to every atomic Tool view. */\nexport interface ToolCallOwnerProps {\n  /** Tool call identity, stable across running and settled forms. */\n  callId: string\n  /** Wire Tool name and keyed dispatch value. */\n  toolName: string\n  /** Frozen running call or settled result node. */\n  block: ToolCallBlock\n  /** Session workspace root for relative summaries. */\n  cwd?: string | undefined\n  /** Host account home; POSIX home-rooted summaries display as `~`. */\n  home?: string | undefined\n  /**\n   * Open a Tool argument path. A view that knows which line the call was about\n   * passes it, and the opened surface lands there.\n   */\n  openFile: (path: string, options?: OpenFileOptions) => void\n  /**\n   * Session-authorized image loader for the `tool.call.images` slot, supplied\n   * by the chat node that owns this call. A composed chat node always\n   * supplies it (`ChatNodeOwnerProps.loadImage` is required), so the tool\n   * layer never imports an attachment implementation nor handles URL\n   * authorization.\n   */\n  loadImage: MessageImageLoader\n  /**\n   * Dispatcher for the Tool-owned `tool.call.images` gallery, declared by the\n   * `tool-call` chat node and /* …truncated — full shape in source */',
     ],
     ownerPropsReferences: [
       'ChatNodeOwnerProps',
       'MessageImageLoader',
       'OpenFileOptions',
+      'PropsRenderSlots',
     ],
     standardProps: [
       'useResource: UseResource',
