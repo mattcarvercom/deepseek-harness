@@ -14,14 +14,14 @@ import type {} from '@deepseek-ai/dsh-client-file-upload'
 import {
   ReasoningEffortId, assistantStreamChunks, createUserMessage, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
-import type { MessageSource } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
 import { buildForkSeed } from '@deepseek-ai/dsh-session/fork'
 import { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import { canonicalClientTimeZone } from '@deepseek-ai/dsh-util-time'
-import { assertNever } from '@deepseek-ai/dsh-util-values'
+import { assertNever, deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import {
@@ -82,6 +82,60 @@ function latestCompletedPrefixBoundary(events: readonly SessionEvent[]): Session
     boundary = next.seq
   }
   return boundary
+}
+
+/**
+ * Block-level shape of one queue edit: only image and file blocks, in stored
+ * order and position, plus at most one trailing text block. Item-dependent
+ * rules run in {@link queueEditContent}.
+ * @param content - replacement content submitted by the Client.
+ * @throws RemoteError when the content is not an admissible queue edit.
+ */
+function assertQueueEditContent(content: readonly ContentBlock[]): void {
+  const nonText = content.filter(block => block.type !== 'text')
+  if (nonText.some(block => block.type !== 'image' && block.type !== 'file')) {
+    throw new RemoteError(
+      'session/attachment-invalid',
+      "queue edits accept the item's image and file blocks plus one text block",
+      { reason: 'QUEUE_EDIT_NON_TEXT' },
+    )
+  }
+  const text = content.filter(block => block.type === 'text')
+  if (text.length > 1 || (text.length === 1 && text[0] !== content[content.length - 1])) {
+    throw new RemoteError(
+      'session/attachment-invalid',
+      "queue edits carry at most one text block, stored after the item's attachments",
+      { reason: 'QUEUE_EDIT_NON_TEXT' },
+    )
+  }
+}
+
+/**
+ * Bind an admitted edit to the addressed item: the edit must resubmit the
+ * item's own image and file blocks, in stored order and position, and a
+ * text-only item keeps requiring non-whitespace text.
+ * @param edit - replacement content that passed assertQueueEditContent.
+ * @param current - the addressed item's stored content blocks.
+ * @returns the edit's content as the replacement content.
+ * @throws RemoteError when the edit deviates from the item's attachments.
+ */
+function queueEditContent(edit: readonly ContentBlock[], current: readonly ContentBlock[]): ContentBlock[] {
+  const currentAttachments = current.filter(block => block.type === 'image' || block.type === 'file')
+  if (!deepEqualJson(edit.filter(block => block.type !== 'text'), currentAttachments)) {
+    throw new RemoteError(
+      'session/attachment-invalid',
+      "queue edit must preserve the item's existing image and file blocks",
+      { reason: 'QUEUE_EDIT_ATTACHMENT_MISMATCH' },
+    )
+  }
+  if (currentAttachments.length === 0 && !hasPromptContent(edit)) {
+    throw new RemoteError(
+      'gateway/bad-request',
+      'queue edit content must include non-whitespace text',
+      {},
+    )
+  }
+  return [...edit]
 }
 
 /** Implements Session business commands delegated by the Session Controller Remote service. */
@@ -431,21 +485,7 @@ export class SessionCommandController {
    */
   async updateQueue(request: SessionUpdateQueueRequest): Promise<SessionUpdateQueueValue> {
     if (request.action.kind === 'edit') {
-      // oxlint-disable-next-line typescript/no-unnecessary-condition -- Remote callers can submit untyped JSON.
-      if (request.action.content.some(block => block.type !== 'text')) {
-        throw new RemoteError(
-          'session/attachment-invalid',
-          'queue edits accept text content only',
-          { reason: 'QUEUE_EDIT_NON_TEXT' },
-        )
-      }
-      if (!hasPromptContent(request.action.content)) {
-        throw new RemoteError(
-          'gateway/bad-request',
-          'queue edit content must include non-whitespace text',
-          {},
-        )
-      }
+      assertQueueEditContent(request.action.content)
     }
     let agent = this.ctx.agents.get(request.sessionId)
     if (agent === undefined) {
@@ -481,7 +521,7 @@ export class SessionCommandController {
       case 'edit':
         agent.inbox.replace(request.itemId, freezeMessage<UserMessage>({
           ...message,
-          content: [...request.action.content],
+          content: queueEditContent(request.action.content, message.content),
         }))
         break
       case 'remove': {

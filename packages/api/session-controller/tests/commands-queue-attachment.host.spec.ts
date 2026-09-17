@@ -5,7 +5,7 @@ import type { Agent, Inbox, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createAssistantMessage, createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
-import type { ContextFormed } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ContextFormed } from '@deepseek-ai/dsh-llm'
 import SessionStore, {
   SESSION_FORMAT_VERSION, Session, SessionId, SessionLogOffset, SessionSeq,
 } from '@deepseek-ai/dsh-session'
@@ -153,7 +153,7 @@ describe('Session queue commands', () => {
       action: {
         kind: 'edit',
         content: [{
-          // @ts-expect-error -- remote edit payloads can carry unsupported image blocks.
+          // A text-only item rejects an edit that introduces its own image block.
           type: 'image',
           attachment: {
             attachmentId: AttachmentId('att-edit'), mediaType: 'image/png', bytes: 1, width: 1, height: 1,
@@ -226,6 +226,77 @@ describe('Session queue commands', () => {
     })), 'session/not-found')
     expect(controller.cancel({ sessionId: agent.id })).toEqual({ accepted: true })
     expect(cancel).toHaveBeenCalledWith({ kind: 'user' }, { keepInbox: true })
+    await ctx.fiber.dispose()
+  })
+
+  it('applies queue edits that preserve an item\'s attachment blocks', async () => {
+    const { ctx, controller, agent, inbox } = await commandHarness()
+    const image: ContentBlock = { type: 'image', attachment: imageRef('att-keep') }
+    const file: ContentBlock = {
+      type: 'file',
+      attachment: { attachmentId: AttachmentId('file-keep'), name: 'keep.txt', bytes: 4 },
+    }
+    const queued = createUserMessage({
+      content: [image, file, { type: 'text', text: 'old' }], source: { kind: 'user' },
+    })
+    inbox.append('next-turn', queued)
+
+    // The edit resubmits the item's own blocks, in stored order, with the text changed.
+    expect(await controller.updateQueue({
+      sessionId: agent.id, itemId: queued.id,
+      action: { kind: 'edit', content: [image, file, { type: 'text', text: 'new' }] },
+    })).toEqual({ accepted: true })
+    expect(inbox.nextTurn[0]?.id).toBe(queued.id)
+    expect(inbox.nextTurn[0]?.content).toEqual([image, file, { type: 'text', text: 'new' }])
+
+    // The text block may be omitted while the attachments remain.
+    expect(await controller.updateQueue({
+      sessionId: agent.id, itemId: queued.id,
+      action: { kind: 'edit', content: [image, file] },
+    })).toEqual({ accepted: true })
+    expect(inbox.nextTurn[0]?.content).toEqual([image, file])
+
+    // An attachment-only item may gain text, and a whitespace text block stays admissible.
+    const imageBlock: ContentBlock = { type: 'image', attachment: imageRef('att-only') }
+    const imageOnly = createUserMessage({ content: [imageBlock], source: { kind: 'user' } })
+    inbox.append('next-turn', imageOnly)
+    expect(await controller.updateQueue({
+      sessionId: agent.id, itemId: imageOnly.id,
+      action: { kind: 'edit', content: [imageBlock, { type: 'text', text: 'added' }] },
+    })).toEqual({ accepted: true })
+    expect(inbox.nextTurn[1]?.content).toEqual([imageBlock, { type: 'text', text: 'added' }])
+    expect(await controller.updateQueue({
+      sessionId: agent.id, itemId: imageOnly.id,
+      action: { kind: 'edit', content: [imageBlock, { type: 'text', text: '   ' }] },
+    })).toEqual({ accepted: true })
+    expect(inbox.nextTurn[1]?.content).toEqual([imageBlock, { type: 'text', text: '   ' }])
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects queue edits that deviate from the item\'s own attachment blocks', async () => {
+    const { ctx, controller, agent, inbox } = await commandHarness()
+    const image: ContentBlock = { type: 'image', attachment: imageRef('att-item') }
+    const otherImage: ContentBlock = { type: 'image', attachment: imageRef('att-other') }
+    const queued = createUserMessage({
+      content: [image, { type: 'text', text: 'old' }], source: { kind: 'user' },
+    })
+    inbox.append('next-turn', queued)
+
+    const cases: Array<{ content: readonly ContentBlock[]; code: string }> = [
+      { content: [otherImage, { type: 'text', text: 'new' }], code: 'session/attachment-invalid' },
+      { content: [{ type: 'text', text: 'new' }], code: 'session/attachment-invalid' },
+      { content: [{ type: 'text', text: 'new' }, image], code: 'session/attachment-invalid' },
+      { content: [image, image], code: 'session/attachment-invalid' },
+      { content: [], code: 'session/attachment-invalid' },
+      { content: [image, { type: 'text', text: 'one' }, { type: 'text', text: 'two' }], code: 'session/attachment-invalid' },
+      { content: [{ type: 'reasoning', text: 'thought' }, { type: 'text', text: 'new' }], code: 'session/attachment-invalid' },
+    ]
+    for (const { content, code } of cases) {
+      await expectFailure(Promise.resolve().then(() => controller.updateQueue({
+        sessionId: agent.id, itemId: queued.id, action: { kind: 'edit', content },
+      })), code)
+    }
+    expect(inbox.nextTurn[0]?.content).toEqual([image, { type: 'text', text: 'old' }])
     await ctx.fiber.dispose()
   })
 
