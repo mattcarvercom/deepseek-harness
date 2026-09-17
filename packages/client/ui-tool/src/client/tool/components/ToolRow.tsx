@@ -63,9 +63,9 @@ export interface ToolRowProps {
   read?: ReadCardModel | null | undefined
   /**
    * Image-card material for a call whose result is an image (derived by
-   * `imageCardModel`). Rendered through the `tool.call.images` slot, so the
-   * tool layer never imports an attachment implementation nor handles URL
-   * authorization.
+   * `imageCardModel` or `genericImageCardModel`). Rendered through the
+   * `tool.call.images` slot, so the tool layer never imports an attachment
+   * implementation nor handles URL authorization.
    */
   image?: ImageCardModel | null | undefined
   /**
@@ -285,7 +285,7 @@ export const ToolRow = memo(function ToolRow({
                       align: 'start',
                     })}
                     <div className={css.imageMeta}>
-                      <div>{imageBody.path}</div>
+                      <div>{imageBody.label}</div>
                       {imageBody.images.map(({ attachment }, index) => (
                         <div key={index}>
                           {attachment.originalDimensions === undefined

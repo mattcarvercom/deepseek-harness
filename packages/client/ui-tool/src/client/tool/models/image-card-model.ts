@@ -12,15 +12,19 @@ import { parsedToolCall } from './raw-tool-call.ts'
  * it nor derives a path from it.
  */
 export interface ImageCardModel {
-  /** The resolved path as recorded, unshortened; the row summary already shows the short form. */
-  path: string
+  /**
+   * Card label line: the resolved path as recorded for `read_image` (unshortened;
+   * the row summary already shows the short form), or the producing tool's wire
+   * name for a generic image-bearing result.
+   */
+  label: string
   /** The durable images this result returned, in result order. */
   images: readonly { readonly attachment: ImageAttachmentRef }[]
   /**
    * Text blocks other than the model-facing envelope (for example, text a
    * post-execute hook appended), joined in order; null when there are none.
-   * The envelope itself is not repeated: its path and image facts are already
-   * `path` and `images`.
+   * The envelope itself is not repeated: its label and image facts are already
+   * `label` and `images`.
    */
   extraText: string | null
 }
@@ -216,7 +220,35 @@ export function imageCardModel(block: ToolCallBlock): ImageCardModel | null {
   // A result without the envelope is not a well-formed image read.
   if (!block.content.some(part => part.type === 'text' && typeof part.text === 'string' && IMAGE_ENVELOPE.test(part.text))) return null
   return {
-    path,
+    label: path,
+    images: refs.map(ref => ({ attachment: ref })),
+    extraText: extraTexts(block.content),
+  }
+}
+
+/**
+ * Derive the image card for a settled tool result that carries image blocks
+ * but is not `read_image` — an MCP image tool, or any other image-producing
+ * tool. A generic result has no persisted display path and no model-facing
+ * envelope, so the label is the producing tool's wire name and the text is
+ * the result's own text blocks joined in order.
+ *
+ * The same content gates as `imageCardModel` apply: result-side only, text
+ * and image blocks only (any other block would be silently hidden), and at
+ * least one durable reference. Everything else falls back to the generic
+ * text body.
+ * @param block - running or settled Tool block.
+ * @returns the image-card props, or null for the generic text body.
+ */
+export function genericImageCardModel(block: ToolCallBlock): ImageCardModel | null {
+  if (!('kind' in block) || block.isError) return null
+  const name = parsedToolCall(block)?.name
+  if (name === undefined || name === '') return null
+  if (!fullyRendered(block.content)) return null
+  const refs = imageReferences(block.content)
+  if (refs === null) return null
+  return {
+    label: name,
     images: refs.map(ref => ({ attachment: ref })),
     extraText: extraTexts(block.content),
   }

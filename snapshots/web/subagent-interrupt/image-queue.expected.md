@@ -41,7 +41,7 @@
     - button "Steer queued message"
   - listitem:
     - img "Queued message image"
-    - button "Edit queued message" [disabled]
+    - button "Edit queued message"
     - button "Remove queued message"
     - button "Steer queued message"
 - textbox "Cmd/Ctrl+Enter steers all queued messages"

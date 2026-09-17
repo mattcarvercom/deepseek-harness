@@ -29,7 +29,7 @@ function preparation(name: string, args = new PartialArguments()): Extract<Props
     phase: 'preparing', callId: 'call', toolName: name,
     block: { phase: 'preparing', args, callId: 'call', name, turn: 1, step: 1, time: 1, subCalls: [] },
     cwd: '/workspace', t: makeTranslate(en, common), useDisclosure, openFile: vi.fn(), loadImage: vi.fn(),
-    useTodoHistory: vi.fn(), useSession: vi.fn(() => false), renderSlot: vi.fn(() => null),
+    useTodoHistory: vi.fn(), useSession: vi.fn(() => false), renderImages: vi.fn(() => null),
     useProjection: vi.fn(() => undefined), revealPanel: vi.fn(() => false), reviewPanel: vi.fn(() => false),
   } as Extract<Props, { phase: 'preparing' }>
 }

@@ -8,7 +8,6 @@
 
 import type { ReactNode } from 'react'
 import { IconBrowseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
 import { toolRowModel } from '../models/tool-call-model.ts'
 import { ToolRow, type ToolRowProps } from '../components/ToolRow.tsx'
@@ -16,8 +15,8 @@ import { ToolRow, type ToolRowProps } from '../components/ToolRow.tsx'
 /** Full row props of a read-family toolview: the runtime share plus its locale seat. */
 export type ReadFamilyRowProps = ToolCallViewProps & { t: ToolRowProps['t'] }
 
-/** read_image row props: the runtime share, the declared image child slot, and the locale seat. */
-export type ReadImageRowProps = ReadFamilyRowProps & PropsRenderSlots<'tool.call.images'>
+/** read_image row props: the runtime share, the chat node's gallery dispatcher in owner props, and the locale seat. */
+export type ReadImageRowProps = ReadFamilyRowProps
 
 /**
  * The card material one read-family row contributes: exactly the ToolRow card
