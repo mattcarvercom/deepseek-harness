@@ -153,7 +153,12 @@ export interface ModelCatalog {
 export type QueueAction =
   | {
     readonly kind: 'edit'
-    /** Non-empty text-only replacement content. */
+    /**
+     * Replacement content: the item's own image and file blocks, in stored
+     * order and position, followed by at most one text block. The text block
+     * must carry non-whitespace text for a text-only item and may be blank or
+     * omitted while at least one attachment remains.
+     */
     readonly content: readonly ContentBlock[]
   }
   | { readonly kind: 'remove' }
