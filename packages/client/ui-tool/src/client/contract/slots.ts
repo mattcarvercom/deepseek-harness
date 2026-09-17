@@ -15,10 +15,9 @@ import type { ToolFileInjected } from '../tool/file-menu.ts'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /**
-     * Keyed Tool view dispatched by wire name, including custom tools.
-     * Register with `key: '<tool name>'`; a typo never renders.
-     * Occupied keys replace the view; unclaimed keys use the generic row. Owner
-     * phase data includes `name` and lazy `args`; preparing arguments may be incomplete.
+     * Keyed Tool view dispatched by wire name, including custom tools; register
+     * with `key: '<tool name>'` (a typo never renders); unclaimed keys use the
+     * generic row. Owner phase data includes `name` and lazy `args`.
      */
     'tool.call.toolview': {
       kind: 'keyed'
@@ -28,15 +27,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /**
      * Durable images of a settled image-bearing Tool call, rendered through
      * the attachment presentation plugin. The Tool layer never imports an
-     * attachment implementation: a toolview declares this slot as a child and
-     * renders it with the image card's references plus the Gateway-authorized
-     * loader it received in its owner, and the attachment plugin fills the
-     * gallery. Composing no attachment presentation plugin renders nothing,
-     * which is why the image card keeps its own envelope text beside the
-     * gallery. A child slot is declared by exactly one entry: registering a
-     * second toolview that declares the same child throws at load, so a
-     * future image-bearing tool must reuse this entry or own a distinct
-     * slot.
+     * attachment implementation: the `tool-call` chat node declares this slot
+     * and hands its dispatcher to every atomic Tool view through
+     * `ToolCallOwnerProps.renderImages`, so any image-bearing row — the
+     * read_image card or a generic tool result carrying image blocks — draws
+     * the same gallery from the card's references plus the Gateway-authorized
+     * loader it received in its owner. Composing no attachment presentation
+     * plugin renders nothing, which is why the image card keeps its own text
+     * beside the gallery. A child slot is declared by exactly one entry: the
+     * chat node owns this declaration, and a toolview that declared the same
+     * child would throw at load.
      */
     'tool.call.images': { kind: 'single'; scope: 'session'; owner: ToolImagesOwnerProps }
   }
@@ -68,6 +68,8 @@ export interface ToolCallCommonProps {
   openFile: (path: string, options?: OpenFileOptions) => void
   /** Chat-supplied, Gateway-authorized loader for durable images; Tool views do not manage attachment URLs. */
   loadImage: MessageImageLoader
+  /** `tool.call.images` gallery dispatcher from the `tool-call` chat node; absent in bare compositions, which render no gallery. */
+  renderImages?: PropsRenderSlots<'tool.call.images'>['renderSlot'] | undefined
   /** Inspect this call in the trajectory view when available. */
   inspect?: (() => void) | undefined
 }
@@ -149,6 +151,6 @@ export type ToolHostInfoInjected = {
 
 /** Full props of the Tool call-tree renderer registered as a tool-call Chat Node. */
 export type ToolTreeProps = PropsRuntime<'conversation.chat.node', 'tool-call'>
-  & PropsRenderSlots<'tool.call.toolview'>
+  & PropsRenderSlots<'tool.call.toolview' | 'tool.call.images'>
   & PropsLocale<'conversation'>
   & InjectFace<ToolHostInfoInjected & ToolFileInjected>
