@@ -41,6 +41,10 @@ export function apply(ctx: ClientContext): void {
         kind: 'keyed', scope: 'session',
         inject: { hooks: { toolCallArgumentsPartial: bindToolCallArgumentsPartial } },
       },
+      // Declared here, not by one toolview: the tree hands the gallery
+      // dispatcher to every atomic Tool view through owner props, so a generic
+      // image-bearing result renders the same card as read_image.
+      'tool.call.images': { kind: 'single', scope: 'session' },
     },
     inject: toolInject,
   }, ToolCallTree))

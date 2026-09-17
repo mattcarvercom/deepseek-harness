@@ -28,7 +28,7 @@ function preparation(name: string): Props {
     phase: 'preparing', callId: 'call', toolName: name,
     block: { phase: 'preparing', callId: 'call', name, turn: 1, step: 1, time: 1, subCalls: [] },
     t: makeTranslate(en, common), useDisclosure, useToolCallArgumentsPartial: vi.fn(() => ''), openFile: vi.fn(), loadImage: vi.fn(),
-    useTodoHistory: vi.fn(), useSession: vi.fn(() => false), renderSlot: vi.fn(() => null),
+    useTodoHistory: vi.fn(), useSession: vi.fn(() => false), renderImages: vi.fn(() => null),
   } as Props
 }
 

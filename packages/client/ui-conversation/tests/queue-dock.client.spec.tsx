@@ -467,7 +467,7 @@ describe('QueueDock', () => {
     })
   })
 
-  it('renders active actions and disables editing for mixed-content rows', () => {
+  it('enables editing on text and attachment rows alike', () => {
     const snap = snapshotWith([
       row('i-1', '第一条排队消息'),
       row('i-2', null, 'image [image]'),
@@ -484,9 +484,8 @@ describe('QueueDock', () => {
     expect(container.querySelectorAll('[aria-label="删除排队消息"]')).toHaveLength(2)
     expect(container.querySelectorAll('[aria-label="插话发送"]')).toHaveLength(2)
     expect((container.querySelectorAll('[aria-label="编辑排队消息"]')[0] as HTMLButtonElement).disabled).toBe(false)
-    expect((container.querySelectorAll('[aria-label="编辑排队消息"]')[1] as HTMLButtonElement).disabled).toBe(true)
-    expect(container.querySelectorAll('[aria-label="编辑排队消息"]')[1]?.getAttribute('title'))
-      .toBe('包含非文本内容，暂不支持编辑')
+    expect((container.querySelectorAll('[aria-label="编辑排队消息"]')[1] as HTMLButtonElement).disabled).toBe(false)
+    expect(container.querySelectorAll('[aria-label="编辑排队消息"]')[1]?.getAttribute('title')).toBeNull()
   })
 
   it('renders queued image thumbnails from durable references beside the text preview', async () => {
@@ -622,6 +621,104 @@ describe('QueueDock', () => {
     fireEvent.keyDown(editor, { key: 'Enter', isComposing: true })
     expect(updateQueue).not.toHaveBeenCalled()
     expect(getByLabelText('编辑排队消息')).toBeTruthy()
+  })
+
+  it('preserves the row\'s attachment blocks when saving an edit', async () => {
+    const loadImage = vi.fn(() => Promise.resolve('blob:edit-thumb'))
+    const updateQueue = vi.fn(() => Promise.resolve())
+    const attached: UserMessage = {
+      id: iid('i-edit-img'), role: 'user', source: { kind: 'user' },
+      content: [
+        {
+          type: 'image',
+          attachment: { attachmentId: 'att-edit', mediaType: 'image/png', bytes: 1, width: 1, height: 1 },
+        } as never,
+        { type: 'text', text: 'old text' },
+      ],
+    }
+    const snap = snapshotWith([attached])
+    const source = liveSession(snap)
+    const view = render(
+      <QueueDock {...kitFor(snap, { updateQueue, loadImage })} useSession={source.useSession} useProjection={source.useProjection} />,
+    )
+
+    await waitFor(() => {
+      expect(view.container.querySelector('img')?.getAttribute('src')).toBe('blob:edit-thumb')
+    })
+
+    fireEvent.click(view.getByLabelText('编辑排队消息'))
+    const editor = view.getByLabelText('编辑排队消息') as HTMLInputElement
+    expect(editor.value).toBe('old text')
+    fireEvent.change(editor, { target: { value: 'new text' } })
+    fireEvent.keyDown(editor, { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(updateQueue).toHaveBeenCalledWith(iid('i-edit-img'), {
+        kind: 'edit',
+        content: [
+          {
+            type: 'image',
+            attachment: { attachmentId: 'att-edit', mediaType: 'image/png', bytes: 1, width: 1, height: 1 },
+          } as never,
+          { type: 'text', text: 'new text' },
+        ],
+      })
+    })
+
+    // The Host's re-projection keeps the durable thumbnail beside the edited text.
+    const updated: UserMessage = { ...attached, content: [
+      {
+        type: 'image',
+        attachment: { attachmentId: 'att-edit', mediaType: 'image/png', bytes: 1, width: 1, height: 1 },
+      } as never,
+      { type: 'text', text: 'new text' },
+    ] }
+    act(() => { source.push(snapshotWith([updated])) })
+    expect(view.getByText('new text')).toBeTruthy()
+    await waitFor(() => {
+      expect(view.container.querySelector('img')?.getAttribute('src')).toBe('blob:edit-thumb')
+    })
+  })
+
+  it('saves an attachment-only row with empty text and preserves the attachment', async () => {
+    const updateQueue = vi.fn(() => Promise.resolve())
+    const snap = snapshotWith([imageRow('i-img-only', 'att-only')])
+    const source = liveSession(snap)
+    const view = render(
+      <QueueDock {...kitFor(snap, { updateQueue })} useSession={source.useSession} useProjection={source.useProjection} />,
+    )
+
+    fireEvent.click(view.getByLabelText('编辑排队消息'))
+    const editor = view.getByLabelText('编辑排队消息') as HTMLInputElement
+    expect(editor.value).toBe('')
+    // The attachment keeps the save button active for a blank edit.
+    expect(view.getByLabelText('保存排队消息')).toHaveProperty('disabled', false)
+    fireEvent.keyDown(editor, { key: 'Enter' })
+    expect(updateQueue).toHaveBeenCalledWith(iid('i-img-only'), {
+      kind: 'edit',
+      content: [
+        {
+          type: 'image',
+          attachment: { attachmentId: 'att-only', mediaType: 'image/png', bytes: 1, width: 1, height: 1 },
+        } as never,
+      ],
+    })
+
+    // A whitespace-only edit is stored attachment-only, like an empty one.
+    fireEvent.click(view.getByLabelText('编辑排队消息'))
+    const editorAgain = view.getByLabelText('编辑排队消息') as HTMLInputElement
+    fireEvent.change(editorAgain, { target: { value: '   ' } })
+    fireEvent.keyDown(editorAgain, { key: 'Enter' })
+    expect(updateQueue).toHaveBeenCalledTimes(2)
+    expect(updateQueue).toHaveBeenLastCalledWith(iid('i-img-only'), {
+      kind: 'edit',
+      content: [
+        {
+          type: 'image',
+          attachment: { attachmentId: 'att-only', mediaType: 'image/png', bytes: 1, width: 1, height: 1 },
+        } as never,
+      ],
+    })
   })
 
   it('removes the addressed row', async () => {

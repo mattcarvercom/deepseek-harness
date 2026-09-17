@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 // The image render intent on the web side: the pure imageCardModel derivation over
-// a settled call's persisted metadata and raw envelope, and the chat tool row that
-// consumes it — the keyed ReadImageRow composing ToolRow with the image card as its
-// collapsed-by-default expanded body. Also pins the keyed 'read_image' toolview
-// registration (including its `tool.call.images` child-slot declaration) and the
+// a settled call's persisted metadata and raw envelope, the genericImageCardModel
+// derivation over any other tool result carrying image blocks, and the chat tool
+// rows that consume them — the keyed ReadImageRow and the generic fallback both
+// compose ToolRow with the image card as their collapsed-by-default expanded body.
+// Also pins the keyed 'read_image' toolview registration (which no longer declares
+// the `tool.call.images` child slot — the chat node owns that declaration) and the
 // text that stays readable when the attachment slot renders nothing.
 //
 // The image card differs from every other card in one load-bearing way: its bytes
@@ -25,8 +27,9 @@ import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MessageImageLoader } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { zh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 import type { ToolImagesOwnerProps, ToolTreeProps } from '../src/client/contract/slots.ts'
-import { imageCardModel } from '../src/client/tool/models/image-card-model.ts'
+import { genericImageCardModel, imageCardModel } from '../src/client/tool/models/image-card-model.ts'
 import { ReadImageRow, readImageToolview } from '../src/client/tool/toolviews/read-image-row.tsx'
+import { GenericToolCard, type GenericToolCardProps } from '../src/client/tool/toolviews/GenericToolCard.tsx'
 
 afterEach(cleanup)
 
@@ -276,10 +279,10 @@ describe('ReadImageRow keyed toolview', () => {
 
   const rowProps = (
     block: StartedToolCall | ToolResultNode,
-    renderSlot?: PropsRenderSlots<'tool.call.images'>['renderSlot'],
+    renderImages?: PropsRenderSlots<'tool.call.images'>['renderSlot'],
     loader: MessageImageLoader = loadImage,
   ): Parameters<typeof ReadImageRow>[0] => ({
-    useDisclosure, callId: 'c1', toolName: 'read_image', ...('kind' in block ? { phase: 'result' as const, block: block } : { phase: block.phase, block: block }), openFile: vi.fn(), renderSlot, loadImage: loader,
+    useDisclosure, callId: 'c1', toolName: 'read_image', ...('kind' in block ? { phase: 'result' as const, block: block } : { phase: block.phase, block: block }), openFile: vi.fn(), renderImages, loadImage: loader,
     sessionId: SID, useSessions: bindSnapshotSelector(list()),
     t,
   } as Parameters<typeof ReadImageRow>[0])
@@ -364,7 +367,10 @@ describe('ReadImageRow keyed toolview', () => {
     expect(view.container.textContent).toContain('does not declare image input')
   })
 
-  it('registers under the read_image key of the keyed toolview slot, declaring the image slot', () => {
+  it('registers under the read_image key of the keyed toolview slot without declaring the image slot', () => {
+    // The `tool.call.images` child slot is declared by the `tool-call` chat node,
+    // which hands its dispatcher to every atomic Tool view through owner props;
+    // a toolview that declared it too would throw at load.
     const registered: { name: unknown; key?: unknown; children?: unknown }[] = []
     const ctx = { slots: {
       inject: (_name: string, callback: () => () => void) => callback(),
@@ -378,8 +384,114 @@ describe('ReadImageRow keyed toolview', () => {
       name: 'tool.call.toolview',
       key: 'read_image',
       locale: 'conversation',
-      children: { 'tool.call.images': { kind: 'single', scope: 'session' } },
     }])
     expect(readImageToolview.inject).toEqual(['slots'])
+  })
+})
+
+describe('genericImageCardModel', () => {
+  const GENERIC_TEXT = 'seed=7 sampler_name=NONE steps=4 saved=/tmp/a-seed7.png'
+
+  /** A settled non-read_image result carrying the same [text, image] content shape. */
+  const genericSettled = (over?: Partial<ToolResultNode>): ToolResultNode => settled({
+    call: { name: 'mcp__sd__txt2img', argsRaw: '{"prompt":"a bike"}' },
+    meta: undefined,
+    content: [
+      { type: 'text', text: GENERIC_TEXT },
+      { type: 'image', attachment: sampleImage },
+    ],
+    ...over,
+  } as never)
+
+  it('labels with the producing tool name and joins the result text', () => {
+    expect(genericImageCardModel(genericSettled())).toEqual({
+      label: 'mcp__sd__txt2img',
+      images: [{ attachment: sampleImage }],
+      text: GENERIC_TEXT,
+    })
+  })
+
+  it('joins every text block in order and allows an image-only result', () => {
+    const twoTexts = genericImageCardModel(genericSettled({
+      content: [
+        { type: 'text', text: 'first' },
+        { type: 'image', attachment: sampleImage },
+        { type: 'text', text: 'second' },
+      ],
+    } as never))
+    expect(twoTexts?.text).toBe('first\nsecond')
+    const imageOnly = genericImageCardModel(genericSettled({
+      content: [{ type: 'image', attachment: sampleImage }],
+    } as never))
+    expect(imageOnly?.text).toBe('')
+  })
+
+  it('declines running calls, error results, and malformed call heads', () => {
+    expect(genericImageCardModel(running({ name: 'mcp__sd__txt2img' }))).toBeNull()
+    expect(genericImageCardModel(genericSettled({ isError: true }))).toBeNull()
+    expect(genericImageCardModel(genericSettled({ call: { name: '', argsRaw: '{}' } }))).toBeNull()
+    expect(genericImageCardModel(genericSettled({
+      call: { name: 'mcp__sd__txt2img', argsRaw: 'not json' },
+    }))).toBeNull()
+  })
+
+  it('declines content without a durable image reference or with blocks the card cannot render', () => {
+    expect(genericImageCardModel(genericSettled({
+      content: [{ type: 'text', text: 'no image here' }],
+    } as never))).toBeNull()
+    expect(genericImageCardModel(genericSettled({
+      content: [
+        { type: 'text', text: GENERIC_TEXT },
+        { type: 'image', attachment: sampleImage },
+        { type: 'reasoning', text: 'thinking' },
+      ],
+    } as never))).toBeNull()
+  })
+})
+
+describe('GenericToolCard image results', () => {
+  const GENERIC_TEXT = 'seed=7 steps=4 saved=/tmp/a-seed7.png\nImage NOT displayed yet.'
+
+  const genericSettled = (): ToolResultNode => settled({
+    callId: 'c9',
+    call: { name: 'mcp__sd__txt2img', argsRaw: '{"prompt":"a bike"}' },
+    meta: undefined,
+    content: [
+      { type: 'text', text: GENERIC_TEXT },
+      { type: 'image', attachment: sampleImage },
+    ],
+  } as never)
+
+  const cardProps = (
+    renderImages?: PropsRenderSlots<'tool.call.images'>['renderSlot'],
+  ): GenericToolCardProps => ({
+    phase: 'result', useDisclosure, callId: 'c9', toolName: 'mcp__sd__txt2img', block: genericSettled(), openFile: vi.fn(),
+    loadImage, renderImages, t,
+  })
+
+  const toggleRow = (view: { container: HTMLElement }) => {
+    fireEvent.click(view.container.querySelector('[data-expandable]')!)
+  }
+
+  it('expands a generic image-bearing result to the gallery', () => {
+    const renderImages = stubRenderSlot()
+    const view = render(<GenericToolCard {...cardProps(renderImages)} />)
+    expect(view.container.querySelector('[data-images]')).toBeNull()
+    toggleRow(view)
+    expect(view.container.querySelector('[data-images]')).not.toBeNull()
+    expect(renderImages).toHaveBeenLastCalledWith('tool.call.images', {
+      images: [{ attachment: sampleImage }],
+      loadImage,
+      align: 'start',
+    })
+    expect(view.container.querySelector(`[data-image-id="${sampleImage.attachmentId}"]`)).not.toBeNull()
+    expect(view.container.textContent).toContain('mcp__sd__txt2img')
+  })
+
+  it('keeps the result text readable when no gallery dispatcher is supplied', () => {
+    const view = render(<GenericToolCard {...cardProps(undefined)} />)
+    toggleRow(view)
+    expect(view.container.querySelector('[data-images]')).toBeNull()
+    expect(view.container.textContent).toContain('saved=/tmp/a-seed7.png')
   })
 })

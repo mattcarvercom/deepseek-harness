@@ -6,6 +6,7 @@ import {
 import type { ToolCallOwnerProps, ToolTreeProps } from '../../contract/slots.ts'
 import { readCardModel } from '../models/read-card-model.ts'
 import { diffCardModel } from '../models/diff-card-model.ts'
+import { genericImageCardModel } from '../models/image-card-model.ts'
 import { searchCardModel } from '../models/search-card-model.ts'
 import { terminalCardModel, terminalFailed } from '../models/terminal-card-model.ts'
 import { webCardModel } from '../models/web-card-model.ts'
@@ -30,7 +31,9 @@ export type GenericToolCardProps = ToolCallOwnerProps & {
 }
 
 /** @param props - current tool stage and locale. @returns its preparation or dispatched card. */
-export function GenericToolCard({ toolName, block, cwd, home, openFile, inspect, useDisclosure, t }: GenericToolCardProps) {
+export function GenericToolCard({
+  toolName, block, cwd, home, openFile, inspect, loadImage, renderImages, useDisclosure, t,
+}: GenericToolCardProps) {
   const model = toolRowModel(toolName, block, cwd, home)
   const autoReview = model.autoReviewDenial === null
     ? null
@@ -38,6 +41,7 @@ export function GenericToolCard({ toolName, block, cwd, home, openFile, inspect,
   const terminal = terminalCardModel(block, cwd)
   const read = readCardModel(block, cwd, home)
   const diff = diffCardModel(block)
+  const image = genericImageCardModel(block)
   const search = searchCardModel(block)
   const web = webCardModel(block)
   // A failing exit status is the terminal card's own error signal (the call
@@ -64,6 +68,12 @@ export function GenericToolCard({ toolName, block, cwd, home, openFile, inspect,
       terminal={terminal}
       diff={diff}
       read={read}
+      // Any settled result carrying image blocks renders the gallery card, not
+      // only read_image: the producing tool's wire name labels it and the
+      // result's own text stays readable under the images.
+      image={image}
+      renderSlot={renderImages}
+      loadImage={loadImage}
       search={search}
       web={web}
       state={state}

@@ -378,6 +378,21 @@ describe('pi-ai request context conversion', () => {
     expect(readImageRequest).toHaveBeenCalledTimes(1)
   })
 
+  it('fails with the count to offload when retained occurrences exceed the count bound', async () => {
+    const sized: ImageAttachmentRef = { ...ref, bytes: 3 }
+    // At exactly the bound the request proceeds; one more occurrence must be
+    // durably offloaded before the retry can succeed.
+    const exact = await toPiContext(request([
+      user([{ type: 'image', attachment: sized }]),
+    ]), imageContext(attachments, { maxImagesPerRequest: 1 }))
+    expect(exact.messages).toHaveLength(1)
+    await expect(toPiContext(request([
+      user([{ type: 'image', attachment: sized }]),
+      user([{ type: 'image', attachment: sized }]),
+    ]), imageContext(attachments, { maxImagesPerRequest: 1 })))
+      .rejects.toMatchObject({ code: 'IMAGE_OFFLOAD_REQUIRED', failure: { offloadImages: 1 } })
+  })
+
   it('renders an offloaded occurrence with independently resolved access', async () => {
     const sized: ImageAttachmentRef = { ...ref, bytes: 3 }
     const access = { readonlyPath: '/tmp/dsh-normalized-image' }

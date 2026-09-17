@@ -26,9 +26,31 @@ function previewOf(content: InboxState['next-turn'][number]['content']): string 
   return chars.length > QUEUE_PREVIEW_CHARS ? `${chars.slice(0, QUEUE_PREVIEW_CHARS).join('')}…` : flat
 }
 
-function textOf(content: InboxState['next-turn'][number]['content']): string | null {
-  if (!content.every(block => block.type === 'text')) return null
-  return content.map(block => block.text).join('')
+/** The row's text blocks joined — the value the inline editor pre-fills. */
+function editTextOf(content: InboxState['next-turn'][number]['content']): string {
+  return content
+    .filter(block => block.type === 'text')
+    .map(block => block.text)
+    .join('')
+}
+
+/**
+ * Replacement content for a row edit: the row's non-text blocks in stored
+ * position, followed by one text block unless the edited text is blank.
+ * @param content - the row's current content blocks.
+ * @param text - the edited text.
+ * @returns the replacement content, or null when a text-only row is being saved blank.
+ */
+function editContentOf(
+  content: InboxState['next-turn'][number]['content'],
+  text: string,
+): InboxState['next-turn'][number]['content'] | null {
+  const attachments = content.filter(block => block.type !== 'text')
+  if (attachments.length === 0 && text.trim() === '') return null
+  return [
+    ...attachments,
+    ...(text.trim() === '' ? [] : [{ type: 'text' as const, text }]),
+  ]
 }
 
 /** Queue operations injected by the session-scoped registration. */
@@ -208,10 +230,13 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
   }
 
   const saveEdit = async (): Promise<void> => {
-    if (editing === null || editing.text.trim() === '') return
+    if (editing === null) return
+    const row = queue.find(candidate => candidate.id === editing.id)
+    const content = row === undefined ? null : editContentOf(row.content, editing.text)
+    if (content === null) return
     if (await applyAction(
       editing.id,
-      { kind: 'edit', content: [{ type: 'text', text: editing.text }] },
+      { kind: 'edit', content },
       t('queue.editFailed'),
     )) setEditing(null)
   }
@@ -241,7 +266,7 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
         <ul id={listId} className={css.list} hidden={!listVisible}>
           {listVisible && queue.map((row) => {
             const attachments = queueAttachments(row.content)
-            const text = textOf(row.content)
+            const editInitial = editTextOf(row.content)
             return (
               <li key={row.id} className={css.row}>
                 {/* Single-item strip has no count header, so the row itself carries the queue glyph. */}
@@ -290,7 +315,7 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
                             type="button"
                             className={css.action}
                             aria-label={t('queue.save')}
-                            disabled={busy !== null || editing.text.trim() === ''}
+                            disabled={busy !== null || (row.content.every(block => block.type === 'text') && editing.text.trim() === '')}
                             onClick={() => { void saveEdit() }}
                           >
                             <IconCheckOutlineRegular size={14} />
@@ -311,17 +336,14 @@ export function QueueDock({ useSession, useProjection, updateQueue, notify, load
                     )
                     : (
                       <>
-                        <Tooltip portal label={t('queue.edit')} side="bottom" delayMs={500} disabled={text === null}>
+                        <Tooltip portal label={t('queue.edit')} side="bottom" delayMs={500}>
                           <button
                             type="button"
                             className={css.action}
                             aria-label={t('queue.edit')}
-                            // Disabled buttons fire no hover events, so the
-                            // unsupported hint stays a native title.
-                            title={text === null ? t('queue.edit.unsupported') : undefined}
-                            disabled={busy !== null || text === null}
+                            disabled={busy !== null}
                             onClick={() => {
-                              if (text !== null) setEditing({ id: row.id, text: text })
+                              setEditing({ id: row.id, text: editInitial })
                             }}
                           >
                             <IconEditOutlineRegular size={14} />
