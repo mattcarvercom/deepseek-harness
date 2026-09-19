@@ -5,12 +5,13 @@ import type { ConversationLocationDataStore, ConversationTurnDataMap } from '@de
 import type { ChatNodeHookContext, ChatNodeOwnerProps, ChatViewSlotProps, UsePresentation } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
 import type { ChatNodeStore } from '../contract/snapshot.ts'
+import type { ChatTextHighlight } from '../contract/store.ts'
 import { TURN_PROCESS_INDEPENDENT_KINDS, turnProcessAlwaysOpen } from '../contract/turn-process.ts'
 import { storedTurnProcessEntry } from '../stores.ts'
 import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './ChatView.module.css'
 
-interface ChatNodeSeatProps extends ChatNodeOwnerProps {
+interface ChatNodeSeatProps extends Omit<ChatNodeOwnerProps, 'textHighlight' | 'setTextHighlight'> {
   readonly nodeKey: string
   /** A replaced Builder must rebind keyed hooks even when references and keys survive. */
   readonly nodeStore: ChatNodeStore
@@ -120,6 +121,21 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       disclosureReset.set(disclosureReset.getSnapshot() + 1)
     }
   }, [processMember, processHidden, wrapperRef, disclosureReset])
+  // A settled message highlights under its durable id; a generating step has
+  // none yet, so it highlights under its stable node key. The entry object is
+  // stable between store writes, so unchanged rows keep the same identity.
+  const highlightKey = routedNode?.kind === 'assistant-step'
+    ? routedNode.data.finalNode?.messageId ?? routedNode.key
+    : undefined
+  const textHighlight = useStore(state => highlightKey === undefined
+    ? undefined
+    : state.textHighlights.find(entry => entry.key === highlightKey)?.highlight)
+  const setTextHighlight = useCallback((
+    key: string,
+    highlight: ChatTextHighlight | undefined,
+  ) => {
+    actions.setTextHighlight(key, highlight)
+  }, [actions])
   const owner = useMemo<ChatNodeOwnerProps | null>(() => node === undefined
     ? null
     : {
@@ -132,10 +148,12 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
       loadImage,
       renderMessageImages,
       fileMentions,
+      textHighlight,
+      setTextHighlight,
       turnProcess,
     }, [
     node, groupPart, cwd, openFile, openSkill, inspectCall, forkAt,
-    loadImage, renderMessageImages, fileMentions, turnProcess,
+    loadImage, renderMessageImages, fileMentions, textHighlight, setTextHighlight, turnProcess,
   ])
   if (routedNode === undefined || owner === null) return null
   // Runtime dispatch owns the correlation: every Node's discriminant is the
