@@ -96,6 +96,8 @@
   - img
 - button "Bad response":
   - img
+- button "Read aloud":
+  - img
 - button "Branch into a new conversation":
   - img
 - button "Ran for {{duration}}":
@@ -152,11 +154,15 @@
   - text: ，turn 2：
   - code: token-meter
   - text: ）。这一轮到此结束。
+- button "Read aloud":
+  - img
 - 'button "Tool call get_goal · {}"':
   - img
   - img
   - text: "Tool call get_goal · {}"
 - paragraph: 两个 turn 均已完成，目标达成，标记 goal 为完成。
+- button "Read aloud":
+  - img
 - button "Tool call update_goal · goal-{{uuid}}":
   - img
   - img
@@ -218,6 +224,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img

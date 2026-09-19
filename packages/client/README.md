@@ -80,6 +80,7 @@ The kernel packages boot and serve the page; the UI feature packages present it.
 | [`ui-directory-picker-browse/`](ui-directory-picker-browse/README.md) | In-app directory browsing surface for the workspace directory flow | — |
 | [`ui-directory-picker-native/`](ui-directory-picker-native/README.md) | Native directory-picker surface driving the local Desktop or Host OS chooser | — |
 | [`ui-open-in-app/`](ui-open-in-app/README.md) | Session-header split button opening the workspace directory in an installed application | — |
+| [`ui-readaloud/`](ui-readaloud/README.md) | Speaks assistant responses aloud in the browser: per-message speaker/stop action and an auto-read setting, synthesized by the vendored sanotts runtime | — |
 
 -----
 

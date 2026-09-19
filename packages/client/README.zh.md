@@ -80,6 +80,7 @@ kind: "package-group"
 | [`ui-directory-picker-browse/`](ui-directory-picker-browse/README.zh.md) | 面向工作区目录流程的应用内目录浏览界面 | — |
 | [`ui-directory-picker-native/`](ui-directory-picker-native/README.zh.md) | 驱动本地 Desktop 或 Host OS 选择器的原生目录选择界面 | — |
 | [`ui-open-in-app/`](ui-open-in-app/README.zh.md) | 在已安装应用中打开工作区目录的会话标题栏拆分按钮 | — |
+| [`ui-readaloud/`](ui-readaloud/README.zh.md) | 在浏览器内朗读助手回复：逐消息朗读/停止操作与自动朗读设置，由所引入（vendored）的 sanotts 运行时合成 | — |
 
 -----
 

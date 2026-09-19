@@ -214,6 +214,8 @@ type SessionTreeProps = Pick<
   revealSessionId?: SessionId | undefined
   /** Acknowledge that the chosen Session row has been revealed. */
   onSessionRevealed: (sessionId: SessionId) => void
+  /** Optional per-row indicator seat, addressed by session id. */
+  renderIndicator?: ((sessionId: SessionId) => ReactNode) | undefined
 }
 
 /** The scrolling session tree; unmounting drops the sessions subscription and expand-all state. */
@@ -225,7 +227,7 @@ function SessionTree({
   insertWorkspaceBefore,
   nestWorkspaces, groupExpansion, setGroupExpanded, showArchived,
   setSessionOrder, home, t,
-  revealSessionId, onSessionRevealed,
+  revealSessionId, onSessionRevealed, renderIndicator,
 }: SessionTreeProps) {
   const panelActive = usePanelInfo(info => info.activePanelId !== null)
   const statuses = useSessionStatus(s => s)
@@ -540,6 +542,7 @@ function SessionTree({
                 ? () => { onSessionRevealed(node.id) }
                 : undefined}
               drag={dragProps}
+              renderIndicator={renderIndicator}
               t={t}
             />
           )
@@ -583,7 +586,7 @@ function FlatList({
   list, sessionIds, useSessionStatus, open, forkSession, onSessionRename, onSessionArchive,
   onSessionUnarchive, onSessionDelete, archivedSessionIds,
   usePanelInfo, setSessionOrder,
-  revealSessionId, onSessionRevealed, t,
+  revealSessionId, onSessionRevealed, renderIndicator, t,
 }: Pick<
   SessionTreeProps,
   | 'useSessionStatus'
@@ -597,6 +600,7 @@ function FlatList({
   | 'usePanelInfo'
   | 'setSessionOrder'
   | 'revealSessionId'
+  | 'renderIndicator'
   | 'onSessionRevealed'
   | 't'
 > & {
@@ -680,6 +684,7 @@ function FlatList({
                   dropCommitted.current = false
                 },
               }}
+              renderIndicator={renderIndicator}
               t={t}
             />
           )
@@ -1343,6 +1348,7 @@ export function WorkspaceBrowser({
                 setSessionOrder={saveSessionOrder}
                 revealSessionId={revealSessionId}
                 onSessionRevealed={acknowledgeSessionReveal}
+                renderIndicator={sessionId => renderSlot('sidebar.session.indicator', { sessionId })}
                 t={t}
               />
             )
@@ -1370,6 +1376,7 @@ export function WorkspaceBrowser({
                 insertWorkspaceBefore={insertWorkspaceBefore}
                 revealSessionId={revealSessionId}
                 onSessionRevealed={acknowledgeSessionReveal}
+                renderIndicator={sessionId => renderSlot('sidebar.session.indicator', { sessionId })}
                 home={home}
                 t={t}
                 onRenameRequest={(workspaceId, currentTitle) => {

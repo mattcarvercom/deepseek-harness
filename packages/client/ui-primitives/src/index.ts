@@ -72,10 +72,13 @@ export { MarkdownDelegateProvider } from './markdown/MarkdownDelegate.tsx'
 export type { MarkdownDelegate, MarkdownDelegateProviderProps, MarkdownExternalLinkHandler } from './markdown/MarkdownDelegate.tsx'
 export { MarkdownText } from './markdown/MarkdownText.tsx'
 export type {
-  MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, MarkdownMermaidLabels, MarkdownPathImages,
+  MarkdownCodeLabels, MarkdownFileMentions, MarkdownHighlightRange, MarkdownLabels,
+  MarkdownMermaidLabels, MarkdownPathImages,
 } from './markdown/MarkdownText.tsx'
 export { markdownLabels } from './markdown/labels.ts'
 export type { MarkdownLabelKey } from './markdown/labels.ts'
-export { extractMarkdownPlainText } from './markdown/plain-text.ts'
-export type { MarkdownPlainTextMode, MarkdownPlainTextOptions } from './markdown/plain-text.ts'
+export { extractMarkdownPlainText, extractMarkdownPlainTextSegments } from './markdown/plain-text.ts'
+export type {
+  MarkdownPlainTextMode, MarkdownPlainTextOptions, MarkdownPlainTextProjection, MarkdownPlainTextSegment,
+} from './markdown/plain-text.ts'
 export * from './icons/index.tsx'

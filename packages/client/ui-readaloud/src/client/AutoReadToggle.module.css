@@ -1,0 +1,36 @@
+/* Composer tool-row chip matching the sibling Plan / permission / model
+   controls (28px height, 24px radius). The active state borrows the link
+   blue so an on toggle reads at a glance. */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 24px;
+  outline: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.toggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.toggle:focus-visible {
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
+}
+
+.toggle[data-active] {
+  background: color-mix(in srgb, var(--dsw-alias-link) 16%, transparent);
+  color: var(--dsw-alias-link);
+}
+
+.label {
+  white-space: nowrap;
+}

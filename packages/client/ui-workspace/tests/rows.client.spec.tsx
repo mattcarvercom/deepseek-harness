@@ -72,6 +72,36 @@ describe('workspace browser rows', () => {
     expect(screen.getByText('Flat Session').previousElementSibling?.querySelector('[data-state="ongoing"]')).toBeTruthy()
   })
 
+  it('renders the per-row indicator seat beside the title when the owner provides one', () => {
+    const node: SessionNode = {
+      id: sid('speaking'), title: 'Speaking Session', blank: false, running: false,
+      runningSubagentCount: 0, completed: false, hasActiveSchedule: false, archived: false, updatedAt: 0,
+    }
+    const renderIndicator = vi.fn((sessionId: SessionId) => (
+      <span data-testid="row-indicator">{String(sessionId)}</span>
+    ))
+    const view = render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} onUnarchive={vi.fn()} onDelete={vi.fn()}
+      renderIndicator={renderIndicator} t={t} />)
+
+    expect(renderIndicator).toHaveBeenCalledWith(node.id)
+    expect(view.getByTestId('row-indicator').textContent).toBe('speaking')
+  })
+
+  it('skips the indicator seat for a blank provisional row', () => {
+    const node: SessionNode = {
+      id: sid('blank'), title: '', blank: true, running: false,
+      runningSubagentCount: 0, completed: false, hasActiveSchedule: false, archived: false, updatedAt: 0,
+    }
+    const renderIndicator = vi.fn(() => <span data-testid="row-indicator" />)
+    render(<SessionNodeItem node={node} currentId={undefined} now={0} onOpen={vi.fn()}
+      onRename={vi.fn()} onFork={vi.fn()} onArchive={vi.fn()} onUnarchive={vi.fn()} onDelete={vi.fn()}
+      renderIndicator={renderIndicator} t={t} />)
+
+    expect(renderIndicator).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('row-indicator')).toBeNull()
+  })
+
   it('renders a selected content-search row and opens only its session', () => {
     const onOpen = vi.fn()
     const result: SearchResultNode = {

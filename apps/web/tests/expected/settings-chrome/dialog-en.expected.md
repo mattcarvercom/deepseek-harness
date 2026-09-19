@@ -51,3 +51,5 @@
   - button "Queue":
     - text: Queue
     - img
+  - text: Auto-read responses Speak the last assistant message of each turn once the turn completes.
+  - switch "Auto-read responses"

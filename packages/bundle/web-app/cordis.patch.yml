@@ -373,6 +373,11 @@
     - id: ui-plan
       name: '@deepseek-ai/dsh-client-ui-plan'
 
+    # Read-aloud: the per-message speaker control and the auto-read Settings row,
+    # synthesized in the browser by the self-hosted sanoTTS wasm runtime.
+    - id: ui-readaloud
+      name: '@deepseek-ai/dsh-client-ui-readaloud'
+
     - id: ui-user-questions
       name: '@deepseek-ai/dsh-client-ui-user-questions'
 

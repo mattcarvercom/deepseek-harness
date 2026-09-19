@@ -203,6 +203,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // The headless entry and its startup row share the JSON projection code
   // through a hashed tsdown chunk; both import it by relative path.
   '@deepseek-ai/dsh-headless': ['lib/json-stream-*.js'],
+  // The vendored GPL sanotts runtime, its voice weights, and their pinning
+  // manifest are same-origin browser assets; the npm tarball inside is the audit record.
+  '@deepseek-ai/dsh-client-ui-readaloud': ['assets/sanotts'],
 }
 
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {

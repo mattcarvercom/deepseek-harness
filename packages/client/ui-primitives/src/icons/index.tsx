@@ -1020,3 +1020,15 @@ export const IconPluginPinwheelOutline16 = ({ size = 16, className }: IconProps)
     <path d="M10.7476 7.89535C10.8708 11.7113 9.66109 14.847 8.0456 14.8991C6.83496 14.9382 5.74 13.2346 5.21536 10.7723" stroke="currentColor" strokeWidth="1.2" />
   </svg>
 )
+
+/**
+ * Read-aloud action glyph: a filled speaker cone facing right with two stroked
+ * sound arcs, on the 16 grid.
+ */
+export const IconSpeakerOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M2 6.2H5.1L8.6 3.1V12.9L5.1 9.8H2V6.2Z" fill="currentColor" />
+    <path d="M10.8 5.6C11.7 6.8 11.7 9.2 10.8 10.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    <path d="M12.6 3.9C14.2 6.1 14.2 9.9 12.6 12.1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+  </svg>
+)

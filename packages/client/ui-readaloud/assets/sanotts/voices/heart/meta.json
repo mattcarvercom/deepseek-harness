@@ -1,0 +1,33 @@
+{
+ "key": "heart",
+ "runtime": "snt_nano",
+ "lineage": "en_us_r227f32",
+ "module": "snt_nano_heart.js",
+ "export_name": "SaanoNanoHeart",
+ "weights": "f32",
+ "front": "front_f32.bin",
+ "dec": "model_f32.bin",
+ "front_bytes": 3273696,
+ "dec_bytes": 5864224,
+ "front_sha256": "02e8086ebedf70216efa7beae274351d7ee916579277e83161748a08325d0b49",
+ "dec_sha256": "2d685fc751bc096b956d76a9e6ad105ed6da33c61faaa43c7423d935eeb7481b",
+ "sample_rate": 24000,
+ "hop": 256,
+ "n_fft": 1024,
+ "mel_channels": 100,
+ "vocab_size": 62,
+ "frontend": "misaki-normalized espeak-ng IPA, character-level 62-symbol vocabulary (web/trellis_frontend.js)",
+ "params": 2272145,
+ "param_breakdown": {
+  "duration": 131652,
+  "acoustic": 681227,
+  "decoder": 1459266
+ },
+ "checkpoints": {
+  "duration": "artifacts/kokoro-corpus-af_heart-20260713/runs/duration/duration-student.pt",
+  "acoustic": "artifacts/kokoro-corpus-af_heart-20260713/runs/e6-mel100-fullcorpus/latent-student.pt",
+  "decoder": "artifacts/kokoro-corpus-af_heart-20260713/runs/e8h-tinyvocos-noisefed/tiny-vocos-student.pt"
+ },
+ "golden_fixture": "mcu/test/fixtures/en_us_r227f32",
+ "exported": "2026-09-02 on k2 via tools/export_e12_nano_q8.py"
+}

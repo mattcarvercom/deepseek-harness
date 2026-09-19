@@ -47,6 +47,8 @@
   - img
 - button "Bad response":
   - img
+- button "Read aloud":
+  - img
 - button "Branch into a new conversation":
   - img
 - button "Ran for {{duration}}":
@@ -61,6 +63,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img
@@ -77,6 +81,8 @@
   - img
 - button "Bad response":
   - img
+- button "Read aloud":
+  - img
 - button "Branch into a new conversation":
   - img
 - button "Ran for {{duration}}":
@@ -91,6 +97,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img
@@ -107,6 +115,8 @@
   - img
 - button "Bad response":
   - img
+- button "Read aloud":
+  - img
 - button "Branch into a new conversation":
   - img
 - button "Ran for {{duration}}":
@@ -121,6 +131,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img
@@ -137,6 +149,8 @@
   - img
 - button "Bad response":
   - img
+- button "Read aloud":
+  - img
 - button "Branch into a new conversation":
   - img
 - button "Ran for {{duration}}":
@@ -151,6 +165,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img
@@ -167,6 +183,8 @@
   - img
 - button "Bad response":
   - img
+- button "Read aloud":
+  - img
 - button "Branch into a new conversation":
   - img
 - button "Ran for {{duration}}":
@@ -181,6 +199,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img
@@ -197,6 +217,8 @@
   - img
 - button "Bad response":
   - img
+- button "Read aloud":
+  - img
 - button "Branch into a new conversation":
   - img
 - button "Ran for {{duration}}":
@@ -211,6 +233,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img
@@ -227,6 +251,8 @@
   - img
 - button "Bad response":
   - img
+- button "Read aloud":
+  - img
 - button "Branch into a new conversation":
   - img
 - button "Ran for {{duration}}":
@@ -241,6 +267,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img
@@ -257,6 +285,8 @@
   - img
 - button "Bad response":
   - img
+- button "Read aloud":
+  - img
 - button "Branch into a new conversation":
   - img
 - button "Ran for {{duration}}":
@@ -271,6 +301,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img
@@ -287,6 +319,8 @@
   - img
 - button "Bad response":
   - img
+- button "Read aloud":
+  - img
 - button "Branch into a new conversation":
   - img
 - button "Ran for {{duration}}":
@@ -301,6 +335,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img
@@ -317,6 +353,8 @@
   - img
 - button "Bad response":
   - img
+- button "Read aloud":
+  - img
 - button "Branch into a new conversation":
   - img
 - button "Ran for {{duration}}":
@@ -331,6 +369,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img
@@ -347,6 +387,8 @@
   - img
 - button "Bad response":
   - img
+- button "Read aloud":
+  - img
 - button "Branch into a new conversation":
   - img
 - button "Ran for {{duration}}":
@@ -361,6 +403,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img
@@ -377,6 +421,8 @@
   - img
 - button "Bad response":
   - img
+- button "Read aloud":
+  - img
 - button "Branch into a new conversation":
   - img
 - button "Ran for {{duration}}":
@@ -391,6 +437,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img
@@ -407,6 +455,8 @@
   - img
 - button "Bad response":
   - img
+- button "Read aloud":
+  - img
 - button "Branch into a new conversation":
   - img
 - button "Ran for {{duration}}":
@@ -421,6 +471,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img
@@ -437,6 +489,8 @@
   - img
 - button "Bad response":
   - img
+- button "Read aloud":
+  - img
 - button "Branch into a new conversation":
   - img
 - button "Ran for {{duration}}":
@@ -451,6 +505,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img

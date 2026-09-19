@@ -140,6 +140,8 @@
   - img
 - button "有问题的回答":
   - img
+- button "朗读":
+  - img
 - button "在新对话中分支":
   - img
 - button "用量 36.2K tok":

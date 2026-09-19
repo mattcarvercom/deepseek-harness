@@ -32,6 +32,8 @@
   - text: Since the user has explicitly asked me not to read or write any files and to go straight to planning, I'll proceed with
   - code: exit_plan_mode
   - text: .
+- button "Read aloud":
+  - img
 - 'button "Tool call exit_plan_mode · # Add `--greeting` flag to CLI"':
   - img
   - img
@@ -51,6 +53,8 @@
 - button "Good response":
   - img
 - button "Bad response":
+  - img
+- button "Read aloud":
   - img
 - button "Branch into a new conversation":
   - img

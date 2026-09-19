@@ -17,6 +17,8 @@
   - img
   - text: 思考 The user wants a simple SVG diagram of the von Neumann architecture, saved as von-neumann.svg. Let me create a clean SVG showing CPU (control unit, ALU), memory, input, and output with bidirectional data/control buses.
 - paragraph: 我来创建一个冯诺依曼架构的 SVG 示意图。
+- button "朗读":
+  - img
 - button "写入 von-neumann.svg +83 -0":
   - img
   - img
@@ -64,6 +66,8 @@
 - button "好的回答":
   - img
 - button "有问题的回答":
+  - img
+- button "朗读":
   - img
 - button "在新对话中分支":
   - img

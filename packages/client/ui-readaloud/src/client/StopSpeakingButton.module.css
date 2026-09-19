@@ -1,0 +1,23 @@
+/* Composer stop chip: only rendered while this Session speaks, so its
+   presence is the signal and its action is immediate. */
+.stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 24px;
+  background: transparent;
+  color: var(--dsw-alias-link);
+  cursor: pointer;
+}
+
+.stop:hover {
+  background: color-mix(in srgb, var(--dsw-alias-link) 14%, transparent);
+}
+
+.stop:focus-visible {
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
+}

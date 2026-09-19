@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { cp, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
@@ -81,6 +81,29 @@ function emitPreviewPage(): Plugin {
 }
 
 /**
+ * Copy the vendored sanotts assets into the build output. The client engine
+ * resolves them against the document base URI (`<base>sanotts/`), so the
+ * directory sits directly under the dist root, outside the hashed asset
+ * pipeline the bundle owns.
+ */
+function emitReadAloudAssets(): Plugin {
+  const source = resolve(src('../..'), 'packages/client/ui-readaloud/assets/sanotts')
+  let write = false
+  let outputDirectory = ''
+  return {
+    name: 'dsh-emit-read-aloud-assets',
+    configResolved(config) {
+      write = config.build.write
+      outputDirectory = resolve(config.root, config.build.outDir)
+    },
+    async closeBundle() {
+      if (!write) return
+      await cp(source, resolve(outputDirectory, 'sanotts'), { recursive: true, force: true })
+    },
+  }
+}
+
+/**
  * Vendor-chunk membership, by exact npm package name — the heavy render
  * families (math, highlight, markdown) that change only on dependency bumps.
  * Only packages workspace code imports DIRECTLY need listing: their private
@@ -156,7 +179,7 @@ export default defineConfig({
   // directory, and the served index resolves identically from the site root.
   base: './',
   plugins: [
-    rejectStandaloneServe(), clientDocumentTitle(), react(), emitPreviewPage(),
+    rejectStandaloneServe(), clientDocumentTitle(), react(), emitPreviewPage(), emitReadAloudAssets(),
     productWebBundleIsolation(src('../..'), src('.')),
   ],
   build: {

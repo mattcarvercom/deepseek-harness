@@ -13,6 +13,7 @@ import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { createChatStore } from '../stores.ts'
+import type { ChatTextHighlight } from './store.ts'
 import type { ToolCallId } from './store.ts'
 import type { ChatConversationViewNode, ChatNode, ChatNodeKind } from './chat-nodes.ts'
 import type {
@@ -47,9 +48,22 @@ export interface TurnTailOwnerProps {
   openFile: (path: string) => void
 }
 
+/** Owner share of one generating Assistant step's streaming highlight bridge. */
+export interface AssistantStreamOwnerProps {
+  /** The generating step's stable node key; highlights publish under it. */
+  streamKey: string
+  /** Publish or clear this step's read-along highlight. */
+  setTextHighlight: (highlight: ChatTextHighlight | undefined) => void
+}
+
 /** Owner currency of finalized-assistant actions. */
 export interface AssistantActionOwnerProps {
   messageId: MessageId
+  /**
+   * Publish this message's read-along highlight for ui-chat to render inside
+   * the message body, or clear it with undefined.
+   */
+  setTextHighlight: (highlight: ChatTextHighlight | undefined) => void
 }
 
 /** Optional prose file-mention provider consumed by Chat. */
@@ -97,6 +111,10 @@ export interface ChatNodeOwnerProps {
   loadImage: MessageImageLoader
   renderMessageImages: RenderMessageImages
   fileMentions: (owner: TurnTailOwnerProps) => MarkdownFileMentions | undefined
+  /** The message's current read-along highlight, when one is published. */
+  textHighlight: ChatTextHighlight | undefined
+  /** Publish or clear one highlight address: a message id or a streaming node key. */
+  setTextHighlight: (key: string, highlight: ChatTextHighlight | undefined) => void
   /** Turn-process state when this Node belongs to a projected Turn. */
   turnProcess?: TurnProcessOwnerProps | undefined
 }
@@ -230,5 +248,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * that entry. With no entries, the standard action row remains unchanged.
      */
     'conversation.chat.assistant-actions': { kind: 'list'; scope: 'session'; owner: AssistantActionOwnerProps }
+    /**
+     * Ordered actions for one settled assistant step that is not its Turn's
+     * closing message — the working steps whose text the transcript shows
+     * while the agent runs. Each entry receives the step's durable message
+     * id; a fresh `id` adds an action and reusing one replaces that entry.
+     */
+    'conversation.chat.step-actions': { kind: 'list'; scope: 'session'; owner: AssistantActionOwnerProps }
+    /**
+     * Streaming highlight bridge for one generating assistant step, addressed
+     * by its stable node key: a feature marks the text being read while the
+     * step has no durable message id yet.
+     */
+    'conversation.chat.stream-actions': { kind: 'single'; scope: 'session'; owner: AssistantStreamOwnerProps }
   }
 }

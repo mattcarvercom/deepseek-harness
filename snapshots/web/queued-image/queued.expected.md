@@ -30,7 +30,7 @@
   - listitem:
     - img "Queued message image"
     - text: Compare with this screenshot
-    - button "Edit queued message" [disabled]:
+    - button "Edit queued message":
       - img
     - button "Remove queued message":
       - img

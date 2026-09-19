@@ -7,6 +7,7 @@
  * session and workspace hover cards are suppressed while a menu is open.
  */
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import {
   HoverCard, IconAlarmClockOutline16, IconArchiveOutline20, IconBranchOutline16,
@@ -400,11 +401,13 @@ export function SearchResultItem({ result, currentId, onOpen, t }: {
  * @param props.onReveal - scroll this row into view after search navigation, then acknowledge it.
  * @param props.drag - optional row-drag target wiring; blank rows cannot start a drag.
  * @param props.flat - omit the empty status slot in the hierarchy-free flat list.
+ * @param props.renderIndicator - optional per-row indicator seat, addressed by session id.
  * @param props.t - the browser root's locale seat.
  * @returns the session row.
  */
 export function SessionNodeItem({
-  node, currentId, now, onOpen, onRename, onFork, onArchive, onUnarchive, onDelete, onReveal, drag, flat = false, t,
+  node, currentId, now, onOpen, onRename, onFork, onArchive, onUnarchive, onDelete, onReveal,
+  drag, flat = false, renderIndicator, t,
 }: {
   node: SessionNode
   currentId: string | undefined
@@ -426,6 +429,8 @@ export function SessionNodeItem({
   drag?: RowDragProps | undefined
   /** The row is rendered without a parent Workspace header. */
   flat?: boolean | undefined
+  /** Optional indicator seat; absent rows simply show nothing. */
+  renderIndicator?: ((sessionId: SessionNode['id']) => ReactNode) | undefined
   t: RowTranslate
 }) {
   const row = node
@@ -505,6 +510,7 @@ export function SessionNodeItem({
       )}
       <span ref={titleRef} className={clsx(css.title, row.archived && css.archivedTitle)}>{title}</span>
       {row.hasActiveSchedule && <ActiveScheduleIndicator t={t} />}
+      {!row.blank && renderIndicator?.(node.id)}
       {/* A blank New Session row is a provisional placeholder: nothing has
           happened in it yet, so a "now" timestamp and the row verbs
           (rename/fork/archive) would all act on content that does not

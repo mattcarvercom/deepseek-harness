@@ -116,6 +116,7 @@ root
 │  ├─ sidebar.panellist
 │  ├─ sidebar.footer.action
 │  ├─ sidebar.workspaces
+│  │  ├─ sidebar.session.indicator
 │  │  └─ sidebar.workspaces.directoryFlow
 │  └─ sidebar.settings
 │     ├─ settings.trigger
@@ -138,6 +139,7 @@ root
 │     │     ├─ conversation.chat.node
 │     │     │  ├─ conversation.chat.assistant-actions
 │     │     │  ├─ conversation.chat.commandview
+│     │     │  ├─ conversation.chat.step-actions
 │     │     │  ├─ conversation.chat.turnTail
 │     │     │  └─ tool.call.toolview
 │     │     │     ├─ tool.call.images
