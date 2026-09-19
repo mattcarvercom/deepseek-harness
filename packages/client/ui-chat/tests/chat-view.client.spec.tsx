@@ -174,8 +174,9 @@ const userInTurn = (seq: number, text: string, turn: number): ConversationNode =
   // accepts the extra coordinate so component tests can build the same view.
   turn,
 } as unknown as ConversationNode)
-const assistant = (seq: number, text: string, turn = 1, step = 1): AssistantMessageNode => ({
+const assistant = (seq: number, text: string, turn = 1, step = 1, messageId?: AssistantMessageNode['messageId']): AssistantMessageNode => ({
   kind: 'assistant', seq, time: seq * 1_000, turn, step, blocks: [{ kind: 'text', text }],
+  ...(messageId === undefined ? {} : { messageId }),
 })
 const reasoningAssistant = (seq: number, text: string, turn = 1, step = 1): AssistantMessageNode => ({
   kind: 'assistant', seq, time: seq * 1_000, turn, step, blocks: [{ kind: 'reasoning', text }],
@@ -279,6 +280,12 @@ type ToolOwner = Pick<ChatNodeOwnerProps, 'openFile' | 'inspectCall'> & {
 const renderCommandSlot: React.ComponentProps<typeof CommandNodeView>['renderSlot'] =
   (_key, _owner, opts) => opts?.fallback ?? null
 const renderTurnTailSlot: React.ComponentProps<typeof TurnTailNodeView>['renderSlot'] = () => null
+
+
+type AssistantChildOptions = { readonly fallback?: React.ReactNode }
+type AssistantChildRenderer = (
+  key: string, owner: object, opts?: AssistantChildOptions,
+) => React.ReactNode
 
 function HarnessChatFlow({ standard, owner, hookContext, renderSlot }: {
   readonly standard: HarnessStandardProps
@@ -429,8 +436,19 @@ function makeHarness(
     }
     return imageSlotOverride?.(owner) ?? options?.fallback ?? null
   }
+  let assistantChildRenderer: AssistantChildRenderer | undefined
+  /**
+   * Call the fixture's reasoning renderer from this union dispatcher: the
+   * fixture only reads the reasoning input, so its own slot typing is narrower
+   * than the owner the node's renderSlot receives here.
+   */
+  const renderReasoning = renderReasoningSlot as (
+    key: string, owner: object, opts?: { fallback?: React.ReactNode },
+  ) => React.ReactNode
   const renderAssistantSlot: React.ComponentProps<typeof AssistantNodeView>['renderSlot'] = (name, owner, options) =>
-    name === 'conversation.chat.message.images' ? renderImages(name, owner, options) : renderReasoningSlot(name, owner, options)
+    name === 'conversation.chat.step-actions' || name === 'conversation.chat.stream-actions'
+      ? assistantChildRenderer?.(name, owner, options) ?? options?.fallback ?? null
+      : name === 'conversation.chat.message.images' ? renderImages(name, owner, options) : renderReasoning(name, owner, options)
   const renderNodeSlot: NodeRenderer = (key, owner, opts) => {
     if (nodeSlotOverride !== undefined) return nodeSlotOverride(key, owner, opts)
     return <HarnessChatNode standard={props} owner={owner}
@@ -548,6 +566,9 @@ function makeHarness(
     setCollapseTiming: (timing: CollapseTiming) => { collapseTiming.set(timing) },
     setNodeRenderer: (renderer: NodeRenderer) => { nodeSlotOverride = renderer },
     setImageRenderer: (renderer: ImageRenderer) => { imageSlotOverride = renderer },
+    setAssistantChildRenderer: (renderer: AssistantChildRenderer | undefined) => {
+      assistantChildRenderer = renderer
+    },
   }
 }
 
@@ -730,6 +751,111 @@ describe('Chat node rendering', () => {
   it('formatRunDuration uses the English hour template', () => {
     const t = makeTranslate(en, commonEn)
     expect(formatRunDuration(3_903_000, t)).toBe('1h 5m 3s')
+  })
+
+  it('renders a stream-key highlight into a generating step', () => {
+    const h = makeHarness({
+      nodes: [user(1, 'run it')],
+      partial: { turn: 1, step: 2, blocks: [{ kind: 'text', text: 'working note' }] },
+    })
+    let bound: ((highlight: { blockIndex: number; ranges: readonly { start: number; end: number }[] } | undefined) => void) | undefined
+    let streamKey: string | undefined
+    h.setAssistantChildRenderer((key, owner) => {
+      if (key === 'conversation.chat.stream-actions') {
+        const streamOwner = owner as { streamKey: string; setTextHighlight: typeof bound }
+        streamKey = streamOwner.streamKey
+        bound = streamOwner.setTextHighlight
+      }
+      return null
+    })
+    const view = render(<h.ChatView {...h.props} />)
+
+    expect(streamKey).toBe('fixture:assistant:1:2')
+    expect(view.container.querySelector('mark')).toBeNull()
+
+    act(() => {
+      bound?.({ blockIndex: 0, ranges: [{ start: 0, end: 7 }] })
+    })
+
+    expect(view.container.querySelector('mark')?.textContent).toBe('working')
+  })
+
+  it('offers the step action seat to settled working steps but not the closing message', () => {
+    const withMessageId = (seq: number, text: string) =>
+      assistant(seq, text, 1, 1, `m-${String(seq)}` as AssistantMessageNode['messageId'])
+    const h = makeHarness({
+      nodes: [
+        user(1, 'run it'),
+        withMessageId(2, 'working note'),
+        assistant(3, 'no durable id'),
+        withMessageId(4, 'final answer'),
+      ],
+      turnEnds: new Map([[1, 4]]),
+    })
+    const owners: unknown[] = []
+    h.setAssistantChildRenderer((key, owner) => {
+      if (key === 'conversation.chat.step-actions') owners.push(owner)
+      return null
+    })
+    render(<h.ChatView {...h.props} />)
+    // Only the mid-turn settled step with a durable id gets its own seat; the
+    // id-less step and the Turn's closing message do not.
+    expect(owners).toHaveLength(1)
+    expect(owners[0]).toMatchObject({ messageId: 'm-2' })
+    expect(typeof (owners[0] as { setTextHighlight: unknown }).setTextHighlight).toBe('function')
+  })
+
+  it('renders a published read-along highlight into the message body and clears it', () => {
+    const withMessageId = (seq: number, text: string) =>
+      assistant(seq, text, 1, 1, `m-${String(seq)}` as AssistantMessageNode['messageId'])
+    const h = makeHarness({ nodes: [user(1, 'run it'), withMessageId(2, 'working note')] })
+    let bound: ((highlight: { blockIndex: number; ranges: readonly { start: number; end: number }[] } | undefined) => void) | undefined
+    h.setAssistantChildRenderer((key, owner) => {
+      if (key === 'conversation.chat.step-actions') {
+        bound = (owner as { setTextHighlight: typeof bound }).setTextHighlight
+        return (
+          <>
+            <button
+              type="button"
+              onClick={() => { bound?.({ blockIndex: 0, ranges: [{ start: 0, end: 7 }] }) }}
+            >
+              mark
+            </button>
+            <button type="button" onClick={() => { bound?.(undefined) }}>clear</button>
+          </>
+        )
+      }
+      return null
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.container.querySelector('mark')).toBeNull()
+
+    fireEvent.click(view.getByRole('button', { name: 'mark' }))
+    expect(view.container.querySelector('mark')?.textContent).toBe('working')
+    // Re-publishing the same key replaces its entry.
+    fireEvent.click(view.getByRole('button', { name: 'mark' }))
+    expect(view.container.querySelector('mark')?.textContent).toBe('working')
+
+    fireEvent.click(view.getByRole('button', { name: 'clear' }))
+    expect(view.container.querySelector('mark')).toBeNull()
+    // Clearing an absent key is a no-op.
+    fireEvent.click(view.getByRole('button', { name: 'clear' }))
+    expect(view.container.querySelector('mark')).toBeNull()
+  })
+
+  it('offers the step action seat while the turn is still open', () => {
+    const withMessageId = (seq: number, text: string) =>
+      assistant(seq, text, 1, 1, `m-${String(seq)}` as AssistantMessageNode['messageId'])
+    const h = makeHarness({ nodes: [user(1, 'run it'), withMessageId(2, 'working note')] })
+    const owners: unknown[] = []
+    h.setAssistantChildRenderer((key, owner) => {
+      if (key === 'conversation.chat.step-actions') owners.push(owner)
+      return null
+    })
+    render(<h.ChatView {...h.props} />)
+    expect(owners).toHaveLength(1)
+    expect(owners[0]).toMatchObject({ messageId: 'm-2' })
+    expect(typeof (owners[0] as { setTextHighlight: unknown }).setTextHighlight).toBe('function')
   })
 
 })
