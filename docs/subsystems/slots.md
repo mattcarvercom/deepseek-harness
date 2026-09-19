@@ -150,6 +150,8 @@ root
 │     │     │  │  ├─ conversation.chat.assistant-actions
 │     │     │  │  ├─ conversation.chat.reasoning.body
 │     │     │  │  ├─ conversation.chat.commandview
+│     │     │  │  ├─ conversation.chat.step-actions
+│     │     │  │  ├─ conversation.chat.stream-actions
 │     │     │  │  ├─ conversation.chat.turnTail
 │     │     │  │  └─ tool.call.toolview
 │     │     │  │     ├─ tool.call.images

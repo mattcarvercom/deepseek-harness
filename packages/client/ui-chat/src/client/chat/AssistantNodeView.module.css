@@ -1,0 +1,31 @@
+/* Working-step action row. Mirrors the turn tail's action row so a step's
+   controls read the same; the tail owns the closing message's row. The row
+   collapses when every entry declines to render, so steps gain no gap when
+   no plugin contributes one. */
+.root {
+  display: block;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: calc(28px + var(--dsh-content-font-delta, 0px));
+  margin-top: 2px;
+}
+
+.actions:empty {
+  display: none;
+}
+
+@media (hover: hover) {
+  .root .actions {
+    opacity: 0;
+    transition: opacity 80ms ease;
+  }
+
+  .root:hover .actions,
+  .root:focus-within .actions {
+    opacity: 1;
+  }
+}
