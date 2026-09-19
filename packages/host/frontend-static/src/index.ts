@@ -84,11 +84,16 @@ export async function serveStatic(
   }
   let body: string | Buffer
   let type: string
+  // The index is the boot payload that names every plugin bundle revision;
+  // a cached copy after a rebuild would keep loading stale client code, so it
+  // is never stored. Revision-addressed assets stay freely cacheable.
+  let index = false
   try {
     if (target === distRoot || target === distIndex) {
       if (!authorizeIndex()) return
       body = await renderIndex()
       type = HTML_MIME
+      index = true
     } else {
       body = await readFile(target)
       type = MIME[extname(target)] ?? 'application/octet-stream'
@@ -101,7 +106,9 @@ export async function serveStatic(
     res.end()
     return
   }
-  res.writeHead(200, { 'content-type': type })
+  res.writeHead(200, index
+    ? { 'content-type': type, 'cache-control': 'no-store' }
+    : { 'content-type': type })
   res.end(body)
 }
 
