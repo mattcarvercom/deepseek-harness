@@ -169,8 +169,9 @@ const userInTurn = (seq: number, text: string, turn: number): ConversationNode =
   // accepts the extra coordinate so component tests can build the same view.
   turn,
 } as unknown as ConversationNode)
-const assistant = (seq: number, text: string, turn = 1, step = 1): AssistantMessageNode => ({
+const assistant = (seq: number, text: string, turn = 1, step = 1, messageId?: AssistantMessageNode['messageId']): AssistantMessageNode => ({
   kind: 'assistant', seq, time: seq * 1_000, turn, step, blocks: [{ kind: 'text', text }],
+  ...(messageId === undefined ? {} : { messageId }),
 })
 const reasoningAssistant = (seq: number, text: string, turn = 1, step = 1): AssistantMessageNode => ({
   kind: 'assistant', seq, time: seq * 1_000, turn, step, blocks: [{ kind: 'reasoning', text }],
@@ -630,6 +631,122 @@ describe('Chat node rendering', () => {
   it('formatRunDuration uses the English hour template', () => {
     const t = makeTranslate(en, commonEn)
     expect(formatRunDuration(3_903_000, t)).toBe('1h 05m 03s')
+  })
+
+  it('renders a stream-key highlight into a generating step', () => {
+    const h = makeHarness({
+      nodes: [user(1, 'run it')],
+      partial: { turn: 1, step: 2, blocks: [{ kind: 'text', text: 'working note' }] },
+    })
+    const base = h.props.renderSlot
+    let bound: ((highlight: { blockIndex: number; ranges: readonly { start: number; end: number }[] } | undefined) => void) | undefined
+    let streamKey: string | undefined
+    h.props.renderSlot = ((key: string, owner: unknown, opts?: unknown) => {
+      if (key === 'conversation.chat.stream-actions') {
+        const streamOwner = owner as { streamKey: string; setTextHighlight: typeof bound }
+        streamKey = streamOwner.streamKey
+        bound = streamOwner.setTextHighlight
+        return null
+      }
+      return (base as (k: string, o: unknown, o2?: unknown) => React.ReactNode)(key, owner, opts)
+    })
+    const view = render(<h.ChatView {...h.props} />)
+
+    expect(streamKey).toBe('fixture:assistant:1:2')
+    expect(view.container.querySelector('mark')).toBeNull()
+
+    act(() => {
+      bound?.({ blockIndex: 0, ranges: [{ start: 0, end: 7 }] })
+    })
+
+    expect(view.container.querySelector('mark')?.textContent).toBe('working')
+  })
+
+  it('offers the step action seat to settled working steps but not the closing message', () => {
+    const withMessageId = (seq: number, text: string) =>
+      assistant(seq, text, 1, 1, `m-${String(seq)}` as AssistantMessageNode['messageId'])
+    const h = makeHarness({
+      nodes: [
+        user(1, 'run it'),
+        withMessageId(2, 'working note'),
+        assistant(3, 'no durable id'),
+        withMessageId(4, 'final answer'),
+      ],
+      turnEnds: new Map([[1, 4]]),
+    })
+    const owners: unknown[] = []
+    const base = h.props.renderSlot
+    h.props.renderSlot = ((key: string, owner: unknown, opts?: unknown) => {
+      if (key === 'conversation.chat.step-actions') {
+        owners.push(owner)
+        return null
+      }
+      return (base as (k: string, o: unknown, o2?: unknown) => React.ReactNode)(key, owner, opts)
+    })
+    render(<h.ChatView {...h.props} />)
+    // Only the mid-turn settled step with a durable id gets its own seat; the
+    // id-less step and the Turn's closing message do not.
+    expect(owners).toHaveLength(1)
+    expect(owners[0]).toMatchObject({ messageId: 'm-2' })
+    expect(typeof (owners[0] as { setTextHighlight: unknown }).setTextHighlight).toBe('function')
+  })
+
+  it('renders a published read-along highlight into the message body and clears it', () => {
+    const withMessageId = (seq: number, text: string) =>
+      assistant(seq, text, 1, 1, `m-${String(seq)}` as AssistantMessageNode['messageId'])
+    const h = makeHarness({ nodes: [user(1, 'run it'), withMessageId(2, 'working note')] })
+    const base = h.props.renderSlot
+    let bound: ((highlight: { blockIndex: number; ranges: readonly { start: number; end: number }[] } | undefined) => void) | undefined
+    h.props.renderSlot = ((key: string, owner: unknown, opts?: unknown) => {
+      if (key === 'conversation.chat.step-actions') {
+        bound = (owner as { setTextHighlight: typeof bound }).setTextHighlight
+        return (
+          <>
+            <button
+              type="button"
+              onClick={() => { bound?.({ blockIndex: 0, ranges: [{ start: 0, end: 7 }] }) }}
+            >
+              mark
+            </button>
+            <button type="button" onClick={() => { bound?.(undefined) }}>clear</button>
+          </>
+        )
+      }
+      return (base as (k: string, o: unknown, o2?: unknown) => React.ReactNode)(key, owner, opts)
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.container.querySelector('mark')).toBeNull()
+
+    fireEvent.click(view.getByRole('button', { name: 'mark' }))
+    expect(view.container.querySelector('mark')?.textContent).toBe('working')
+    // Re-publishing the same key replaces its entry.
+    fireEvent.click(view.getByRole('button', { name: 'mark' }))
+    expect(view.container.querySelector('mark')?.textContent).toBe('working')
+
+    fireEvent.click(view.getByRole('button', { name: 'clear' }))
+    expect(view.container.querySelector('mark')).toBeNull()
+    // Clearing an absent key is a no-op.
+    fireEvent.click(view.getByRole('button', { name: 'clear' }))
+    expect(view.container.querySelector('mark')).toBeNull()
+  })
+
+  it('offers the step action seat while the turn is still open', () => {
+    const withMessageId = (seq: number, text: string) =>
+      assistant(seq, text, 1, 1, `m-${String(seq)}` as AssistantMessageNode['messageId'])
+    const h = makeHarness({ nodes: [user(1, 'run it'), withMessageId(2, 'working note')] })
+    const owners: unknown[] = []
+    const base = h.props.renderSlot
+    h.props.renderSlot = ((key: string, owner: unknown, opts?: unknown) => {
+      if (key === 'conversation.chat.step-actions') {
+        owners.push(owner)
+        return null
+      }
+      return (base as (k: string, o: unknown, o2?: unknown) => React.ReactNode)(key, owner, opts)
+    })
+    render(<h.ChatView {...h.props} />)
+    expect(owners).toHaveLength(1)
+    expect(owners[0]).toMatchObject({ messageId: 'm-2' })
+    expect(typeof (owners[0] as { setTextHighlight: unknown }).setTextHighlight).toBe('function')
   })
 
 })

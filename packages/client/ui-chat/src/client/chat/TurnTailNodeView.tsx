@@ -1,6 +1,7 @@
-import { memo } from 'react'
+import { memo, useCallback } from 'react'
 import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChatNodeViewProps, PerformanceUsageInjected, TurnTailOwnerProps } from '../contract/slots.ts'
+import type { ChatTextHighlight } from '../contract/store.ts'
 import { MessageIconActions } from './MessageIconActions.tsx'
 import { TurnUsagePanel } from './TurnUsagePanel.tsx'
 import { assistantText } from './turn-assistant.ts'
@@ -26,7 +27,7 @@ function lastContent(snapshot: ChatSnapshot, turn: number, skipWarning: boolean)
 
 /** Turn-local actions and feature tail over the Location index, independent of Assistant placement. */
 export const TurnTailNodeView = memo(function TurnTailNodeView({
-  node, openFile, forkAt, renderSlot, t, useChat, usePerformanceUsage,
+  node, openFile, forkAt, renderSlot, setTextHighlight, t, useChat, usePerformanceUsage,
 }: TurnTailNodeViewProps) {
   const detailed = usePerformanceUsage(mode => mode) === 'detailed'
   const data = node.data
@@ -50,9 +51,15 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
   // Interruption-frozen partials carry no messageId, so they address no
   // durable message and contribute no per-message actions.
   const messageId = closing.finalNode.messageId
+  const setMessageHighlight = useCallback((highlight: ChatTextHighlight | undefined) => {
+    if (messageId !== undefined) setTextHighlight(messageId, highlight)
+  }, [messageId, setTextHighlight])
   const assistantActions = messageId === undefined
     ? null
-    : renderSlot('conversation.chat.assistant-actions', { messageId })
+    : renderSlot('conversation.chat.assistant-actions', {
+      messageId,
+      setTextHighlight: setMessageHighlight,
+    })
   return (
     <div
       className={css.root}

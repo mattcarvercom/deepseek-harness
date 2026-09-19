@@ -1,6 +1,8 @@
 /** Per-Session Chat view store. */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
-import type { ChatStoreState, TurnProcessViewEntry } from './contract/store.ts'
+import type {
+  ChatStoreState, ChatTextHighlight, TurnProcessViewEntry,
+} from './contract/store.ts'
 
 type ChatActions = {
   setTurnProcessOpen: (
@@ -8,6 +10,11 @@ type ChatActions = {
     turn: number,
     answerStep: number,
     open: boolean,
+  ) => void
+  setTextHighlight: (
+    draft: ChatStoreState,
+    key: string,
+    highlight: ChatTextHighlight | undefined,
   ) => void
 }
 
@@ -30,7 +37,7 @@ export function storedTurnProcessEntry(
  */
 export function createChatStore(): EngineStoreHandle<ChatStoreState, ChatActions> {
   return defineStore({
-    init: (): ChatStoreState => ({ turnProcesses: [] }),
+    init: (): ChatStoreState => ({ turnProcesses: [], textHighlights: [] }),
     actions: {
       setTurnProcessOpen: (draft, turn, answerStep, open) => {
         const index = draft.turnProcesses.findIndex(entry => entry.turn === turn)
@@ -41,6 +48,16 @@ export function createChatStore(): EngineStoreHandle<ChatStoreState, ChatActions
         const next = { turn, answerStep } satisfies TurnProcessViewEntry
         if (index < 0) draft.turnProcesses.push(next)
         else draft.turnProcesses[index] = next
+      },
+      setTextHighlight: (draft, key, highlight) => {
+        const index = draft.textHighlights.findIndex(entry => entry.key === key)
+        if (highlight === undefined) {
+          if (index >= 0) draft.textHighlights.splice(index, 1)
+          return
+        }
+        const entry = { key, highlight }
+        if (index < 0) draft.textHighlights.push(entry)
+        else draft.textHighlights[index] = entry
       },
     },
   })

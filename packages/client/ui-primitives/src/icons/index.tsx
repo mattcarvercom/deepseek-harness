@@ -1656,3 +1656,4 @@ export const IconMicrophoneOutlineRegular = (props: IconProps) => (
 export const IconMicrophoneOutlineMedium = (props: IconProps) => (
   <IconMicrophoneOutlineArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
 )
+
