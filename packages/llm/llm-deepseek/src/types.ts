@@ -61,6 +61,12 @@ export interface DeepSeekConnectionOptions {
   models: readonly DeepSeekCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs: number
+  /**
+   * Maximum time without model content once a stream has started; content is a
+   * non-empty text or reasoning delta or a tool-call payload. Zero disables
+   * the bound for endpoints whose healthy state is a long silence.
+   */
+  streamContentIdleTimeoutMs: number
   /** Maximum accumulated file-referenced image bytes in one request. */
   maxRequestFilesBytes: number
   /** Maximum accumulated base64 image payload after Files API fallback. */

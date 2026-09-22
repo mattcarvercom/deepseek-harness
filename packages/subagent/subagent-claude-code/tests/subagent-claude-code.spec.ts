@@ -42,6 +42,7 @@ import {
 import {
   CLAUDE_CODE_PERMISSION_MODES,
   DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
+  DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
   claudeQueryOptions,
   consumeClaudeQuery,
   disposeClaudeCodeChild,
@@ -217,6 +218,7 @@ function expectedFailureDiagnostic(
   stage: 'query-start' | 'query-run' | 'process' | 'teardown',
   category: string,
   outcome?: Partial<SubprocessOutcome>,
+  detail?: string,
 ): string {
   const fields = [
     'product: Claude Code',
@@ -228,6 +230,9 @@ function expectedFailureDiagnostic(
   }
   if (outcome?.signal !== null && outcome?.signal !== undefined) {
     fields.push(`signal: ${outcome.signal}`)
+  }
+  if (detail !== undefined) {
+    fields.push(`detail: ${detail}`)
   }
   return `Product subagent failure (${fields.join('; ')})`
 }
@@ -274,6 +279,30 @@ function waitingQuery(signal: AbortSignal, close = vi.fn()): Query {
   return Object.assign(stream(), { close }) as unknown as Query
 }
 
+/**
+ * A stream that delivers its initial messages, then stays pending until
+ * `close()` ends it — the official SDK ends a closed stream instead of
+ * rejecting its pending read.
+ */
+function silentQuery(
+  initial: readonly SDKMessage[] = [
+    { type: 'system', subtype: 'init' } as SDKMessage,
+  ],
+  close = vi.fn(),
+): Query {
+  let resolveEnd: (() => void) | undefined
+  const stream = (async function* (): AsyncGenerator<SDKMessage, void> {
+    for (const message of initial) yield message
+    await new Promise<void>((resolve) => { resolveEnd = resolve })
+  })()
+  return Object.assign(stream, {
+    close: (): void => {
+      close()
+      resolveEnd?.()
+    },
+  }) as unknown as Query
+}
+
 function sdkSpawnOptions(
   overrides: Partial<SpawnOptions> = {},
 ): SpawnOptions {
@@ -309,6 +338,7 @@ function fakeRun(
     permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
     env: { ANTHROPIC_API_KEY: 'fake-key' },
     disposeGraceMs: 5,
+    runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
     spawn: (spawnSpec) => {
       spawnSpecs.push(spawnSpec)
       return child.handle
@@ -441,6 +471,19 @@ describe('task admission and package contracts', () => {
     })).rejects.toThrow(
       `disposeGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`,
     )
+    for (const runActivityTimeoutMs of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      await expect(ctx.plugin(claudeCode, { runActivityTimeoutMs }))
+        .rejects.toThrow('runActivityTimeoutMs must be a non-negative finite number')
+    }
+    await expect(ctx.plugin(claudeCode, {
+      runActivityTimeoutMs: MAX_TIMER_DELAY_MS + 1,
+    })).rejects.toThrow(
+      `runActivityTimeoutMs must be no greater than ${MAX_TIMER_DELAY_MS}`,
+    )
+    const disabledActivityFiber = await ctx.plugin(claudeCode, {
+      runActivityTimeoutMs: 0,
+    })
+    await disabledActivityFiber.dispose()
     await ctx.fiber.dispose()
   })
 
@@ -569,6 +612,8 @@ describe('task admission and package contracts', () => {
     expect(() => claudeCode.Config({ providerName: '' })).toThrow()
     expect(claudeCode.Config({ model: 'claude-opus' }).model).toBe('claude-opus')
     expect(() => claudeCode.Config({ model: '' })).toThrow()
+    expect(claudeCode.Config({}).runActivityTimeoutMs)
+      .toBe(DEFAULT_RUN_ACTIVITY_TIMEOUT_MS)
     expect(claudeCode.Config({}).permissionMode)
       .toBe(DEFAULT_CLAUDE_CODE_PERMISSION_MODE)
     for (const permissionMode of CLAUDE_CODE_PERMISSION_MODES) {
@@ -593,7 +638,11 @@ describe('task admission and package contracts', () => {
       options.spawnClaudeCodeProcess!(sdkSpawnOptions())
       return queryFrom([success('native model answer')])
     })
-    claudeCode.apply(ctx, { env: {}, disposeGraceMs: 3_000 })
+    claudeCode.apply(ctx, {
+      env: {},
+      disposeGraceMs: 3_000,
+      runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
+    })
     expect(ctx.subagents.getProvider('claude-code')).toBeDefined()
     const run = await ctx.subagents.start('claude-code', request())
     await expect(run.result).resolves.toEqual({
@@ -858,6 +907,7 @@ describe('query options and result mapping', () => {
         ANTHROPIC_API_KEY: 'explicit-fake-key',
       },
       disposeGraceMs: 17,
+      runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
       spawn,
     }
     const controller = new AbortController()
@@ -946,6 +996,7 @@ describe('query options and result mapping', () => {
         permissionMode,
         env: {},
         disposeGraceMs: 17,
+        runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
         spawn: () => child.handle,
       }, new AbortController(), () => {}, () => {})
       expect(options.permissionMode).toBe(permissionMode)
@@ -970,6 +1021,7 @@ describe('query options and result mapping', () => {
       permissionMode: 'plan',
       env: {},
       disposeGraceMs: 17,
+      runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
       spawn: () => child.handle,
     }, new AbortController(), () => {}, () => {})
     expect(options.disallowedTools).toEqual([
@@ -1113,6 +1165,7 @@ describe('run publication, cancellation, and settlement', () => {
       permissionMode: 'dontAsk',
       env: {},
       disposeGraceMs: 5,
+      runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
       spawn: () => children[childIndex++]!.handle,
     }
     queryMock.mockImplementation(({ prompt, options }) => {
@@ -1165,6 +1218,7 @@ describe('run publication, cancellation, and settlement', () => {
       permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
       env: {},
       disposeGraceMs: 5,
+      runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
       spawn: () => child.handle,
     })
     await expect(run.result).resolves.toEqual({
@@ -1215,6 +1269,7 @@ describe('run publication, cancellation, and settlement', () => {
         permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
         env: {},
         disposeGraceMs: 5,
+        runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
         spawn: () => child.handle,
       })
       const result = await run.result
@@ -1243,6 +1298,7 @@ describe('run publication, cancellation, and settlement', () => {
       permissionMode: 'dontAsk',
       env: {},
       disposeGraceMs: 5,
+      runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
       spawn: () => children[index++]!.handle,
     }
     queryMock.mockImplementation(({ prompt, options }) => {
@@ -1294,6 +1350,7 @@ describe('run publication, cancellation, and settlement', () => {
         permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
         env: {},
         disposeGraceMs: 5,
+        runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
         spawn: () => child.handle,
       },
     )
@@ -1560,6 +1617,7 @@ describe('run publication, cancellation, and settlement', () => {
       permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
       env: {},
       disposeGraceMs: 5,
+      runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
       spawn: () => child.handle,
       onError,
     })
@@ -1599,6 +1657,7 @@ describe('run publication, cancellation, and settlement', () => {
         permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
         env: {},
         disposeGraceMs: 5,
+        runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
         spawn: () => child.handle,
       },
     )
@@ -1624,6 +1683,7 @@ describe('run publication, cancellation, and settlement', () => {
       permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
       env: {},
       disposeGraceMs: 5,
+      runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
       spawn: () => child.handle,
     })
     await expect(run.result).resolves.toEqual({
@@ -1652,6 +1712,7 @@ describe('run publication, cancellation, and settlement', () => {
       permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
       env: {},
       disposeGraceMs: 5,
+      runActivityTimeoutMs: DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
       spawn: () => child.handle,
       onError,
     })
@@ -1666,6 +1727,140 @@ describe('run publication, cancellation, and settlement', () => {
     expect(close).toHaveBeenCalledOnce()
     expect(child.terminate).toHaveBeenCalledOnce()
     expect(child.waitForExit).toHaveBeenCalledOnce()
+  })
+
+  it('fails a silent stream at the activity deadline by closing the query', async () => {
+    const child = fakeChild()
+    const close = vi.fn()
+    const diagnostics: string[] = []
+    queryMock.mockImplementationOnce(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      return silentQuery(
+        [{ type: 'system', subtype: 'init' } as SDKMessage],
+        close,
+      )
+    })
+    const run = await startClaudeCodeRun(request(), {
+      cwd: '/workspace',
+      permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
+      env: {},
+      disposeGraceMs: 5,
+      runActivityTimeoutMs: 1,
+      spawn: () => child.handle,
+      onError: (error, stopReason) => {
+        diagnostics.push(`${stopReason}: ${error.message}`)
+      },
+    })
+    await expect(run.result).resolves.toEqual({
+      output: [],
+      diagnostic: expectedFailureDiagnostic(
+        'query-run',
+        'transport',
+        undefined,
+        'no SDK stream activity for 1ms after the query was submitted; last: system:init',
+      ),
+      stopReason: 'error',
+    })
+    expect(diagnostics).toEqual([
+      'error: subagent-claude-code: Product subagent failure (product: Claude Code; stage: query-run; category: transport; detail: no SDK stream activity for 1ms after the query was submitted; last: system:init)',
+    ])
+    expect(close).toHaveBeenCalledOnce()
+    await run.dispose()
+    expect(close).toHaveBeenCalledTimes(2)
+    expect(child.terminate).toHaveBeenCalledOnce()
+  })
+
+  it('reports the watchdog detail when no stream message ever arrives', async () => {
+    const child = fakeChild()
+    const close = vi.fn()
+    queryMock.mockImplementationOnce(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      return silentQuery([], close)
+    })
+    const run = await startClaudeCodeRun(request(), {
+      cwd: '/workspace',
+      permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
+      env: {},
+      disposeGraceMs: 5,
+      runActivityTimeoutMs: 1,
+      spawn: () => child.handle,
+    })
+    await expect(run.result).resolves.toEqual({
+      output: [],
+      diagnostic: expectedFailureDiagnostic(
+        'query-run',
+        'transport',
+        undefined,
+        'no SDK stream activity for 1ms after the query was submitted; last: none',
+      ),
+      stopReason: 'error',
+    })
+    expect(close).toHaveBeenCalledOnce()
+    await run.dispose()
+    expect(child.terminate).toHaveBeenCalledOnce()
+  })
+
+  it('resets the activity deadline on every streamed message', async () => {
+    const child = fakeChild()
+    const close = vi.fn()
+    queryMock.mockImplementationOnce(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      async function* stream(): AsyncGenerator<SDKMessage, void> {
+        for (let i = 0; i < 12; i += 1) {
+          yield { type: 'system', subtype: 'init' } as SDKMessage
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 10)
+          })
+        }
+        yield success('live answer')
+      }
+      return Object.assign(stream(), { close }) as unknown as Query
+    })
+    const run = await startClaudeCodeRun(request(), {
+      cwd: '/workspace',
+      permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
+      env: {},
+      disposeGraceMs: 5,
+      runActivityTimeoutMs: 100,
+      spawn: () => child.handle,
+    })
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'live answer' }],
+      stopReason: 'completed',
+    })
+    expect(close).not.toHaveBeenCalled()
+    await run.dispose()
+    expect(close).toHaveBeenCalledOnce()
+  })
+
+  it('leaves a silent stream unbounded when the deadline is disabled', async () => {
+    const child = fakeChild()
+    const close = vi.fn()
+    queryMock.mockImplementationOnce(({ options }) => {
+      options.spawnClaudeCodeProcess!(sdkSpawnOptions())
+      async function* stream(): AsyncGenerator<SDKMessage, void> {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 30)
+        })
+        yield success('unbounded answer')
+      }
+      return Object.assign(stream(), { close }) as unknown as Query
+    })
+    const run = await startClaudeCodeRun(request(), {
+      cwd: '/workspace',
+      permissionMode: DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
+      env: {},
+      disposeGraceMs: 5,
+      runActivityTimeoutMs: 0,
+      spawn: () => child.handle,
+    })
+    await expect(run.result).resolves.toEqual({
+      output: [{ type: 'text', text: 'unbounded answer' }],
+      stopReason: 'completed',
+    })
+    expect(close).not.toHaveBeenCalled()
+    await run.dispose()
+    expect(close).toHaveBeenCalledOnce()
   })
 })
 

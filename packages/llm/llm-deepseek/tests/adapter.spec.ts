@@ -243,6 +243,123 @@ describe('direct Messages HTTP', () => {
     }
   })
 
+  it('fails a keep-alive-only stream when no content arrives before the content deadline', async () => {
+    const encoder = new TextEncoder()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    let stopped = false
+    vi.stubGlobal('fetch', (_input: unknown, init?: { signal?: AbortSignal }) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          init?.signal?.addEventListener('abort', () => {
+            stopped = true
+            controller.error(init.signal!.reason)
+          }, { once: true })
+          // Keep-alives keep the per-read idle watchdog rearmed, so only the
+          // content deadline can end this stream.
+          for (const at of [10, 20, 30, 40]) {
+            setTimeout(() => {
+              try { controller.enqueue(encoder.encode(': keep-alive\n\n')) } catch (_afterTrip) {
+                // The trip errored the stream; later ticks have nothing to deliver.
+              }
+            }, at)
+          }
+        },
+      })
+      return Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } }))
+    })
+    const stream = adapter({
+      baseURL: 'https://example.invalid', streamIdleTimeoutMs: 60_000, streamContentIdleTimeoutMs: 15,
+    }).stream(options())[Symbol.asyncIterator]()
+    try {
+      const rejected = expect(stream.next()).rejects.toMatchObject({
+        message: 'DeepSeek Messages stream content idle timeout after 15ms', code: 'TIMEOUT',
+      })
+      await vi.advanceTimersByTimeAsync(40)
+      await rejected
+      expect(stopped).toBe(true)
+    } finally {
+      vi.useRealTimers()
+      await stream.return?.()
+    }
+  })
+
+  it('keeps a stream alive past the content deadline while it keeps producing content', async () => {
+    const encoder = new TextEncoder()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    vi.stubGlobal('fetch', () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const send = (at: number, frame: string): void => {
+            setTimeout(() => {
+              try { controller.enqueue(encoder.encode(frame)) } catch (_afterClose) {
+                // The adapter cancelled the body after the terminal frame; later ticks have nothing to deliver.
+              }
+            }, at)
+          }
+          // A second content delta, inside the 15ms content deadline of the
+          // one before, keeps the deadline from ever tripping.
+          send(10, sse(textEvents.slice(0, 3)))
+          send(20, sse([textEvents[2]!]))
+          send(30, sse(textEvents.slice(3)))
+        },
+      })
+      return Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } }))
+    })
+    const llm = adapter({
+      baseURL: 'https://example.invalid', streamIdleTimeoutMs: 60_000, streamContentIdleTimeoutMs: 15,
+    })
+    try {
+      const drain = chunks(llm.stream(options()))
+      await vi.advanceTimersByTimeAsync(30)
+      const result = await drain
+      expect(result.map(chunk => chunk.type)).toEqual([
+        'block-start', 'text-delta', 'text-delta', 'block-end', 'usage', 'finish',
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never trips the content deadline when it is disabled with zero', async () => {
+    const encoder = new TextEncoder()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    vi.stubGlobal('fetch', () => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const at of [10, 20, 30, 40]) {
+            setTimeout(() => {
+              try { controller.enqueue(encoder.encode(': keep-alive\n\n')) } catch (_afterClose) {
+                // The stream closed early in a failed run; later ticks have nothing to deliver.
+              }
+            }, at)
+          }
+          setTimeout(() => {
+            try {
+              controller.enqueue(encoder.encode(sse(textEvents)))
+              controller.close()
+            } catch (_afterClose) {
+              // The stream closed early in a failed run; the final tick has nothing to deliver.
+            }
+          }, 50)
+        },
+      })
+      return Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } }))
+    })
+    const llm = adapter({
+      baseURL: 'https://example.invalid', streamIdleTimeoutMs: 60_000, streamContentIdleTimeoutMs: 0,
+    })
+    try {
+      const drain = chunks(llm.stream(options()))
+      await vi.advanceTimersByTimeAsync(50)
+      const result = await drain
+      expect(result.map(chunk => chunk.type)).toEqual([
+        'block-start', 'text-delta', 'block-end', 'usage', 'finish',
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('classifies an already cancelled request without contacting the provider', async () => {
     const http = await endpoint()
     const controller = new AbortController(); controller.abort()

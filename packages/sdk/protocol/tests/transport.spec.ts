@@ -1,7 +1,7 @@
 import { once } from 'node:events'
 import { PassThrough, Writable } from 'node:stream'
-import { describe, expect, it } from 'vitest'
-import { JsonRpcLineTransport, JsonRpcResponseError } from '../src/index.ts'
+import { describe, expect, it, vi } from 'vitest'
+import { JsonRpcLineTransport, JsonRpcResponseError, JsonRpcTimeoutError } from '../src/index.ts'
 
 function transportPair() {
   const aToB = new PassThrough()
@@ -65,8 +65,8 @@ describe('JsonRpcLineTransport', () => {
     b.start()
     const controller = new AbortController()
     controller.abort(new Error('already gone'))
-    await expect(b.request('never-sent', {}, controller.signal)).rejects.toThrow('already gone')
-    expect((b as unknown as { pending: Map<string, unknown> }).pending.size).toBe(0)
+    await expect(b.request('never-sent', {}, { signal: controller.signal })).rejects.toThrow('already gone')
+    expect(Reflect.get(b, 'pending')).toHaveProperty('size', 0)
     b.close()
   })
 
@@ -74,12 +74,124 @@ describe('JsonRpcLineTransport', () => {
     const { b } = transportPair()
     b.start()
     const controller = new AbortController()
-    const pending = b.request('never-answered', {}, controller.signal)
+    const pending = b.request('never-answered', {}, { signal: controller.signal })
     controller.abort('plain-string-reason')
     await expect(pending).rejects.toThrow('JSON-RPC request aborted: plain-string-reason')
     // The abandonment removed the pending entry — nothing is retained for a
     // response that may never come.
-    expect((b as unknown as { pending: Map<string, unknown> }).pending.size).toBe(0)
+    expect(Reflect.get(b, 'pending')).toHaveProperty('size', 0)
+    b.close()
+  })
+
+  it('rejects with JsonRpcTimeoutError when the deadline elapses and retains no pending state', async () => {
+    const { b } = transportPair()
+    b.start()
+
+    const pending = b.request('slow', {}, { timeoutMs: 20 })
+    const failure = await pending.then(
+      () => { throw new Error('request unexpectedly succeeded') },
+      (error: unknown) => error,
+    )
+    expect(failure).toBeInstanceOf(JsonRpcTimeoutError)
+    expect(failure).toMatchObject({ method: 'slow', timeoutMs: 20 })
+    expect(failure).toMatchObject({ message: 'JSON-RPC request slow timed out after 20ms' })
+    expect(Reflect.get(b, 'pending')).toHaveProperty('size', 0)
+    b.close()
+  })
+
+  it('discards a response that arrives after the deadline', async () => {
+    const { aToB, bToA, b } = transportPair()
+    b.start()
+
+    const pending = b.request('late-response', {}, { timeoutMs: 15 })
+    const requestChunk = (await once(bToA, 'data'))[0] as Buffer | string
+    const request = JSON.parse(String(requestChunk)) as { id: string }
+    await expect(pending).rejects.toBeInstanceOf(JsonRpcTimeoutError)
+    aToB.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { late: true } })}\n`)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(Reflect.get(b, 'pending')).toHaveProperty('size', 0)
+    b.close()
+  })
+
+  it('clears the deadline when the response arrives first', async () => {
+    const { a, b } = transportPair()
+    a.onRequest(async () => ({ ok: true }))
+    a.start()
+    b.start()
+
+    const setTimer = vi.spyOn(globalThis, 'setTimeout')
+    const clearTimer = vi.spyOn(globalThis, 'clearTimeout')
+    try {
+      const callsBefore = setTimer.mock.calls.length
+      await b.request('echo', {}, { timeoutMs: 60_000 })
+      const armed = setTimer.mock.results.slice(callsBefore).at(-1)?.value as NodeJS.Timeout | undefined
+      expect(armed).toBeDefined()
+      expect(clearTimer.mock.calls.some(call => call[0] === armed)).toBe(true)
+    } finally {
+      setTimer.mockRestore()
+      clearTimer.mockRestore()
+    }
+    a.close()
+    b.close()
+  })
+
+  it('clears the deadline on abandonment and reports the signal reason', async () => {
+    const { b } = transportPair()
+    b.start()
+
+    const setTimer = vi.spyOn(globalThis, 'setTimeout')
+    const clearTimer = vi.spyOn(globalThis, 'clearTimeout')
+    try {
+      const callsBefore = setTimer.mock.calls.length
+      const controller = new AbortController()
+      const pending = b.request('aborted-with-deadline', {}, { signal: controller.signal, timeoutMs: 60_000 })
+      const armed = setTimer.mock.results.slice(callsBefore).at(-1)?.value as NodeJS.Timeout | undefined
+      expect(armed).toBeDefined()
+      controller.abort(new Error('caller gave up'))
+      await expect(pending).rejects.toThrow('caller gave up')
+      expect(clearTimer.mock.calls.some(call => call[0] === armed)).toBe(true)
+    } finally {
+      setTimer.mockRestore()
+      clearTimer.mockRestore()
+    }
+    b.close()
+  })
+
+  it('clears the deadline when the transport closes', async () => {
+    const { b } = transportPair()
+    b.start()
+
+    const setTimer = vi.spyOn(globalThis, 'setTimeout')
+    const clearTimer = vi.spyOn(globalThis, 'clearTimeout')
+    try {
+      const callsBefore = setTimer.mock.calls.length
+      const pending = b.request('closed-with-deadline', {}, { timeoutMs: 60_000 })
+      const armed = setTimer.mock.results.slice(callsBefore).at(-1)?.value as NodeJS.Timeout | undefined
+      expect(armed).toBeDefined()
+      b.close()
+      await expect(pending).rejects.toThrow('JSON-RPC transport closed')
+      expect(clearTimer.mock.calls.some(call => call[0] === armed)).toBe(true)
+    } finally {
+      setTimer.mockRestore()
+      clearTimer.mockRestore()
+    }
+  })
+
+  it('treats a zero timeoutMs as unbounded and arms no deadline', async () => {
+    const { a, b } = transportPair()
+    a.onRequest(async () => ({ ok: true }))
+    a.start()
+    b.start()
+
+    const setTimer = vi.spyOn(globalThis, 'setTimeout')
+    try {
+      const callsBefore = setTimer.mock.calls.length
+      await b.request('unbounded', {}, { timeoutMs: 0 })
+      expect(setTimer.mock.calls.length).toBe(callsBefore)
+    } finally {
+      setTimer.mockRestore()
+    }
+    a.close()
     b.close()
   })
 

@@ -1,9 +1,9 @@
 /** Direct Messages transport with one cancellable lifecycle per model request. */
 
-import { attributionHeaders, LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, isTokenDelta, LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, ImageAttachmentAccessResolver, PreparedAdapterCall, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { DeepSeekLlmApiJson } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
-import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { idleWatchdog, progressDeadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { modelInfo } from './model-info.ts'
 import type { DeepSeekAdapterOptions, DeepSeekConnectionOptions as Connection } from './types.ts'
 import { DeepSeekFileStore } from './file-store.ts'
@@ -16,7 +16,13 @@ import { parseSse } from './sse.ts'
 import { translate } from './translate.ts'
 import { providerError, providerErrorDetail } from './transport.ts'
 
-/** DeepSeek provider using Messages content and native thinking replay. */
+/**
+ * DeepSeek provider using Messages content and native thinking replay.
+ *
+ * One stable signal reaches both initial fetch and body reads. Caller aborts
+ * map to `ABORTED`; the per-read idle watchdog and the content-idle deadline
+ * both map to `TIMEOUT`, so the retry policy treats either trip the same.
+ */
 export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapter {
   private readonly files: DeepSeekFileStore
   private readonly imageAccess: ImageAttachmentAccessResolver = (ref) => {
@@ -52,15 +58,29 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
     const consumer = new AbortController()
     const signal = options.signal === undefined ? consumer.signal : AbortSignal.any([consumer.signal, options.signal])
     using watchdog = idleWatchdog(signal, connection.streamIdleTimeoutMs, 'MESSAGES_IDLE')
-    const iterator = this.request(options, connection, watchdog.signal, () => { watchdog.pulse() })
+    using progress = progressDeadline(signal, connection.streamContentIdleTimeoutMs, 'MESSAGES_CONTENT_IDLE')
+    const iterator = this.request(
+      options,
+      connection,
+      AbortSignal.any([watchdog.signal, progress.signal]),
+      () => { watchdog.pulse() },
+    )
     try {
       while (true) {
         const next = await watchdog.next(iterator)
         if (next.done) return
+        if (isTokenDelta(next.value)) progress.progress()
         yield next.value
       }
     } catch (error) {
       if (timeoutOf(watchdog.signal, 'MESSAGES_IDLE') !== undefined) throw new LlmError('DeepSeek Messages stream idle timeout', 'TIMEOUT', { cause: error })
+      if (timeoutOf(progress.signal, 'MESSAGES_CONTENT_IDLE') !== undefined) {
+        throw new LlmError(
+          `DeepSeek Messages stream content idle timeout after ${connection.streamContentIdleTimeoutMs}ms`,
+          'TIMEOUT',
+          { cause: error },
+        )
+      }
       if (options.signal?.aborted) throw new LlmError('DeepSeek Messages request aborted', 'ABORTED', { cause: error })
       if (error instanceof LlmError) throw error
       throw new LlmError('DeepSeek Messages transport failed', 'TRANSPORT', { cause: error })
