@@ -41,7 +41,7 @@ it('forwards the original questions and maps the host answer to the SDK-owned ro
   await expect(f.ctx.userQuestions.ask({ agent: f.agent, questions })).resolves.toEqual(answer)
   expect(f.transport.request).toHaveBeenCalledWith('user-question/ask', {
     requestId: expect.any(String) as string, sessionId: 'main', questions,
-  }, expect.any(AbortSignal))
+  }, { signal: expect.any(AbortSignal) as AbortSignal })
   expect(f.transport.notify).not.toHaveBeenCalledWith('user-question.cancelled', expect.anything())
 })
 
@@ -95,7 +95,8 @@ it('maps an explicit user dismissal to native ASK_CANCELLED', async () => {
 
 it.each(['tool', 'shutdown'] as const)('cancels an outstanding host request on %s cancellation', async (kind) => {
   const entered = Promise.withResolvers<AbortSignal>()
-  const f = await fixture(async (_method, _params, signal) => {
+  const f = await fixture(async (_method, _params, options) => {
+    const signal = options?.signal
     if (signal === undefined) throw new Error('question must have a cancellation signal')
     entered.resolve(signal)
     return new Promise((_resolve, reject) => {
@@ -122,7 +123,8 @@ it('reports a host or transport failure and does not synthesize an answer', asyn
 
 it('contains cancellation-notification write failure while aborting the pending question', async () => {
   const entered = Promise.withResolvers<undefined>()
-  const f = await fixture(async (_method, _params, signal) => {
+  const f = await fixture(async (_method, _params, options) => {
+    const signal = options?.signal
     entered.resolve(undefined)
     return new Promise((_resolve, reject) => {
       signal?.addEventListener('abort', () => { reject(new Error('cancelled')) }, { once: true })

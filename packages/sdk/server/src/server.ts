@@ -138,7 +138,7 @@ export class HarnessSdkJsonRpcServer {
       const signal = request.signal === undefined
         ? this.lifetime.signal
         : AbortSignal.any([request.signal, this.lifetime.signal])
-      const result = await this.transport.request('approval/request', params, signal)
+      const result = await this.transport.request('approval/request', params, { signal })
       if (result === null || typeof result !== 'object' || !('outcome' in result)
         || (result.outcome !== 'allowed-once' && result.outcome !== 'rejected' && result.outcome !== 'cancelled')) {
         throw new TypeError('approval/request response requires an allowed-once, rejected, or cancelled outcome')

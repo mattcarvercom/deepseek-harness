@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-15-llm-stream-content-idle-timeout.md
+2026-09-15-llm-stream-content-idle-timeout.md: d5828e549b10c9dc2bc681dbdc760c8911befe0e
+2026-09-15-llm-stream-content-idle-timeout.zh.md: 40d0744e0b58ddb253a06a8d2aec019703c54ee2
