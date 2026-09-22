@@ -45,7 +45,7 @@ export class SdkUserQuestionBridge {
     }
     signal.addEventListener('abort', cancelled, { once: true })
     try {
-      const result = await this.transport.request('user-question/ask', params, signal)
+      const result = await this.transport.request('user-question/ask', params, { signal })
       return parseHostAnswer(result, request.questions.map(question => question.id))
     } catch (error) {
       if (error instanceof UserQuestionError) throw error

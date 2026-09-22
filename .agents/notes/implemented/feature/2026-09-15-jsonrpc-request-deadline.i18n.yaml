@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-15-jsonrpc-request-deadline.md
+2026-09-15-jsonrpc-request-deadline.md: 94b489c9cae10810752acd81ad1b671b50f4c53f
+2026-09-15-jsonrpc-request-deadline.zh.md: 446ee3158b6cddf46eedb3a318de6715a40bf202

@@ -40,6 +40,7 @@ import type {
 import {
   attributionHeaders,
   contentHasImage,
+  isTokenDelta,
   LlmAdapter,
   LlmError,
 } from '@deepseek-ai/dsh-llm'
@@ -57,7 +58,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { idleWatchdog, progressDeadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { requestImageTarget, toPiContext } from './context.ts'
 import { conversationUpdates, createModels, getSupportedThinkingLevels } from './models.ts'
@@ -440,6 +441,12 @@ export class PiAiAdapter extends LlmAdapter {
       : AbortSignal.any([options.signal, consumer.signal])
     const streamIdleTimeoutMs = profile.streamIdleTimeoutMs
     using watchdog = idleWatchdog(upstream, streamIdleTimeoutMs, 'LLM_STREAM_IDLE_TIMEOUT')
+    const streamContentIdleTimeoutMs = profile.streamContentIdleTimeoutMs
+    using progress = progressDeadline(
+      upstream,
+      streamContentIdleTimeoutMs,
+      'LLM_STREAM_CONTENT_IDLE_TIMEOUT',
+    )
 
     try {
       const containsImage = options.messages.some(message => contentHasImage(message.content))
@@ -453,10 +460,11 @@ export class PiAiAdapter extends LlmAdapter {
       const onReplayDegrade = (reason: string): void => {
         this.config.onReplayDegrade?.({ provider: options.provider, model: options.model, reason })
       }
+      const streamSignal = AbortSignal.any([watchdog.signal, progress.signal])
       const prefixDigests: PrefixDigests = new Map()
       const converted = attachments === undefined
         ? toPiContext(request, undefined, onReplayDegrade, updates.systemPromptUpdate === 'in-history', prefixDigests)
-        : await toPiContext({ ...request, signal: watchdog.signal }, {
+        : await toPiContext({ ...request, signal: streamSignal }, {
           attachments,
           resolveImageAccess: ref => this.config.resolveImageAccess?.(attachments, ref),
           maxRequestImageBytes: profile.maxRequestImageBytes,
@@ -477,7 +485,9 @@ export class PiAiAdapter extends LlmAdapter {
         ...options.temperature === undefined ? {} : { temperature: options.temperature },
         ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
         ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
-        signal: watchdog.signal,
+        signal: streamSignal,
+        // Profile headers are deployment-owned; attribution names are
+        // Harness-owned and therefore win collisions.
         headers: requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders),
       })
       const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id, digest)[Symbol.asyncIterator]()
@@ -485,10 +495,15 @@ export class PiAiAdapter extends LlmAdapter {
       try {
         while (true) {
           const result = await watchdog.next(iterator)
+          const timeout = timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT')
+          if (timeout !== undefined) throw timeout
+          const contentTimeout = timeoutOf(progress.signal, 'LLM_STREAM_CONTENT_IDLE_TIMEOUT')
+          if (contentTimeout !== undefined) throw contentTimeout
           if (result.done) {
             exhausted = true
             return
           }
+          if (isTokenDelta(result.value)) progress.progress()
           yield result.value
         }
       } finally {
@@ -503,6 +518,13 @@ export class PiAiAdapter extends LlmAdapter {
     } catch (error: unknown) {
       if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined) {
         throw new LlmError(`pi-ai stream idle timeout after ${streamIdleTimeoutMs}ms`, 'TIMEOUT', { cause: error })
+      }
+      if (timeoutOf(progress.signal, 'LLM_STREAM_CONTENT_IDLE_TIMEOUT') !== undefined) {
+        throw new LlmError(
+          `pi-ai stream content idle timeout after ${streamContentIdleTimeoutMs}ms`,
+          'TIMEOUT',
+          { cause: error },
+        )
       }
       if (options.signal?.aborted) {
         throw new LlmError('pi-ai request aborted by caller', 'ABORTED', { cause: error })
