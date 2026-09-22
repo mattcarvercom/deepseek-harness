@@ -44,6 +44,7 @@ The layer inserts Host rows only, so any profile can select it, including the sh
 | `env` | `{}` | Explicit SDK/CLI environment layered over the credential-scrubbed parent environment |
 | `permissionMode` | `dontAsk` | Native non-interactive permission policy fixed for every run from this provider instance |
 | `disposeGraceMs` | `3000` | Grace between the shared managed-range owner's termination tiers |
+| `runActivityTimeoutMs` | `300000` | Silence bound in milliseconds for SDK stream frames after the query is published; a silent stream fails at the deadline with category `transport`; `0` leaves the run unbounded |
 
 | `permissionMode` value | Native behavior |
 |---|---|
@@ -80,7 +81,7 @@ The completion notice contains the final Claude Code answer, or the stop reason 
 
 ### Failure and recovery
 
-An install that omits optional dependencies, uses an unsupported platform, or loses the selected payload leaves the provider dormant and fails the first delegation at the SDK startup boundary with a safe `query-start` / `unknown` failure fact; there is no host-CLI fallback. The original product error stays on the internal cause chain and in the provider's Host log. A cancelled run settles as `aborted`.
+An install that omits optional dependencies, uses an unsupported platform, or loses the selected payload leaves the provider dormant and fails the first delegation at the SDK startup boundary with a safe `query-start` / `unknown` failure fact; there is no host-CLI fallback. The original product error stays on the internal cause chain and in the provider's Host log. After the query is published, `runActivityTimeoutMs` bounds stream silence: every streamed message resets the deadline, a stream that stays silent past it fails with category `transport` and a detail that names the last observed message, and the trip closes the query to end the stream; `0` restores the unbounded run. Disposal is likewise bounded: the managed-range exit proof runs for one `disposeGraceMs` window covering the `SIGTERM`→`SIGKILL` ladder plus one more for the exit observation, after which an inconclusive teardown settles with the existing safe facts. A cancelled run settles as `aborted`.
 
 -----
 
@@ -109,7 +110,7 @@ This section explains how the provider drives a real Claude Code CLI and where t
 
 ### Run flow
 
-A start accepts only a non-empty sequence of text blocks and derives the child cwd from the parent session. It creates a private `AbortController`, calls the official SDK `query()` with the exact concatenated task, and publishes the run only after the SDK's custom-spawn hook has supplied a live CLI handle owned by the subprocess seam. The provider iterates the complete message stream and accepts only a `result` message with `subtype: "success"`, `is_error: false`, and a nonblank `result`, followed by normal iterator completion. Every other outcome maps to a fixed-category `error` diagnostic naming the lifecycle stage and observed process outcome — the category set lives in [`src/run.ts`](src/run.ts). Local cancellation wins the result race and maps to `aborted` without a failure diagnostic.
+A start accepts only a non-empty sequence of text blocks and derives the child cwd from the parent session. It creates a private `AbortController`, calls the official SDK `query()` with the exact concatenated task, and publishes the run only after the SDK's custom-spawn hook has supplied a live CLI handle owned by the subprocess seam. The provider iterates the complete message stream, arming the `runActivityTimeoutMs` silence deadline from publication and resetting it on every streamed message, and accepts only a `result` message with `subtype: "success"`, `is_error: false`, and a nonblank `result`, followed by normal iterator completion. Every other outcome maps to a fixed-category `error` diagnostic naming the lifecycle stage and observed process outcome — the category set lives in [`src/run.ts`](src/run.ts). Local cancellation wins the result race and maps to `aborted` without a failure diagnostic.
 
 </details>
 
@@ -149,7 +150,7 @@ Independent of the parent request cache. Reuse depends only on Claude Code's own
 
 #### What the model sees
 
-Through `dsh-tool-subagent`, the parent model first receives a child id, then the final Claude Code answer or a failure notice with its stop reason and safe diagnostic. Diagnostics contain only fixed stage, category, and observed protocol or process facts. Product reasoning, intermediate messages, tool activity, stderr, usage, product identifiers, commands, paths, and raw protocol payloads are not copied into the parent Session.
+Through `dsh-tool-subagent`, the parent model first receives a child id, then the final Claude Code answer or a failure notice with its stop reason and safe diagnostic. Diagnostics contain only fixed stage, category, and observed protocol or process facts, including, for a silent published stream, a silence detail that names the last observed message. Product reasoning, intermediate messages, tool activity, stderr, usage, product identifiers, commands, paths, and raw protocol payloads are not copied into the parent Session.
 
 #### Token effect
 
@@ -174,7 +175,7 @@ These limits define when this provider is a poor fit or needs special operationa
 - **No human interaction path** — `AskUserQuestion` is disabled, permission prompts are denied, MCP elicitation is declined, and blocking dialogs fail closed instead of suspending.
 - **Assistant payload is final text only** — failed runs can also expose a separate safe diagnostic; reasoning, intermediate messages, tool traffic, usage, stderr, and workspace diffs remain outside the parent Session. Task identity and terminal results are retained in the parent log.
 - **No optional shared capabilities** — `agentOptions`, output schemas, child personas, tool filtering, and harness depth enforcement are rejected by the shared service for this provider.
-- **No wall-clock timeout or side-effect rollback** — the caller cancels long work, and files or external systems changed before cancellation are not restored.
+- **No wall-clock bound on total run length, and no side-effect rollback** — post-publication stream silence is bounded by `runActivityTimeoutMs`, but a run whose stream keeps producing messages has no total-length bound; the caller cancels long work, and files or external systems changed before cancellation are not restored.
 
 <a id="dev-note"></a>
 ### Dev Note

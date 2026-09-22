@@ -44,6 +44,8 @@ kind: "package-bundle"
 | `env` | `{}` | 叠加在已清理凭据的父环境之上的显式子进程环境 |
 | `permissionMode` | `never` | 为本提供方实例的每个线程固定的原生非交互审批与沙箱模式 |
 | `disposeGraceMs` | `3000` | 共享 managed-range owner 各终止层级之间的宽限 |
+| `handshakeTimeoutMs` | `60000` | `initialize` 与 `thread/start` 握手请求的墙上时钟上界；静默的 app-server 会在时限到达时以 `transport` 类别失败；`0` 关闭时限 |
+| `runActivityTimeoutMs` | `300000` | 提交轮次后 app-server 协议帧的静默上界（毫秒）；静默的 stream 会在时限到达时以 `transport` 类别失败；`0` 使运行不受限 |
 
 | `permissionMode` 值 | `thread/start` 字段 | 原生行为 |
 |---|---|---|
@@ -78,7 +80,7 @@ Bundle 将 `tool-subagent-codex` 作为 Host 条目插入，因此 `subagent_cod
 
 ### 失败与恢复
 
-省略 optional dependencies、当前平台不受支持或所选载荷缺失的安装会让提供方保持休眠，并在第一次委派时于 `initialize` 阶段以安全 `unknown` 类别和任何已观测进程结果失败；不存在宿主 CLI 回退。原始 wrapper 文本只保留在 Host stderr。被取消的运行以 `aborted` 结算。
+省略 optional dependencies、当前平台不受支持或所选载荷缺失的安装会让提供方保持休眠，并在第一次委派时于 `initialize` 阶段以安全 `unknown` 类别和任何已观测进程结果失败；不存在宿主 CLI 回退。握手受 `handshakeTimeoutMs` 约束：在时限内没有收到响应的请求会在其所在阶段以 `transport` 类别失败，拆除前记录的存活细节会在可观测时说明 app-server 进程是否仍在运行、或子进程已退出而其受管范围仍在运行；`0` 恢复不受限的握手。轮次提交后，`runActivityTimeoutMs` 约束协议静默：每一条 stream 帧或 server 请求都会重置时限，静默超过时限的 stream 以 `transport` 类别失败，细节说明最后观测到的帧，`0` 恢复不受限的轮次。引用其他线程或轮次的帧在非终态运行时被忽略而不会使运行失败，而 `turn/completed` 上的此类帧会使运行失败。处置同样有界：受管范围的退出证明以一段 `disposeGraceMs` 窗口覆盖 `SIGTERM`→`SIGKILL` 阶梯、再加一段覆盖退出观测，因此无法得出结论的观测会以既有 `teardown` 事实结算，而不是无限期等待。原始 wrapper 文本只保留在 Host stderr。被取消的运行以 `aborted` 结算。
 
 -----
 
@@ -107,7 +109,7 @@ Bundle 将 `tool-subagent-codex` 作为 Host 条目插入，因此 `subagent_cod
 
 ### 运行流程
 
-一次启动只接受非空的文本块序列，并使用子代理服务选择的子级 cwd。它经子进程 seam spawn 固定命令，完成 `initialize` → `initialized` 握手，把 Profile 选择的模式与可选模型映射为官方 `thread/start` 字段并与 `{ cwd, ephemeral: true }` 一起发送，且仅在 Codex 返回有效的临时线程后发布运行。已发布的结果恰好启动一个轮次，只接受与此次运行的线程和轮次匹配的通知，并等待权威的 `turn/completed` 终态。以最后一条 `phase: "final_answer"` 的 `agentMessage` 为准；若 Codex 没有发出明确的最终阶段，则以最后一条 `phase: null` 的消息作为兼容性回退。成功完成的轮次若没有非空白答案，结果也会判为错误。失败轮次使用粗粒度类别 `limit`、`access-policy`、`service`、`transport`、`product-error`、`invalid-result` 或 `unknown`；app-server 提前退出使用 `process`，适用的连接与 stream 失败保留数值 `httpStatusCode`。
+一次启动只接受非空的文本块序列，并使用子代理服务选择的子级 cwd。它经子进程 seam spawn 固定命令，完成 `initialize` → `initialized` 握手，把 Profile 选择的模式与可选模型映射为官方 `thread/start` 字段并与 `{ cwd, ephemeral: true }` 一起发送，两个握手请求均受提供方 `handshakeTimeoutMs` 时限约束，且仅在 Codex 返回有效的临时线程后发布运行。已发布的结果恰好启动一个轮次，从提交时起武装 `runActivityTimeoutMs` 静默时限并在每一条 stream 帧与 server 请求上重置，只接受与此次运行的线程和轮次匹配的通知，并等待权威的 `turn/completed` 终态。以最后一条 `phase: "final_answer"` 的 `agentMessage` 为准；若 Codex 没有发出明确的最终阶段，则以最后一条 `phase: null` 的消息作为兼容性回退。成功完成的轮次若没有非空白答案，结果也会判为错误。失败轮次使用粗粒度类别 `limit`、`access-policy`、`service`、`transport`、`product-error`、`invalid-result` 或 `unknown`；app-server 提前退出使用 `process`，适用的连接与 stream 失败保留数值 `httpStatusCode`。
 
 </details>
 
@@ -147,7 +149,7 @@ Codex 子级会在一个全新的临时线程中，以单个轮次接收这些�
 
 #### 模型看到什么
 
-通过 `dsh-tool-subagent`，父模型先收到 child id，随后收到 Codex 最终答案或带停止原因与安全诊断的失败通知。诊断只包含固定的阶段、类别和已观测的协议或进程事实。产品推理、中间消息、工具活动、stderr、用量、产品标识符、命令、路径与原始协议载荷不会复制到父 Session。
+通过 `dsh-tool-subagent`，父模型先收到 child id，随后收到 Codex 最终答案或带停止原因与安全诊断的失败通知。诊断只包含固定的阶段、类别和已观测的协议或进程事实，包括发布前握手失败时的固定存活细节，以及发布后轮次失败时说明最后观测协议帧的静默细节。产品推理、中间消息、工具活动、stderr、用量、产品标识符、命令、路径与原始协议载荷不会复制到父 Session。
 
 #### Token 影响
 
@@ -172,7 +174,7 @@ Codex 子级会在一个全新的临时线程中，以单个轮次接收这些�
 - **没有人工审批路径**——已知的无人值守审批请求会被拒绝，未知服务器请求会以默认拒绝方式使运行失败；三种 Profile 模式都不会创建 DSH 交互通道或逐次调用 allow 策略。
 - **assistant 载荷仅包含最终文本**——失败运行还可公开独立的安全诊断；推理、中间消息、工具通信、用量、stderr 与工作区差异不会进入父 Session。任务身份与终态结果保存在父日志中。
 - **没有可选的共享能力**——对于本提供方，共享服务会拒绝 `agentOptions`、输出 schema、子任务角色设定、工具筛选和 harness 深度强制约束。
-- **没有按实际经过时间触发的超时或副作用回滚**——长时间运行的工作由调用方取消，且取消前已更改的文件或外部系统不会恢复原状。
+- **轮次总时长不受墙上时钟约束，也没有副作用回滚**——发布前的握手受 `handshakeTimeoutMs` 约束，发布后的协议静默受 `runActivityTimeoutMs` 约束，但持续发送帧的轮次没有总时长上界；长时间运行的工作由调用方取消，且取消前已更改的文件或外部系统不会恢复原状。
 
 <a id="dev-note"></a>
 ### 开发备注
