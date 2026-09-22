@@ -29,7 +29,7 @@ kind: "package-library"
 
 ### 分帧与传输
 
-在你拥有的字节流上，每个 `\n` 结尾的行承载一条 JSON-RPC 2.0 消息。同时带 `id` 与 `method` 的帧是请求，仅 `id` 是响应，仅 `method` 是通知；格式错误的行会被忽略。没有注册处理器的请求应答 `-32601`，处理器失败应答 `-32603`，错误响应会以 `JsonRpcResponseError` 拒绝挂起的请求，并保留协议中的 `code` 与可选 `data`。`start()` 挂接流监听器，`close()` 移除监听器并拒绝挂起请求，但不销毁流。
+在你拥有的字节流上，每个 `\n` 结尾的行承载一条 JSON-RPC 2.0 消息。同时带 `id` 与 `method` 的帧是请求，仅 `id` 是响应，仅 `method` 是通知；格式错误的行会被忽略。没有注册处理器的请求应答 `-32601`，处理器失败应答 `-32603`，错误响应会以 `JsonRpcResponseError` 拒绝挂起的请求，并保留协议中的 `code` 与可选 `data`。请求可以携带每次请求的控制项：一个放弃信号和一个以毫秒为单位的响应截止时间（`timeoutMs`，自请求写入起计量；`0` 或缺省时请求不限时）。放弃或超时都会移除挂起条目，因此迟到的响应会被丢弃且不保留任何状态；超时会以 `JsonRpcTimeoutError` 拒绝，其中指明方法名与经过的截止时间。`start()` 挂接流监听器，`close()` 移除监听器并拒绝挂起请求，但不销毁流。
 
 ### SDK 方法
 
@@ -69,7 +69,7 @@ kind: "package-library"
 
 | 文件 | 职责 |
 |---|---|
-| [`src/transport.ts`](src/transport.ts) | `JsonRpcLineTransport`：行分帧、请求/响应/通知分发、错误映射、挂起请求记账 |
+| [`src/transport.ts`](src/transport.ts) | `JsonRpcLineTransport`：行分帧、请求/响应/通知分发、错误映射、挂起请求记账、每次请求的截止时间 |
 | [`src/types.ts`](src/types.ts) | 具名请求/结果与通知载荷类型，按方法索引 |
 | [`src/index.ts`](src/index.ts) | 消费方接口：传输与具名协议类型 |
 | — | 不发布运行时不变式伴生入口；这是一个由传输类和类型声明组成的纯协议库，自身没有事件流或可变数据关系；两个协议端各自负责其协议行为。 |

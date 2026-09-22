@@ -2293,6 +2293,31 @@ describe('plugin registration and config', () => {
     })).rejects.toThrow(/streamIdleTimeoutMs/)
   })
 
+  it('resolves the stream content idle deadline with zero as the opt-out', async () => {
+    expect(resolveAdapterOptions({ streamContentIdleTimeoutMs: 0 }))
+      .toMatchObject({ streamContentIdleTimeoutMs: 0 })
+    expect(resolveAdapterOptions({}))
+      .toMatchObject({ streamContentIdleTimeoutMs: 600_000 })
+    expect(() => resolveAdapterOptions({ streamContentIdleTimeoutMs: -1 }))
+      .toThrow(/streamContentIdleTimeoutMs.*finite number/)
+    expect(() => resolveAdapterOptions({ streamContentIdleTimeoutMs: Number.NaN }))
+      .toThrow(/streamContentIdleTimeoutMs.*finite number/)
+    expect(() => resolveAdapterOptions({ streamContentIdleTimeoutMs: MAX_TIMER_DELAY_MS + 1 }))
+      .toThrow(/streamContentIdleTimeoutMs.*no greater/)
+
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await expect(ctx.plugin(LlmDeepSeek, {
+      baseURL: 'http://127.0.0.1:1',
+      streamContentIdleTimeoutMs: -1,
+    })).rejects.toThrow(/streamContentIdleTimeoutMs/)
+    await ctx.plugin(LlmDeepSeek, {
+      baseURL: 'http://127.0.0.1:1',
+      streamContentIdleTimeoutMs: 0,
+    })
+    expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
+  })
+
   it('validates Files API timeout bounds independently of the stream idle deadline', async () => {
     expect(() => resolveAdapterOptions({ filesApiTimeoutMs: Number.POSITIVE_INFINITY }))
       .toThrow(/filesApiTimeoutMs.*positive finite/)

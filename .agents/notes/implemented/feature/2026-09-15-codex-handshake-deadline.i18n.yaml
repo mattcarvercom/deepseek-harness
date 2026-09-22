@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-15-codex-handshake-deadline.md
+2026-09-15-codex-handshake-deadline.md: 6ed8f537b81603449e7e9d82e504b63d836ad3b0
+2026-09-15-codex-handshake-deadline.zh.md: 3da8894a4cfcfc0fa4d15af85788a72c3d018585

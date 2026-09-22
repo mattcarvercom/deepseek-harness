@@ -21,6 +21,7 @@ import {
   CLAUDE_CODE_PERMISSION_MODES,
   DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
   DEFAULT_DISPOSE_GRACE_MS,
+  DEFAULT_RUN_ACTIVITY_TIMEOUT_MS,
   claudeCodeStartupFailure,
   startClaudeCodeRun,
   type ClaudeCodePermissionMode,
@@ -54,6 +55,12 @@ export interface Config {
   permissionMode?: ClaudeCodePermissionMode
   /** Grace in milliseconds between Claude Code managed-range termination tiers. */
   disposeGraceMs?: number
+  /**
+   * Silence bound in milliseconds for SDK stream frames after the query is
+   * published; a silent CLI fails the delegation at the deadline with
+   * category `transport`. `0` leaves the run unbounded.
+   */
+  runActivityTimeoutMs?: number
 }
 
 export const Config: z<Config> = z.object({
@@ -63,6 +70,7 @@ export const Config: z<Config> = z.object({
   permissionMode: z.union([...CLAUDE_CODE_PERMISSION_MODES])
     .default(DEFAULT_CLAUDE_CODE_PERMISSION_MODE),
   disposeGraceMs: z.number().default(DEFAULT_DISPOSE_GRACE_MS),
+  runActivityTimeoutMs: z.number().default(DEFAULT_RUN_ACTIVITY_TIMEOUT_MS),
 })
 
 type ResolvedConfig = Omit<Required<Config>, 'model'> & Pick<Config, 'model'>
@@ -113,6 +121,7 @@ class ClaudeCodeProvider implements SubagentProvider {
       permissionMode: this.config.permissionMode,
       env: this.config.env,
       disposeGraceMs: this.config.disposeGraceMs,
+      runActivityTimeoutMs: this.config.runActivityTimeoutMs,
       spawn: spawnSpec => this.ctx.subprocess.spawn(spawnSpec),
       onError: (error, stopReason) => {
         this.ctx.logger.warn(
@@ -128,7 +137,8 @@ class ClaudeCodeProvider implements SubagentProvider {
 /**
  * Register one Profile-named Claude Code provider.
  * @param ctx - context carrying shared subagent and subprocess services.
- * @param config - registry name, optional model, permission mode, child environment, and disposal grace.
+ * @param config - registry name, optional model, permission mode, child
+ *   environment, disposal grace, and run activity watchdog.
  */
 export function apply(ctx: Context, config: Config): void {
   const resolved: ResolvedConfig = {
@@ -137,6 +147,7 @@ export function apply(ctx: Context, config: Config): void {
     env: config.env as Record<string, string>,
     permissionMode: config.permissionMode ?? DEFAULT_CLAUDE_CODE_PERMISSION_MODE,
     disposeGraceMs: config.disposeGraceMs as number,
+    runActivityTimeoutMs: config.runActivityTimeoutMs as number,
   }
   assertPositiveFinite(
     'subagent-claude-code',
@@ -146,6 +157,16 @@ export function apply(ctx: Context, config: Config): void {
   if (resolved.disposeGraceMs > MAX_TIMER_DELAY_MS) {
     throw new Error(
       `subagent-claude-code: disposeGraceMs must be no greater than ${MAX_TIMER_DELAY_MS}`,
+    )
+  }
+  if (!Number.isFinite(resolved.runActivityTimeoutMs) || resolved.runActivityTimeoutMs < 0) {
+    throw new Error(
+      'subagent-claude-code: runActivityTimeoutMs must be a non-negative finite number',
+    )
+  }
+  if (resolved.runActivityTimeoutMs > MAX_TIMER_DELAY_MS) {
+    throw new Error(
+      `subagent-claude-code: runActivityTimeoutMs must be no greater than ${MAX_TIMER_DELAY_MS}`,
     )
   }
   ctx.subagents.registerProvider(new ClaudeCodeProvider(

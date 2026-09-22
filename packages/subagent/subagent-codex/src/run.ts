@@ -27,6 +27,7 @@ import type {
   SubprocessOutcome,
   SubprocessSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
+import { JsonRpcTimeoutError } from '@deepseek-ai/dsh-sdk-protocol'
 import {
   CodexAppServerWire,
   type CodexWireFailureFacts,
@@ -34,6 +35,12 @@ import {
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
+
+/** Default app-server handshake deadline; `0` disables the deadline. */
+export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 60_000
+
+/** Default post-publication protocol activity deadline; `0` disables it. */
+export const DEFAULT_RUN_ACTIVITY_TIMEOUT_MS = 300_000
 
 interface CodexPackageManifest {
   readonly bin: {
@@ -82,6 +89,8 @@ interface CodexFailureFacts {
   readonly category: CodexFailureCategory
   readonly httpStatus?: number | undefined
   readonly outcome?: SubprocessOutcome | undefined
+  /** Fixed safe liveness observation recorded for a startup failure. */
+  readonly detail?: string | undefined
 }
 
 function failureDiagnostic(facts: CodexFailureFacts): string {
@@ -96,6 +105,7 @@ function failureDiagnostic(facts: CodexFailureFacts): string {
   const processFields = [
     ['exit code', facts.outcome?.exitCode],
     ['signal', facts.outcome?.signal],
+    ['detail', facts.detail],
   ] as const
   for (const [label, value] of processFields) {
     if (value !== null && value !== undefined) fields.push(`${label}: ${value}`)
@@ -148,6 +158,19 @@ export interface CodexRunSpec {
   readonly env: Record<string, string>
   /** Subprocess termination grace passed to the shared managed-range owner. */
   readonly disposeGraceMs: number
+  /**
+   * Deadline in milliseconds for the pre-publication handshake requests
+   * (`initialize`, `thread/start`); `0` leaves them unbounded.
+   */
+  readonly handshakeTimeoutMs: number
+  /**
+   * Silence bound in milliseconds for protocol frames while the published
+   * turn is in flight; the run fails at the deadline with category
+   * `transport`. `0` leaves the turn unbounded.
+   */
+  readonly runActivityTimeoutMs: number
+  /** Host sink for safe lines about frames that cannot belong to this run. */
+  readonly onUnassociatedFrame?: (line: string) => void
   /** Shared subprocess service spawn operation. */
   readonly spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle
   /** Diagnostic sink for a post-publication error flattened into a result. */
@@ -157,6 +180,45 @@ export interface CodexRunSpec {
 function thrown(value: unknown): Error {
   /* v8 ignore next -- typed subprocess/wire failures reject with Error. */
   return value instanceof Error ? value : new Error(String(value))
+}
+
+/**
+ * Observe the managed range before teardown so a startup failure can carry a
+ * fixed liveness detail.
+ * @param child - shared-service handle that owns the managed range.
+ * @param processFailureFacts - direct-child exit or spawn failure, when settled.
+ * @param error - the startup failure that interrupted the handshake.
+ * @param cancelled - request cancellation, which suppresses the probe.
+ * @returns a detail for the surprising cases only: a deadline that elapsed
+ *   while the app-server process still runs, or an exited child whose managed
+ *   range has not yet quiesced; `undefined` when the range already quiesced or
+ *   the failure carries no liveness surprise.
+ */
+async function startupLivenessDetail(
+  child: SubprocessHandle,
+  processFailureFacts: CodexFailureFacts | undefined,
+  error: unknown,
+  cancelled: boolean,
+): Promise<string | undefined> {
+  if (cancelled) return undefined
+  const timeout = error instanceof JsonRpcTimeoutError ? error : undefined
+  let rangeEmpty: boolean
+  try {
+    // Zero keeps the probe from delaying failure return; the memoized range
+    // observation that the disposal path reuses continues behind this await.
+    rangeEmpty = await child.waitForExit(AbortSignal.timeout(0))
+  } catch {
+    // The fixed failure facts remain the diagnostic when the range cannot be observed.
+    return undefined
+  }
+  if (rangeEmpty) return undefined
+  if (processFailureFacts !== undefined) {
+    return 'child process exited but its managed range is still running'
+  }
+  if (timeout !== undefined) {
+    return `no response within ${timeout.timeoutMs}ms; app-server process still running`
+  }
+  return undefined
 }
 
 /**
@@ -252,6 +314,9 @@ export async function startCodexRun(
     child.stdin as NonNullable<SubprocessHandle['stdin']>,
     spec.permissionMode,
     spec.model,
+    spec.handshakeTimeoutMs,
+    spec.runActivityTimeoutMs,
+    spec.onUnassociatedFrame,
   )
   const onStderr = (chunk: Buffer | string): void => {
     const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
@@ -326,9 +391,17 @@ export async function startCodexRun(
       // Let an already-exiting process publish those facts before rollback.
       await new Promise<void>((resolve) => { setImmediate(resolve) })
     }
+    const detail = await startupLivenessDetail(
+      child,
+      processFailureFacts,
+      error,
+      cancelledBeforeCleanup,
+    )
     const failure = new CodexRunFailure({
       stage: startupStage,
-      category: 'unknown',
+      // A handshake that hit its deadline is transport silence, not a product answer.
+      category: error instanceof JsonRpcTimeoutError ? 'transport' : 'unknown',
+      detail,
       outcome: error instanceof CodexRunFailure
         ? error.facts.outcome
         : processFailureFacts?.outcome,
@@ -409,11 +482,17 @@ export async function startCodexRun(
             // The wire failure remains authoritative when exit observation fails.
           }
         }
-        const facts = error instanceof CodexRunFailure
+        let facts: CodexFailureFacts = error instanceof CodexRunFailure
           ? error.facts
           : endedBeforeTerminal && processFailureFacts !== undefined
             ? processFailureFacts
             : withProcessOutcome(wire.collectFailure())
+        // A watchdog trip or a dropped terminal frame can outlive the child
+        // exit that first rejected the race; its detail stays authoritative.
+        const detail = wire.collectFailureDetail()
+        if (detail !== undefined) {
+          facts = { ...facts, detail }
+        }
         recordFailureDiagnostic(facts)
         throw error instanceof CodexRunFailure
           ? error

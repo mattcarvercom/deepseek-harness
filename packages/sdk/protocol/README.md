@@ -29,7 +29,7 @@ Use this package when you build or debug an SDK wire end — the serving plugin,
 
 ### Framing and transport
 
-Wire one JSON-RPC 2.0 message per `\n`-terminated line over byte streams you own. A frame with both `id` and `method` is a request, `id` alone is a response, and `method` alone is a notification; malformed lines are ignored. Requests with no registered handler answer `-32601`, handler failures answer `-32603`, and error responses reject the pending request with `JsonRpcResponseError`, which preserves the wire `code` and optional `data`. `start()` attaches stream listeners and `close()` detaches them and rejects pending requests without destroying the streams.
+Wire one JSON-RPC 2.0 message per `\n`-terminated line over byte streams you own. A frame with both `id` and `method` is a request, `id` alone is a response, and `method` alone is a notification; malformed lines are ignored. Requests with no registered handler answer `-32601`, handler failures answer `-32603`, and error responses reject the pending request with `JsonRpcResponseError`, which preserves the wire `code` and optional `data`. A request may carry per-request controls: an abandonment signal and a response deadline (`timeoutMs`, in milliseconds from the request write; `0` or omitted leaves the request unbounded). Abandoning or timing out removes the pending entry, so a late response is discarded and no state is retained; a timeout rejects with `JsonRpcTimeoutError`, which names the method and the elapsed deadline. `start()` attaches stream listeners and `close()` detaches them and rejects pending requests without destroying the streams.
 
 ### The SDK methods
 
@@ -69,7 +69,7 @@ The package is built on one separation: a single newline-delimited transport cla
 
 | File | Role |
 |---|---|
-| [`src/transport.ts`](src/transport.ts) | `JsonRpcLineTransport`: line framing, request/response/notification dispatch, error mapping, pending-request bookkeeping |
+| [`src/transport.ts`](src/transport.ts) | `JsonRpcLineTransport`: line framing, request/response/notification dispatch, error mapping, pending-request bookkeeping, per-request deadlines |
 | [`src/types.ts`](src/types.ts) | Named request/result and notification payload types, indexed by method |
 | [`src/index.ts`](src/index.ts) | Consumer interface: the transport and the named wire types |
 | — | No runtime invariant companion is published; a pure wire library (transport class + type declarations) with no event stream or mutable data relation of its own; both wire ends own their protocol behavior. |

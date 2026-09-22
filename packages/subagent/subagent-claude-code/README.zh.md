@@ -48,6 +48,7 @@ dsh --profile <name>
 | `env` | `{}` | 叠加在已清理凭据的父环境之上的显式 SDK/CLI 环境 |
 | `permissionMode` | `dontAsk` | 为本提供方实例的每次运行固定的原生非交互权限策略 |
 | `disposeGraceMs` | `3000` | 共享 managed-range owner 各终止层级之间的宽限 |
+| `runActivityTimeoutMs` | `300000` | 发布 query 后 SDK stream 帧的静默上界（毫秒）；静默的 stream 会在时限到达时以 `transport` 类别失败；`0` 使运行不受限 |
 
 | `permissionMode` 值 | 原生行为 |
 |---|---|
@@ -85,7 +86,7 @@ dsh --profile <name>
 
 ### 失败与恢复
 
-省略 optional dependencies、当前平台不受支持或所选载荷缺失的安装会让提供方保持休眠，并在第一次委派时于 SDK 启动边界报告安全的 `query-start` / `unknown` 失败事实；不存在宿主 CLI 回退。原始产品错误只保留在内部 cause 链与提供方 Host 日志中。被取消的运行以 `aborted` 结算。
+省略 optional dependencies、当前平台不受支持或所选载荷缺失的安装会让提供方保持休眠，并在第一次委派时于 SDK 启动边界报告安全的 `query-start` / `unknown` 失败事实；不存在宿主 CLI 回退。原始产品错误只保留在内部 cause 链与提供方 Host 日志中。query 发布后，`runActivityTimeoutMs` 约束 stream 静默：每一条 stream 消息都会重置时限，静默超过时限的 stream 以 `transport` 类别失败，细节说明最后观测到的消息，trip 时关闭 query 以结束 stream，`0` 恢复不受限的运行。被取消的运行以 `aborted` 结算。
 
 -----
 
@@ -114,7 +115,7 @@ dsh --profile <name>
 
 ### 运行流程
 
-一次启动只接受非空的文本块序列，并根据父会话确定子级 cwd。它创建私有 `AbortController`，用精确拼接的任务调用官方 SDK `query()`，并仅在 SDK 的 custom-spawn 钩子已经提供由子进程 seam 管理的活动 CLI 句柄后发布运行。提供方完整迭代消息流，只接受满足 `subtype: "success"`、`is_error: false` 且 `result` 非空白、随后迭代器正常结束的 `result` 消息。其余一切结果都映射为带固定类别的 `error` 诊断，命名生命周期阶段与已观测进程结果——类别集合见 [`src/run.ts`](src/run.ts)。本地取消会在结果竞态中胜出并映射为 `aborted`，且不附带失败诊断。
+一次启动只接受非空的文本块序列，并根据父会话确定子级 cwd。它创建私有 `AbortController`，用精确拼接的任务调用官方 SDK `query()`，并仅在 SDK 的 custom-spawn 钩子已经提供由子进程 seam 管理的活动 CLI 句柄后发布运行。提供方完整迭代消息流，从发布时起武装 `runActivityTimeoutMs` 静默时限并在每一条 stream 消息上重置，只接受满足 `subtype: "success"`、`is_error: false` 且 `result` 非空白、随后迭代器正常结束的 `result` 消息。其余一切结果都映射为带固定类别的 `error` 诊断，命名生命周期阶段与已观测进程结果——类别集合见 [`src/run.ts`](src/run.ts)。本地取消会在结果竞态中胜出并映射为 `aborted`，且不附带失败诊断。
 
 </details>
 
@@ -154,7 +155,7 @@ Claude Code 子级会在一个全新的 SDK query 中接收独立文本任务。
 
 #### 模型看到什么
 
-通过 `dsh-tool-subagent`，前台调用会让父级模型看到符合严格成功条件的 Claude Code 最终答案；若结果未完成，错误中会包含终止原因和可选的安全诊断。该诊断可以区分粗粒度行动类别、生命周期阶段和已观测的进程结果，而不复制原始产品文本或版本专属 subtype 名称。后台调用会先返回 job id；随后通用作业控制面会送达完成通知，通过 `job_output` 公开同一最终答案或失败状态详情，并允许 `job_kill` 请求取消。Claude Code 的推理、工具活动、中间消息、stderr、工作区差异、用量信息、产品标识符、工具输入和原始协议载荷均不会复制到父会话。
+通过 `dsh-tool-subagent`，前台调用会让父级模型看到符合严格成功条件的 Claude Code 最终答案；若结果未完成，错误中会包含终止原因和可选的安全诊断。该诊断可以区分粗粒度行动类别、生命周期阶段、已观测的进程结果，以及静默发布 stream 时说明最后观测消息的静默细节，而不复制原始产品文本或版本专属 subtype 名称。后台调用会先返回 job id；随后通用作业控制面会送达完成通知，通过 `job_output` 公开同一最终答案或失败状态详情，并允许 `job_kill` 请求取消。Claude Code 的推理、工具活动、中间消息、stderr、工作区差异、用量信息、产品标识符、工具输入和原始协议载荷均不会复制到父会话。
 
 #### Token 影响
 
@@ -179,7 +180,7 @@ Claude Code 子级会在一个全新的 SDK query 中接收独立文本任务。
 - **没有人工交互路径**——`AskUserQuestion` 被禁用，权限提示会被拒绝，MCP elicitation 会被拒绝，阻塞对话会以拒绝方式失败而不会挂起。
 - **assistant 载荷仅包含最终文本**——失败运行可以额外公开独立的安全诊断；推理、中间消息、工具通信、用量信息、stderr 和工作区差异仍只保留在产品内部，通用 Job id、通知与状态来自共享作业运行时。
 - **没有可选的共享能力**——对于本提供方，共享服务会拒绝 `agentOptions`、输出 schema、子任务角色设定、工具筛选和 harness 深度强制约束。
-- **没有按实际经过时间触发的超时或副作用回滚**——长时间运行的工作由调用方取消，且取消前已更改的文件或外部系统不会恢复原状。
+- **运行总时长没有墙上时钟上界，也没有副作用回滚**——发布后的 stream 静默受 `runActivityTimeoutMs` 约束，但持续产生消息的运行没有总时长上界；长时间运行的工作由调用方取消，且取消前已更改的文件或外部系统不会恢复原状。
 
 <a id="dev-note"></a>
 ### 开发备注

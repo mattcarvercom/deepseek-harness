@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-`dsh-timeout` 让调用方为工作设置有上限的截止时间、区分本地超时与上游取消，并监测流式读取是否空闲。`clampTimeout` 在提示缺失时填入后端默认值，把结果限制在允许的最大值以内，并在工作开始前拒绝无效值。`deadline` 将选定的超时与上游取消合并到一个信号中，而调用方仍负责真正停止自己的进程、套接字或任务。`idleWatchdog` 只计算等待提供方读取所花的时间；零仍保留给后端自有的不计时工作，而不是公开配置。
+`dsh-timeout` 让调用方为工作设置有上限的截止时间、区分本地超时与上游取消，并监测流式读取是否空闲。`clampTimeout` 在提示缺失时填入后端默认值，把结果限制在允许的最大值以内，并在工作开始前拒绝无效值。`deadline` 将选定的超时与上游取消合并到一个信号中，而调用方仍负责真正停止自己的进程、套接字或任务。`idleWatchdog` 只计算等待提供方读取所花的时间；`progressDeadline` 为必须持续产出的生产方流设置上界，只有进展上报会重置它。零仍保留给后端自有的不计时工作，而不是公开配置。
 
 ## 目录
 
@@ -73,6 +73,21 @@ const next = await watchdog.next(providerIterator)    // timer runs only while t
 
 timer 只在某个迭代器 `next()` 尚未完成时启动，并会因不产生值的传输活动通过 `pulse()` 重新启动，因此读取之间的消费方处理时间绝不计入空闲。间隔必须为正有限数，且不得大于 `MAX_TIMER_DELAY_MS`。
 
+### 用进展 deadline 处理流式传输
+
+```ts
+import { progressDeadline } from '@deepseek-ai/dsh-timeout'
+
+declare const upstream: AbortSignal | undefined
+declare const contentMs: number
+
+using progress = progressDeadline(upstream, contentMs, 'LLM_STREAM_CONTENT_IDLE_TIMEOUT')
+// when a stream value carries producer output:
+progress.progress()
+```
+
+timer 在创建时启动，只由 `progress()` 重置，因此不携带进展的传输活动（keep-alive 帧、元数据事件）绝不会延长它；间隔跨越需求间隙计时，因此停滞的流无法躲在消费方的处理时间后面。`timeoutMs` 为 `0` 时不启动 timer——这是对"健康状态即保持打开但不产出"的端点的显式退出。把 `progress.signal` 与空闲 watchdog 的信号融合给传输层观察，并用 `timeoutOf(progress.signal, code)` 分类触发。
+
 ### 哪些操作不设置超时
 
 本地文件 `read`/`write`/`edit` 不接受 `timeoutMs`：文件 IO 不设时限地运行，因为截止时间会中止操作系统仍会完成的工作。
@@ -91,7 +106,7 @@ timer 只在某个迭代器 `next()` 尚未完成时启动，并会因不产生�
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `clampTimeout`、`deadline`、`idleWatchdog`、`timeoutOf`、`TimeoutReason`、`MAX_TIMER_DELAY_MS` |
+| [`src/index.ts`](src/index.ts) | `clampTimeout`、`deadline`、`idleWatchdog`、`progressDeadline`、`timeoutOf`、`TimeoutReason`、`MAX_TIMER_DELAY_MS` |
 | — | 不发布运行时不变式伴生入口；这个纯工具不拥有事件流或可变运行时数据；其值代数约束由单元测试保障。 |
 
 ### deadline 如何融合来源
@@ -105,6 +120,10 @@ timer 只在某个迭代器 `next()` 尚未完成时启动，并会因不产生�
 ### 空闲 watchdog 为何重新启动
 
 `idleWatchdog` 保持一个稳定的融合信号，只在 `next()` 尚未完成时启动 timer；完成后停止，后续需求或 `pulse()` 重新启动，dispose（资源释放）时清除，并发需求被拒绝。只有传输层观察该信号，因此提供方的真实读取必须监听它——DeepSeek 与 pi-ai 适配器会在中止时关闭响应正文或 SDK 请求。
+
+### 进展 deadline 为何跨越间隙运行
+
+`progressDeadline` 把稳定的融合信号与上游取消相融合，并在创建时启动 timer。只有 `progress()` 重置它，因此空闲 watchdog 那种按需求重新启动的机制救不了它，它的间隔计算生产方持有流的整个时段；消费方停止需求时会与生产方一同被挂起，而这正是该 deadline 要检测的停滞。dispose（资源释放）清除 timer；已触发的 timer 无法再被重置。
 
 </details>
 
@@ -142,6 +161,7 @@ timer 只在某个迭代器 `next()` 尚未完成时启动，并会因不产生�
 - **`timeoutMs <= 0` 是内部词汇**——只有在所属后端已解析策略后，它才会禁用本地 timer；绝不会作为面向模型或插件的公开开关。
 - **第一个中止原因决定分类**——当上游取消早于本地 timer 发生时，即使自己的超时之后也会到期，该层也无法再报告。
 - **空闲 watchdog 不是总 deadline**——它针对每个尚未完成的迭代器需求重新启动，并刻意排除消费方的处理时间。
+- **进展 deadline 不会暂停**——它从创建时一直运行并跨越需求间隙；消费方停止需求的时长超过间隔就会触发它，因此所属流必须在工作暂停时把它 dispose 掉。
 
 <a id="dev-note"></a>
 ### 开发备注

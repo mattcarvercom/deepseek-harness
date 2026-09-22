@@ -28,6 +28,37 @@ export class JsonRpcResponseError extends Error {
 }
 
 /**
+ * A request that received no response before its deadline elapsed.
+ */
+export class JsonRpcTimeoutError extends Error {
+  /**
+   * @param method - the JSON-RPC method that never received a response.
+   * @param timeoutMs - the deadline, in milliseconds, that elapsed.
+   */
+  constructor(readonly method: string, readonly timeoutMs: number) {
+    super(`JSON-RPC request ${method} timed out after ${timeoutMs}ms`)
+    this.name = 'JsonRpcTimeoutError'
+  }
+}
+
+/**
+ * Per-request controls for {@link JsonRpcLineTransport.request}.
+ */
+export interface JsonRpcRequestOptions {
+  /**
+   * Abandonment signal: aborting removes the pending entry (a late response
+   * is discarded, no state is retained) and rejects with the signal's reason.
+   */
+  signal?: AbortSignal
+  /**
+   * Response deadline in milliseconds, measured from the request write. A
+   * positive value rejects with {@link JsonRpcTimeoutError} when it elapses
+   * without a response; `0` or omitted leaves the request unbounded.
+   */
+  timeoutMs?: number
+}
+
+/**
  * Outbound request and notification surface used by the runtime server and
  * SDK clients.
  */
@@ -113,16 +144,24 @@ export class JsonRpcLineTransport implements JsonRpcTransportPeer {
    * Send a request and await its response.
    * @param method - the JSON-RPC method name.
    * @param params - the request parameters object.
-   * @param signal - optional abandonment signal: aborting removes the pending
-   * entry (no state is retained for a response that may never come) and
-   * rejects with the signal's reason.
-   * @returns the result; rejects per {@link JsonRpcTransportPeer.request}.
+   * @param options - optional per-request controls: an abandonment signal and
+   * a response deadline.
+   * @returns the result; rejects per {@link JsonRpcTransportPeer.request},
+   * with the signal's reason on abort, or {@link JsonRpcTimeoutError} when
+   * the deadline elapses first.
    */
-  request(method: string, params: object, signal?: AbortSignal): Promise<unknown> {
+  request(method: string, params: object, options?: JsonRpcRequestOptions): Promise<unknown> {
     const id = `req_${randomUUID().replaceAll('-', '')}`
     const message = { jsonrpc: '2.0', id, method, params }
+    const signal = options?.signal
+    const timeoutMs = options?.timeoutMs
     return new Promise((resolve, reject) => {
       let detach = (): void => {}
+      let cancelDeadline = (): void => {}
+      const release = (): void => {
+        cancelDeadline()
+        detach()
+      }
       if (signal !== undefined) {
         if (signal.aborted) {
           reject(abortError(signal.reason))
@@ -130,6 +169,7 @@ export class JsonRpcLineTransport implements JsonRpcTransportPeer {
         }
         const onAbort = (): void => {
           this.pending.delete(id)
+          release()
           reject(abortError(signal.reason))
         }
         signal.addEventListener('abort', onAbort, { once: true })
@@ -137,19 +177,27 @@ export class JsonRpcLineTransport implements JsonRpcTransportPeer {
       }
       this.pending.set(id, {
         resolve: (value) => {
-          detach()
+          release()
           resolve(value)
         },
         reject: (error) => {
-          detach()
+          release()
           reject(error)
         },
       })
+      if (timeoutMs !== undefined && timeoutMs > 0) {
+        const timer = setTimeout(() => {
+          this.pending.delete(id)
+          release()
+          reject(new JsonRpcTimeoutError(method, timeoutMs))
+        }, timeoutMs)
+        cancelDeadline = () => { clearTimeout(timer) }
+      }
       try {
         this.write(message)
       } catch (error) {
         this.pending.delete(id)
-        detach()
+        release()
         reject(error instanceof Error ? error : new Error(String(error)))
       }
     })

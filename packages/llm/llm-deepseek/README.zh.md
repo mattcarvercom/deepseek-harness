@@ -60,6 +60,7 @@ kind: "package-reference"
 | `defaultContextWindow` | `1,000,000` | 无精确值模型的容量回退 |
 | `models` | V41 Flash + V4 Pro | 供发现消费方查看的建议性目录 |
 | `streamIdleTimeoutMs` | `300,000` | 单次流读取未完成的最大提供方空闲时间 |
+| `streamContentIdleTimeoutMs` | `600,000` | 流开始后无模型内容的最长时间；0 禁用该界限 |
 | `maxRequestFilesBytes` | `128 MiB` | file 模式请求图片字节预算，保留图片超过时请求以 `IMAGE_OFFLOAD_REQUIRED` 失败 |
 | `maxInlineRequestImageBytes` | `20 MiB` | 独立的 base64 回退高水位 |
 | `maxImagesPerRequest` | `600` | 保留请求图片数量的高水位 |
@@ -103,7 +104,7 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 
 ### 动态配置
 
-连接选项在每次操作开始时从 volatile Config 引用捕获。Config 验证在表单持久化前拒绝无效候选值。凭据使用与端点、图像及 Files 策略、空闲预算相同的快照解析。附件服务在请求时解析。
+连接选项在每次操作开始时从 volatile Config 引用捕获。Config 验证在表单持久化前拒绝无效候选值。凭据使用与端点、图像及 Files 策略、流超时预算（空闲看门狗与内容空闲截止）相同的快照解析。附件服务在请求时解析。
 
 ### 提供方专用请求字段
 
@@ -115,7 +116,7 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 
 成功的 Files 响应必须包含有效 JSON。上传、列举、获取和删除操作的 JSON 解码失败抛出 `INVALID_RESPONSE`，消息包含操作名称与 HTTP 状态，`LlmError.failure` 保留该状态，`cause` 保留原始解析错误。读取响应体时的传输和取消错误保留其原有身份。
 
-非 2xx 响应以稳定 code 失败：`AUTH`（401/403）、`QUOTA`、`RATE_LIMIT`、`CONTEXT_WINDOW_EXCEEDED`、`INVALID_REQUEST`、`SERVER` 以及其他情况的 `HTTP_<status>`；响应前传输失败抛出 `TRANSPORT`，调用方中止抛出 `ABORTED`，流空闲超时抛出 `TIMEOUT`。请求扩展准备、字段冲突或 2xx 后接受失败使用 `REQUEST_EXTENSION`。当提供方未指出 file id 时，规范化图片拒绝会列出所有可能附件及其持久位置。陈旧文件拒绝会使点名映射（或该次尝试使用的全部映射）失效，并允许一次替换模型请求。协议违规抛出 `STREAM_CLOSED` 或 `MALFORMED_RESPONSE`；不带内容块的终止 `stop` 变成 `EMPTY_RESPONSE`，默认重试策略会重试它。官方路由缺少 API Key 的请求以 `MISSING_CREDENTIAL` 失败；格式错误的凭据以 `INVALID_CREDENTIAL` 失败，并点名需要修复的引用——绝不包含密钥的任何部分。
+非 2xx 响应以稳定 code 失败：`AUTH`（401/403）、`QUOTA`、`RATE_LIMIT`、`CONTEXT_WINDOW_EXCEEDED`、`INVALID_REQUEST`、`SERVER` 以及其他情况的 `HTTP_<status>`；响应前传输失败抛出 `TRANSPORT`，调用方中止抛出 `ABORTED`，流空闲超时与内容空闲截止都抛出 `TIMEOUT`。请求扩展准备、字段冲突或 2xx 后接受失败使用 `REQUEST_EXTENSION`。当提供方未指出 file id 时，规范化图片拒绝会列出所有可能附件及其持久位置。陈旧文件拒绝会使点名映射（或该次尝试使用的全部映射）失效，并允许一次替换模型请求。协议违规抛出 `STREAM_CLOSED` 或 `MALFORMED_RESPONSE`；不带内容块的终止 `stop` 变成 `EMPTY_RESPONSE`，默认重试策略会重试它。官方路由缺少 API Key 的请求以 `MISSING_CREDENTIAL` 失败；格式错误的凭据以 `INVALID_CREDENTIAL` 失败，并点名需要修复的引用——绝不包含密钥的任何部分。
 
 提供方插件负责目录可用性；仅账号路由要求存有凭据才能发现模型。两者的目录独立配置；传输层提供共享的默认模型元数据和能力解析。
 
@@ -131,11 +132,11 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 
 ### 设计理念
 
-插件建立在一个显式解析步骤与一条注册事实之上。`resolveAdapterOptions()` 是从原始配置到已校验连接事实的唯一路径，适配器通过 thunk 每次操作重新读取这些事实——基址、目录、请求默认值、图片与 Files 策略及空闲预算都会作用于下一个请求，而进行中的流保持其启动时的事实。注册时捕获的唯一事实是重试策略：解析值变化时，插件会在一个同步区段内原位重新注册路由，因此任何请求都观察不到空档。
+插件建立在一个显式解析步骤与一条注册事实之上。`resolveAdapterOptions()` 是从原始配置到已校验连接事实的唯一路径，适配器通过 thunk 每次操作重新读取这些事实——基址、目录、请求默认值、图片与 Files 策略及流超时预算都会作用于下一个请求，而进行中的流保持其启动时的事实。注册时捕获的唯一事实是重试策略：解析值变化时，插件会在一个同步区段内原位重新注册路由，因此任何请求都观察不到空档。
 
 ### 源码导航
 
-[`src/index.ts`](src/index.ts) 导出协议库；[`src/host.ts`](src/host.ts) 为 provider 插件绑定共享 Host 服务。[`src/adapter.ts`](src/adapter.ts) 管理请求生命周期；[`src/serialize.ts`](src/serialize.ts) 和 [`src/translate.ts`](src/translate.ts) 映射模型输入与流式输出。[`src/file-store.ts`](src/file-store.ts) 通过 [`src/files-api.ts`](src/files-api.ts) 管理上传复用与恢复。
+[`src/index.ts`](src/index.ts) 导出协议库；[`src/host.ts`](src/host.ts) 为 provider 插件绑定共享 Host 服务。[`src/adapter.ts`](src/adapter.ts) 管理请求生命周期，包括空闲看门狗与内容空闲截止；[`src/serialize.ts`](src/serialize.ts) 和 [`src/translate.ts`](src/translate.ts) 映射模型输入与流式输出。[`src/file-store.ts`](src/file-store.ts) 通过 [`src/files-api.ts`](src/files-api.ts) 管理上传复用与恢复。
 
 ### 协议流程
 

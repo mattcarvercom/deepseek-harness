@@ -865,6 +865,9 @@ describe('provider profile lifecycle', () => {
       { streamIdleTimeoutMs: 0 },
       { streamIdleTimeoutMs: Number.NaN },
       { streamIdleTimeoutMs: MAX_TIMER_DELAY_MS + 1 },
+      { streamContentIdleTimeoutMs: -1 },
+      { streamContentIdleTimeoutMs: Number.NaN },
+      { streamContentIdleTimeoutMs: MAX_TIMER_DELAY_MS + 1 },
       { maxRequestImageBytes: 0 },
       { maxRequestImageBytes: 1.5 },
       { maxRequestImageBytes: Number.NaN },
@@ -943,6 +946,27 @@ describe('provider profile lifecycle', () => {
     expect(() => resolveProfiles({
       openai: { streamIdleTimeoutMs: MAX_TIMER_DELAY_MS + 1 },
     })).toThrow(/streamIdleTimeoutMs.*no greater/)
+    expect(() => resolveProfiles({
+      openai: { streamContentIdleTimeoutMs: -1 },
+    })).toThrow(/streamContentIdleTimeoutMs.*finite number/)
+    expect(() => resolveProfiles({
+      openai: { streamContentIdleTimeoutMs: MAX_TIMER_DELAY_MS + 1 },
+    })).toThrow(/streamContentIdleTimeoutMs.*no greater/)
+    expect(resolveProfiles({
+      openai: { streamContentIdleTimeoutMs: 0 },
+    }).get('openai')?.streamContentIdleTimeoutMs).toBe(0)
+    expect(resolveProfiles({
+      openai: {},
+    }).get('openai')?.streamContentIdleTimeoutMs).toBe(600_000)
+  })
+
+  it('accepts zero as the content-timeout opt-out at plugin load', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, { providers: { openai: { streamContentIdleTimeoutMs: 0 } } })
+    expect(ctx.llm.listProviders()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'openai' })]),
+    )
   })
 })
 

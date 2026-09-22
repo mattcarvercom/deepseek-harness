@@ -60,6 +60,7 @@ A request selects the route with `provider: deepseek-official`; the model id pas
 | `defaultContextWindow` | `1,000,000` | Capacity fallback for models without an exact value |
 | `models` | V41 Flash + V4 Pro | Advisory catalog shown by discovery consumers |
 | `streamIdleTimeoutMs` | `300,000` | Maximum provider idle time per outstanding stream read |
+| `streamContentIdleTimeoutMs` | `600,000` | Maximum time without model content once a stream has started; zero disables the bound |
 | `maxRequestFilesBytes` | `128 MiB` | File-mode request-image byte budget; a request whose retained images exceed it fails with `IMAGE_OFFLOAD_REQUIRED` |
 | `maxInlineRequestImageBytes` | `20 MiB` | Independent base64 fallback high watermark |
 | `maxImagesPerRequest` | `600` | High watermark for retained request-image count |
@@ -103,7 +104,7 @@ Files mode bounds retained request versions by `maxRequestFilesBytes` and `maxIm
 
 ### Dynamic configuration
 
-Connection options are captured from volatile Config references once per operation. Config validation rejects invalid candidates before form persistence. Credentials resolve from the same snapshot as the endpoint, image and Files policies, and idle budget. Attachment services resolve at request time.
+Connection options are captured from volatile Config references once per operation. Config validation rejects invalid candidates before form persistence. Credentials resolve from the same snapshot as the endpoint, image and Files policies, and stream timeout budgets (the idle watchdog and the content-idle deadline). Attachment services resolve at request time.
 
 ### Provider-specific request fields
 
@@ -115,7 +116,7 @@ Configuration accepts Messages only and has no `protocol` field. If resolution r
 
 Successful Files responses must contain valid JSON. JSON decoding failures from upload, list, retrieve, and delete throw `INVALID_RESPONSE` with the operation and HTTP status in the message, the status in `LlmError.failure`, and the original parser error as `cause`. Body-read transport and cancellation errors retain their identity.
 
-Non-2xx responses fail with stable codes: `AUTH` (401/403), `QUOTA`, `RATE_LIMIT`, `CONTEXT_WINDOW_EXCEEDED`, `INVALID_REQUEST`, `SERVER`, and `HTTP_<status>` otherwise; pre-response transport failures throw `TRANSPORT`, caller aborts throw `ABORTED`, and stream-idle expiry throws `TIMEOUT`. Request-extension preparation, field collision, or post-2xx acceptance fails with `REQUEST_EXTENSION`. A normalized-image rejection names every plausible attachment and its durable position when the provider does not identify a file id. Stale-file rejection invalidates the named mappings (or every mapping used by the attempt) and permits one replacement model request. Protocol violations throw `STREAM_CLOSED` or `MALFORMED_RESPONSE`, and a terminal `stop` with no content blocks becomes `EMPTY_RESPONSE`, which the default retry policy retries. A request on the official route without an API key fails with `MISSING_CREDENTIAL`, and a malformed credential fails with `INVALID_CREDENTIAL` naming the reference to fix — never any part of the key.
+Non-2xx responses fail with stable codes: `AUTH` (401/403), `QUOTA`, `RATE_LIMIT`, `CONTEXT_WINDOW_EXCEEDED`, `INVALID_REQUEST`, `SERVER`, and `HTTP_<status>` otherwise; pre-response transport failures throw `TRANSPORT`, caller aborts throw `ABORTED`, and both stream-idle expiry and the content-idle deadline throw `TIMEOUT`. Request-extension preparation, field collision, or post-2xx acceptance fails with `REQUEST_EXTENSION`. A normalized-image rejection names every plausible attachment and its durable position when the provider does not identify a file id. Stale-file rejection invalidates the named mappings (or every mapping used by the attempt) and permits one replacement model request. Protocol violations throw `STREAM_CLOSED` or `MALFORMED_RESPONSE`, and a terminal `stop` with no content blocks becomes `EMPTY_RESPONSE`, which the default retry policy retries. A request on the official route without an API key fails with `MISSING_CREDENTIAL`, and a malformed credential fails with `INVALID_CREDENTIAL` naming the reference to fix — never any part of the key.
 
 Provider plugins own catalog availability; only the account route requires a stored grant for discovery. Their catalogs are configured independently; the transport supplies shared default model metadata and capability resolution.
 
@@ -131,11 +132,11 @@ This section explains the design behind the adapter; the observable behavior is 
 
 ### Design philosophy
 
-The plugin is built on one explicit resolve step and one registration fact. `resolveAdapterOptions()` is the single path from raw config to validated connection facts, and the adapter re-reads those facts through a thunk once per operation — base URL, catalog, request defaults, image and Files policies, and idle budget all take effect on the next request, while an in-flight stream keeps the facts it started with. The only fact captured at registration is the retry policy: when its resolved value changes, the plugin re-registers the route in place, in one synchronous section, so no request observes a gap.
+The plugin is built on one explicit resolve step and one registration fact. `resolveAdapterOptions()` is the single path from raw config to validated connection facts, and the adapter re-reads those facts through a thunk once per operation — base URL, catalog, request defaults, image and Files policies, and stream timeout budgets all take effect on the next request, while an in-flight stream keeps the facts it started with. The only fact captured at registration is the retry policy: when its resolved value changes, the plugin re-registers the route in place, in one synchronous section, so no request observes a gap.
 
 ### Source map
 
-[`src/index.ts`](src/index.ts) exports the protocol library; [`src/host.ts`](src/host.ts) binds shared Host services for provider plugins. [`src/adapter.ts`](src/adapter.ts) owns the request lifecycle; [`src/serialize.ts`](src/serialize.ts) and [`src/translate.ts`](src/translate.ts) map model input and streamed output. [`src/file-store.ts`](src/file-store.ts) owns upload reuse and recovery through [`src/files-api.ts`](src/files-api.ts).
+[`src/index.ts`](src/index.ts) exports the protocol library; [`src/host.ts`](src/host.ts) binds shared Host services for provider plugins. [`src/adapter.ts`](src/adapter.ts) owns the request lifecycle, including the idle watchdog and the content-idle deadline; [`src/serialize.ts`](src/serialize.ts) and [`src/translate.ts`](src/translate.ts) map model input and streamed output. [`src/file-store.ts`](src/file-store.ts) owns upload reuse and recovery through [`src/files-api.ts`](src/files-api.ts).
 
 ### Wire flow
 

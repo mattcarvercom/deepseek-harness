@@ -34,7 +34,7 @@ configured tool -> dsh-tool-subagent -> ctx.subagents -> product provider -> pro
 
 ## Codex 提供方
 
-`@deepseek-ai/dsh-subagent-codex` 注册由 Profile 选择、默认值为 `codex` 的提供方名称，解析锁定的 `@openai/codex@0.153.4` 包所声明的 `codex` bin，并使用当前 Node 可执行文件加 `app-server --stdio` 启动该 wrapper。Wrapper 会选择私有原生平台载荷；提供方既不解析也不回退宿主 `codex`。其公开配置包含非空的 `providerName`、可选的非空 `model`、显式的 `env` 覆盖项、须为正有限值且不得大于仓库共享 `MAX_TIMER_DELAY_MS` 的 `disposeGraceMs`，以及默认使用 `never` 的三值原生 `permissionMode`。每个命名实例会为自己的运行保留这些已解析值。显式模型会原样传给每个临时 `thread/start`；省略时仍以 Codex 原生设置为权威。安装、登录、`CODEX_HOME`、模型发现或 fallback、基础 URL 和产品会话设置仍由 Codex 原生机制或部署环境负责；所选模式只拥有非交互权限决策中描述的线程 approval／reviewer／sandbox 字段。
+`@deepseek-ai/dsh-subagent-codex` 注册由 Profile 选择、默认值为 `codex` 的提供方名称，解析锁定的 `@openai/codex@0.153.4` 包所声明的 `codex` bin，并使用当前 Node 可执行文件加 `app-server --stdio` 启动该 wrapper。Wrapper 会选择私有原生平台载荷；提供方既不解析也不回退宿主 `codex`。其公开配置包含非空的 `providerName`、可选的非空 `model`、显式的 `env` 覆盖项、须为正有限值且不得大于仓库共享 `MAX_TIMER_DELAY_MS` 的 `disposeGraceMs`、不得大于同一上限且默认 60 秒、用于约束发布前握手请求的非负 `handshakeTimeoutMs`（[握手截止决策](2026-09-15-codex-handshake-deadline.zh.md)），以及默认使用 `never` 的三值原生 `permissionMode`。每个命名实例会为自己的运行保留这些已解析值。显式模型会原样传给每个临时 `thread/start`；省略时仍以 Codex 原生设置为权威。安装、登录、`CODEX_HOME`、模型发现或 fallback、基础 URL 和产品会话设置仍由 Codex 原生机制或部署环境负责；所选模式只拥有非交互权限决策中描述的线程 approval／reviewer／sandbox 字段。
 
 发布前，提供方会验证非空的纯文本任务，在父级工作区中启动受管的 app-server，完成 `initialize` → `initialized` 握手，把可选模型与已解析模式映射为官方 `thread/start` 字段，并创建一个 `ephemeral: true` 线程。固定 app-server argv 不包含模型、模式或任务文本。已发布的运行只拥有一次 `turn/start`；其线程 ID 与轮次 ID 保持私有，绝不会持久化到父会话。
 
@@ -42,7 +42,7 @@ configured tool -> dsh-tool-subagent -> ctx.subagents -> product provider -> pro
 
 对于命令与文件审批，无人值守的协议连接会从请求给出的决策选项中选择一项不予批准的决策，并优先选择 `cancel`；若请求没有决策选项列表，则回退到 `decline`。它不授予该轮次请求的任何权限，不向用户输入请求提供任何答案，并拒绝 MCP elicitation。它会记录这些请求、被拒绝的命令／文件 item 与结构化 `sandboxError` 终态的安全类别。产品 stderr 会原样转发给 Host，但既不会被分类，也不会复制进诊断。若请求在无人值守模式下没有合法响应，或是未知服务器请求，此次运行就会失败，而不会等待本提供方没有提供的用户界面。
 
-若启动在发布前失败，提供方会关闭协议连接、终止已获取的进程树、等待其退出、移除 stderr observer，然后用固定操作阶段拒绝 `start()`。对已发布的运行执行资源释放时，提供方会尽力中断已知轮次、关闭协议连接、结束标准输入、调用共享的逐级终止机制，等待整棵进程树退出，并移除 observer。独立清理失败会报告 `teardown`；启动与回滚同时失败时，聚合的顶层消息会保留两条安全阶段说明，而底层 cause 仍只在内部可见。
+若启动在发布前失败，提供方会先记录对已获取子进程的一次存活观测，然后关闭协议连接、终止进程树、等待其退出、移除 stderr observer，最后以固定操作阶段拒绝 `start()`；若截止期限已到则使用 `transport` 类别，并且当观测补充了事实时，附加其固定的存活详情。对已发布的运行执行资源释放时，提供方会尽力中断已知轮次、关闭协议连接、结束标准输入、调用共享的逐级终止机制，等待整棵进程树退出，并移除 observer。独立清理失败会报告 `teardown`；启动与回滚同时失败时，聚合的顶层消息会保留两条安全阶段说明，而底层 cause 仍只在内部可见。
 
 Codex 0.153.4 使用 Responses 协议，而 DeepSeek 的公开 OpenAI 兼容端点使用 Chat Completions。因此，带密钥 Codex e2e 会采用一个仅限回环、仅供测试内部使用的桥接层来处理一次不使用工具的随机数请求：真实 Codex 将 Responses 发送到桥接层，桥接层把收到的 Bearer 凭据与提取出的任务转发到固定的 DeepSeek 官方端点，再将真实文本包装进最小化的 Responses SSE（Server-Sent Events）生命周期。该桥接层既不是生产代理，也不能作为 Codex 原生连接 DeepSeek Chat Completions 的证据。
 
@@ -90,6 +90,6 @@ Claude Code 证据会锁定 Agent SDK 0.3.263、Claude Code 2.1.263 与八个 SD
 
 用户通过由 Profile 配置、并由官方产品集成支持的一次性工具进行委派。显式 Profile 安装与 host plane 提供方放置由[生产安装排除决策](../../archived/simplification/2026-08-12-production-dsh-excludes-product-subagent-providers.md)负责；命名实例身份与工具绑定由[命名实例决策](../../archived/feature/2026-08-18-product-subagent-named-instances.md)负责；按 Preset 暴露工具以及默认前台且可选通用 Job 的调度方式由 [tool-subagent README](../../../../packages/subagent/tool-subagent/README.zh.md) 负责。本说明规定的提供方生命周期会保留原生设置与行为，而共享服务继续独占作业结算与进程树完全停稳的责任。
 
-每次委派都要承担新建产品进程和独立模型上下文的开销。成功的产品载荷仍只有最终 assistant 文本；失败的产品运行可以另行公开共享安全诊断，其中包含由提供方拥有的权限事实与安全产品失败类别。后台调度还会额外公开通用 Job id、状态、完成通知以及收集或取消结果。两个产品都使用 Bundle 锁定的平台 CLI，并保留原生账户与工作区设置以及所选提供方权限模式；受支持的可选实例模型只覆盖该次运行的原生模型选择。带密钥 e2e 运行还会消耗外部 API 配额，并依赖 DeepSeek 官方端点；对协议、失败、取消与审批的确定性覆盖仍由无密钥层级承担。提供方不会恢复会话、以流式方式传送进度、接受新的人工交互、回滚工具或文件副作用，也不会施加按实际经过时间触发的超时。
+每次委派都要承担新建产品进程和独立模型上下文的开销。成功的产品载荷仍只有最终 assistant 文本；失败的产品运行可以另行公开共享安全诊断，其中包含由提供方拥有的权限事实与安全产品失败类别。后台调度还会额外公开通用 Job id、状态、完成通知以及收集或取消结果。两个产品都使用 Bundle 锁定的平台 CLI，并保留原生账户与工作区设置以及所选提供方权限模式；受支持的可选实例模型只覆盖该次运行的原生模型选择。带密钥 e2e 运行还会消耗外部 API 配额，并依赖 DeepSeek 官方端点；对协议、失败、取消与审批的确定性覆盖仍由无密钥层级承担。提供方不会恢复会话、以流式方式传送进度、接受新的人工交互、回滚工具或文件副作用，也不会用墙钟时间约束轮次；Codex 发布前握手受其默认 60 秒的 `handshakeTimeoutMs` 截止期限约束。
 
 兼容性由包级单元测试覆盖率、无密钥真实产品回环测试、带密钥 DeepSeek 随机数测试、公开 Loader 组合、已构建包与 NodeNext 消费方检查、生成的文档与声明以及仓库 CI 矩阵共同锁定。更改受支持的产品基线或 DeepSeek 端点／模型基线时必须刷新这些事实；生产环境不会另行执行运行时版本探测。

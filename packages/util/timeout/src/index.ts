@@ -172,6 +172,85 @@ export function idleWatchdog(
   }
 }
 
+/** A deadline a long-lived producer stream must keep resetting with progress. */
+export interface ProgressDeadline {
+  /** Stable signal aborted by upstream cancellation or this deadline's timeout. */
+  readonly signal: AbortSignal
+  /**
+   * Report one unit of producer progress and reset the deadline. A no-op once
+   * disposed or after the timeout already fired.
+   */
+  progress(): void
+  /** Clear an armed timer; safe to call once at the owning stream's exit. */
+  [Symbol.dispose](): void
+}
+
+/**
+ * Create a progress deadline for a long-lived producer stream. Unlike
+ * {@link idleWatchdog}, which rearms per outstanding demand and disarms on
+ * resolution, this deadline's timer arms at creation and resets only through
+ * {@link ProgressDeadline.progress}, so activity that carries no progress
+ * (transport keep-alives, metadata frames) never extends it. The interval
+ * runs across demand gaps: a consumer that stops demanding is suspended with
+ * its producer, so a stalled stream cannot hide behind consumer think time.
+ *
+ * @param upstream - caller cancellation fused into the stable signal.
+ * @param timeoutMs - progress interval in milliseconds; `<= 0` arms no timer,
+ *   the explicit opt-out for endpoints whose healthy state is staying open
+ *   without producing.
+ * @param code - capability-owned code carried by the timeout reason.
+ * @returns a stable signal, a progress reporter, and a timer disposer.
+ */
+export function progressDeadline(
+  upstream: AbortSignal | undefined,
+  timeoutMs: number,
+  code: string,
+): ProgressDeadline {
+  if (timeoutMs <= 0) {
+    // No progress deadline (explicit opt-out): forward only the upstream
+    // signal, or a never-aborting one when there is no upstream.
+    return {
+      signal: upstream ?? new AbortController().signal,
+      progress() {},
+      [Symbol.dispose]() {},
+    }
+  }
+
+  assertTimerDelay(timeoutMs, 'progressDeadline timeoutMs')
+
+  const timeout = new AbortController()
+  const signal = upstream === undefined
+    ? timeout.signal
+    : AbortSignal.any([upstream, timeout.signal])
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let disposed = false
+
+  const arm = (): void => {
+    if (timeout.signal.aborted) return
+    if (timer !== undefined) clearTimeout(timer)
+    timer = setTimeout(() => {
+      timer = undefined
+      timeout.abort(new TimeoutReason(code, timeoutMs))
+    }, timeoutMs)
+  }
+
+  arm()
+
+  return {
+    signal,
+    progress(): void {
+      if (disposed) return
+      arm()
+    },
+    [Symbol.dispose](): void {
+      if (disposed) return
+      disposed = true
+      if (timer !== undefined) clearTimeout(timer)
+      timer = undefined
+    },
+  }
+}
+
 /**
  * Recover a timeout reason from a reason-bearing object. Supplying `code`
  * distinguishes this deadline from a nested upstream deadline; a foreign code
