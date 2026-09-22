@@ -2,6 +2,8 @@
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
 export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
+/** Default maximum interval without model content once a stream has started. */
+export const DEFAULT_STREAM_CONTENT_IDLE_TIMEOUT_MS = 600_000
 /** Default combined request/response context capacity. */
 export const DEFAULT_CONTEXT_WINDOW = 1_000_000
 /** Default per-request output-token cap. */

@@ -40,6 +40,9 @@ import {
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
+/** Default post-publication stream activity deadline; `0` disables it. */
+export const DEFAULT_RUN_ACTIVITY_TIMEOUT_MS = 300_000
+
 /** Claude Code permission modes that cannot wait for a human response. */
 export const CLAUDE_CODE_PERMISSION_MODES = [
   'dontAsk',
@@ -69,6 +72,7 @@ type ClaudeCodeFailureCategory =
   | 'limit'
   | 'product-error'
   | 'invalid-result'
+  | 'transport'
   | 'process'
   | 'unknown'
 
@@ -76,6 +80,7 @@ interface ClaudeCodeFailureFacts {
   readonly stage: ClaudeCodeFailureStage
   readonly category: ClaudeCodeFailureCategory
   readonly outcome?: SubprocessOutcome | undefined
+  readonly detail?: string | undefined
 }
 
 function failureDiagnostic(facts: ClaudeCodeFailureFacts): string {
@@ -91,6 +96,10 @@ function failureDiagnostic(facts: ClaudeCodeFailureFacts): string {
   const signal = facts.outcome?.signal
   if (signal !== null && signal !== undefined) {
     fields.push(`signal: ${signal}`)
+  }
+  const detail = facts.detail
+  if (detail !== undefined) {
+    fields.push(`detail: ${detail}`)
   }
   return `Product subagent failure (${fields.join('; ')})`
 }
@@ -145,7 +154,8 @@ function unattendedDiagnostic(
 }
 
 /* jscpd:ignore-start -- sibling providers intentionally keep product-private
- * run inputs and error normalization instead of adding a shared lifecycle owner. */
+ * run inputs, error normalization, and silence watchdogs instead of adding a
+ * shared lifecycle owner. */
 /** Fully resolved inputs for one official Claude Agent SDK query. */
 export interface ClaudeCodeRunSpec {
   /** Selected child working directory supplied to the SDK and real CLI. */
@@ -158,6 +168,12 @@ export interface ClaudeCodeRunSpec {
   readonly env: Record<string, string>
   /** Subprocess termination grace passed to the shared managed-range owner. */
   readonly disposeGraceMs: number
+  /**
+   * Silence bound in milliseconds for SDK stream frames after the query is
+   * published; the run fails at the deadline with category `transport`.
+   * `0` leaves the run unbounded.
+   */
+  readonly runActivityTimeoutMs: number
   /** Shared subprocess service spawn operation. */
   readonly spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle
   /** Host diagnostic sink for a product failure kept outside model-visible text. */
@@ -172,6 +188,66 @@ function thrown(value: unknown): Error {
 /** Read live request cancellation across awaited startup cleanup. */
 function isAborted(signal: AbortSignal): boolean {
   return signal.aborted
+}
+
+/**
+ * Per-run silence bound for the official SDK stream after the query is
+ * published. Every streamed message resets the deadline; at the deadline the
+ * watchdog closes the query, which ends the stream and settles the run.
+ * @param deadlineMs - silence bound; `0` disables the watchdog.
+ * @param onTrip - closes the query when the deadline elapses.
+ * @returns the reset/clear/trip-state/detail surface for the run.
+ */
+function createRunActivityWatchdog(
+  deadlineMs: number,
+  onTrip: () => void,
+): {
+  reset(label: string): void
+  clear(): void
+  tripped(): boolean
+  detail(): string | undefined
+} {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let lastLabel: string | undefined
+  let tripped = false
+  const arm = (): void => {
+    if (deadlineMs <= 0) return
+    timer = setTimeout(() => {
+      tripped = true
+      onTrip()
+    }, deadlineMs)
+  }
+  arm()
+  return {
+    reset(label) {
+      if (timer === undefined) return
+      lastLabel = label
+      clearTimeout(timer)
+      arm()
+    },
+    clear() {
+      if (timer === undefined) return
+      clearTimeout(timer)
+      timer = undefined
+    },
+    tripped: () => tripped,
+    detail: () => tripped
+      ? `no SDK stream activity for ${deadlineMs}ms after the query was submitted; last: ${lastLabel ?? 'none'}`
+      : undefined,
+  }
+}
+
+/**
+ * Fixed safe label for a streamed message, preserving its subtype when the
+ * message carries one.
+ * @param message - an official stream union member.
+ * @returns the message type, or `type:subtype` when a subtype exists.
+ */
+function streamMessageLabel(message: SDKMessage): string {
+  if ('subtype' in message) {
+    return `${message.type}:${message.subtype}`
+  }
+  return message.type
 }
 
 /* jscpd:ignore-end */
@@ -231,15 +307,18 @@ export function successfulResult(message: SDKResultMessage): string {
  * @param query - published official SDK query.
  * @param onPermissionDenied - records a safe fact when the SDK reports native denial.
  * @param onResult - records that the SDK supplied a terminal result message.
+ * @param onMessage - receives every streamed message before its type is inspected.
  * @returns the completed shared result.
  */
 export async function consumeClaudeQuery(
   query: AsyncIterable<SDKMessage>,
   onPermissionDenied?: () => void,
   onResult?: () => void,
+  onMessage?: (message: SDKMessage) => void,
 ): Promise<SubagentResult> {
   let answer: string | undefined
   for await (const message of query) {
+    onMessage?.(message)
     if (message.type === 'system' && message.subtype === 'permission_denied') {
       onPermissionDenied?.()
       continue
@@ -262,14 +341,20 @@ export async function consumeClaudeQuery(
 
 /**
  * Close the official query, terminate the managed range, and wait for the
- * subprocess owner to prove it is quiescent.
+ * subprocess owner to prove it is quiescent. The proof is bounded: one
+ * `disposeGraceMs` window for the SIGTERM→SIGKILL ladder `terminate()` owns
+ * plus one more for the range-exit observation to land behind it, so an
+ * observation that cannot conclude fails teardown instead of hanging
+ * settlement.
  * @param query - official SDK query, when creation reached that point.
  * @param child - shared-service handle that owns the CLI managed range, including
  * a published handle whose direct result later rejects.
+ * @param disposeGraceMs - ladder grace the spawned range was configured with.
  */
 export async function disposeClaudeCodeChild(
   query: Pick<Query, 'close'> | undefined,
   child: SubprocessHandle,
+  disposeGraceMs: number,
 ): Promise<void> {
   const failures: Error[] = []
   let outcome: SubprocessOutcome | undefined
@@ -284,8 +369,12 @@ export async function disposeClaudeCodeChild(
   }
 
   child.terminate()
+  const exitObservationMs = Math.ceil(disposeGraceMs) * 2
   try {
-    await child.waitForExit()
+    const exited = await child.waitForExit(AbortSignal.timeout(exitObservationMs))
+    if (!exited) {
+      failures.push(new Error(`subagent-claude-code: whole-range exit was not observed within ${String(exitObservationMs)}ms`))
+    }
   } catch (error: unknown) {
     failures.push(thrown(error))
   }
@@ -473,7 +562,7 @@ export async function startClaudeCodeRun(
     requestCancel()
     if (child !== undefined) {
       try {
-        await disposeClaudeCodeChild(query, child)
+        await disposeClaudeCodeChild(query, child, spec.disposeGraceMs)
       } catch (disposeError: unknown) {
         const failure = startupFailure()
         const cleanupFailure = thrown(disposeError)
@@ -521,6 +610,12 @@ export async function startClaudeCodeRun(
   let receivedResult = false
   const result = settleRunResult({
     attempt: async () => {
+      const watchdog = createRunActivityWatchdog(
+        spec.runActivityTimeoutMs,
+        () => {
+          publishedQuery.close()
+        },
+      )
       try {
         return await Promise.race([
           consumeClaudeQuery(publishedQuery, () => {
@@ -532,13 +627,24 @@ export async function startClaudeCodeRun(
             ))
           }, () => {
             receivedResult = true
+          }, (message) => {
+            watchdog.reset(streamMessageLabel(message))
           }),
           publishedProcessFailure,
         ])
       } catch (error: unknown) {
         const processOutcome = managedProcess?.outcome
         let facts: ClaudeCodeFailureFacts
-        if (error instanceof ClaudeCodeFailure) {
+        if (watchdog.tripped()) {
+          // A trip closes the query, so the SDK settles as an empty result;
+          // the silence itself is the transport failure.
+          facts = {
+            stage: 'query-run',
+            category: 'transport',
+            detail: watchdog.detail(),
+            outcome: processOutcome,
+          }
+        } else if (error instanceof ClaudeCodeFailure) {
           facts = { ...error.facts, outcome: processOutcome }
         } else if (processOutcome !== undefined && !receivedResult) {
           facts = {
@@ -555,9 +661,13 @@ export async function startClaudeCodeRun(
         }
         prependFailureDiagnostic(facts)
         // Keep the SDK category and cause; the diagnostic adds later process facts.
-        throw error instanceof ClaudeCodeFailure
-          ? error
-          : new ClaudeCodeFailure(facts, thrown(error))
+        throw watchdog.tripped()
+          ? new ClaudeCodeFailure(facts, thrown(error))
+          : error instanceof ClaudeCodeFailure
+            ? error
+            : new ClaudeCodeFailure(facts, thrown(error))
+      } finally {
+        watchdog.clear()
       }
     },
     collectOutput: () => [],
@@ -576,7 +686,7 @@ export async function startClaudeCodeRun(
     requestCancel,
     teardown: async () => {
       try {
-        await disposeClaudeCodeChild(publishedQuery, publishedChild)
+        await disposeClaudeCodeChild(publishedQuery, publishedChild, spec.disposeGraceMs)
       } catch (error: unknown) {
         const failure = thrown(error)
         reportFailure(failure)
