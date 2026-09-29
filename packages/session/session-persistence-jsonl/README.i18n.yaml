@@ -30,8 +30,11 @@
   en: 1eaa87736cac029b
   zh: 26224e8889786d69
 /deepseek-ai-dsh-session-persistence-jsonl/use-this-package/reading-the-logs:
-  en: c06983c4a73bebe1
-  zh: 7319f8f44223685f
+  en: 85c56b6af0f80a24
+  zh: dc22b7bccbe797c2
+/deepseek-ai-dsh-session-persistence-jsonl/use-this-package/deleting-a-session:
+  en: dd8ed0dbbc62dd44
+  zh: 6879381a90f3d72c
 /deepseek-ai-dsh-session-persistence-jsonl/understand-the-implementation:
   en: a35407bb25671e7e
   zh: 6a00f9510c85adcb
@@ -63,8 +66,8 @@
   en: 53ce4da7ce68d21c
   zh: 10f40bc354100f77
 /deepseek-ai-dsh-session-persistence-jsonl/known-limitations-and-deferred-work:
-  en: e6343e8ad3f6fb71
-  zh: fe632c9711e7921b
+  en: 9bce39bac17e7b1d
+  zh: 10ad3071a30002cf
 /deepseek-ai-dsh-session-persistence-jsonl/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 3bb0c20c93f16f98

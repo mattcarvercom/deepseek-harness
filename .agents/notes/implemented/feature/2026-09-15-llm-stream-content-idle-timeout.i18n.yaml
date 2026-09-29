@@ -1,6 +1,25 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-15-llm-stream-content-idle-timeout.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-15-llm-stream-content-idle-timeout.md
-2026-09-15-llm-stream-content-idle-timeout.md: d5828e549b10c9dc2bc681dbdc760c8911befe0e
-2026-09-15-llm-stream-content-idle-timeout.zh.md: 40d0744e0b58ddb253a06a8d2aec019703c54ee2
+/agent-note-llm-stream-content-idle-deadline:
+  en: 1d7e76911d741636
+  zh: 5976cff48a20ef53
+/agent-note-llm-stream-content-idle-deadline/problem:
+  en: fb3f004f217ddf07
+  zh: 944d7cd2060bfe20
+/agent-note-llm-stream-content-idle-deadline/decision:
+  en: 8bbaed77133c4447
+  zh: 6e9f82444c9aca03
+/agent-note-llm-stream-content-idle-deadline/alternatives-considered:
+  en: 3f50aeae4db8c844
+  zh: 98e1fd6b78c0ccab
+/agent-note-llm-stream-content-idle-deadline/consequences:
+  en: 4d5f186a3ba3c284
+  zh: dd139ae57586101a
+/agent-note-llm-stream-content-idle-deadline/testing:
+  en: cae1f0b14c1b9bdd
+  zh: eb0013f91ce44b6d
+/agent-note-llm-stream-content-idle-deadline/related:
+  en: a21b7f837ea88b0b
+  zh: c888b60e97d3422c
