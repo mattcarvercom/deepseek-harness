@@ -42,5 +42,5 @@ Codex wire 规格固定了触发（轮次提交后的沉默与在途沉默）、
 - [JSON-RPC 行传输的每请求截止时间](2026-09-15-jsonrpc-request-deadline.zh.md) — 握手截止时间所装上的传输机制。
 - [LLM 流内容空闲超时](2026-09-15-llm-stream-content-idle-timeout.zh.md) — LLM 适配器上的两层活动/内容看门狗；同样的「活动不是进展」区分应用到 subagent 流。
 - [超时截止期限库](../architecture/2026-07-06-timeout-deadline-library.zh.md) — 本说明有意不复用的共享原语的归属地。
-- [Claude Code 与 Codex subagent 后端](2026-08-04-claude-code-and-codex-subagent-backends.zh.md) — 这些边界所覆盖的提供方生命周期。
+- [Claude Code 与 Codex subagent 后端](../../archived/feature/2026-08-04-claude-code-and-codex-subagent-backends.md) — 这些边界所覆盖的提供方生命周期。
 - [事故复盘（postmortem） 0005：Codex subagent 握手挂起](../../../../docs/postmortem/0005-subagent-codex-handshake-hang.zh.md) — 本说明关闭其发布后方面的事故。

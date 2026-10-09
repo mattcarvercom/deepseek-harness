@@ -1,6 +1,28 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 0005-subagent-codex-handshake-hang.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/postmortem/0005-subagent-codex-handshake-hang.md
-0005-subagent-codex-handshake-hang.md: 90428850958c90b95b795a41cec5ca01ddbfb1e6
-0005-subagent-codex-handshake-hang.zh.md: b95ea45824acd2dd354a407d9d69ccd1f77da5a3
+/post-mortem-0005-codex-subagent-handshake-hang:
+  en: 9651b88bcabdfeb6
+  zh: 6c9d3f9dd6af921b
+/post-mortem-0005-codex-subagent-handshake-hang/executive-summary:
+  en: d75b27f7c97a5117
+  zh: 8621046bdf334e76
+/post-mortem-0005-codex-subagent-handshake-hang/summary:
+  en: 003f470f31fa0f7c
+  zh: ef6516d5704a1c88
+/post-mortem-0005-codex-subagent-handshake-hang/impact:
+  en: 7260e6aa0e73bef9
+  zh: 8069e7426123308a
+/post-mortem-0005-codex-subagent-handshake-hang/root-cause:
+  en: 29e49c6682fddaab
+  zh: 115498c5c3ad3654
+/post-mortem-0005-codex-subagent-handshake-hang/timeline:
+  en: 3d51145fe87232f3
+  zh: 9329680452ccf5f1
+/post-mortem-0005-codex-subagent-handshake-hang/guardrails-added:
+  en: a564f8aa70543343
+  zh: 18042a2a8921b3a8
+/post-mortem-0005-codex-subagent-handshake-hang/lessons:
+  en: 341b26fea0ff05a9
+  zh: 6f491dc5b9a02cf6

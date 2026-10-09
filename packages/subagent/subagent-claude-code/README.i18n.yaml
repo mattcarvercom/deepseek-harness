@@ -21,8 +21,8 @@
   en: cf4a7e48ca796066
   zh: d9140d0fda7b7029
 /deepseek-ai-dsh-subagent-claude-code/use-this-package/configuration:
-  en: fbee5e4ab396c184
-  zh: dcf94832918d5010
+  en: 55f9baad000addaf
+  zh: ef1ebff46de8ab14
 /deepseek-ai-dsh-subagent-claude-code/use-this-package/exposing-the-tool:
   en: ebf6ba7fef393ebb
   zh: fad30b829e2e4188
@@ -30,8 +30,8 @@
   en: a731eabea54893d5
   zh: e370dba101b3a7e8
 /deepseek-ai-dsh-subagent-claude-code/use-this-package/failure-and-recovery:
-  en: 3cfe78175e68269e
-  zh: 478666ce1fcb4e59
+  en: 1beb773f335fbef0
+  zh: 356239abda7e0e1f
 /deepseek-ai-dsh-subagent-claude-code/understand-the-implementation:
   en: a04818121f31d222
   zh: 2ed476ab086c1686
@@ -42,8 +42,8 @@
   en: 4826e5016f7d9655
   zh: 9b80696313be1816
 /deepseek-ai-dsh-subagent-claude-code/understand-the-implementation/run-flow:
-  en: 4dd16da30209644e
-  zh: 7ea63e1bf4cee29d
+  en: d473a941c2d3967f
+  zh: cbd6acedb6f27671
 /deepseek-ai-dsh-subagent-claude-code/further-exploration:
   en: 6d2c64f8f7ebab4c
   zh: a892c363cd3982e5
@@ -66,8 +66,8 @@
   en: 4c391bb16e3cd380
   zh: ab3847efe35fa6dc
 /deepseek-ai-dsh-subagent-claude-code/model-experience/parent-scheduling-and-results-indirectly/what-the-model-sees:
-  en: fd177d7a8aa80ff0
-  zh: aa04468315ed2e0b
+  en: 8c033e92ba05a17d
+  zh: 0ecd6ba1c7068e1b
 /deepseek-ai-dsh-subagent-claude-code/model-experience/parent-scheduling-and-results-indirectly/token-effect:
   en: 0c436fb0897a6eca
   zh: 7ec0a953d0232af2
@@ -75,8 +75,8 @@
   en: 19f1316ea4bb1bb9
   zh: 181231ddffdc8494
 /deepseek-ai-dsh-subagent-claude-code/known-limitations-and-deferred-work:
-  en: 37450e5856da6ead
-  zh: 9eac0422397c10e2
+  en: 379b85f40600f554
+  zh: 3f24aa084e9226fa
 /deepseek-ai-dsh-subagent-claude-code/known-limitations-and-deferred-work/dev-note:
   en: 185beb4ff55f0946
   zh: 068ca7c57137eb33
