@@ -6802,7 +6802,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionCreateValue {\n    readonly sessionId: SessionId;\n    readonly agentPreset?: string;\n}',
   },
   {
-  {
     name: 'SessionDeleteRequest',
     declaration: 'export interface SessionDeleteRequest {\n    readonly sessionId: SessionId;\n}',
   },

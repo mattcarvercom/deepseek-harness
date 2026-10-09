@@ -42,5 +42,5 @@ The Codex wire spec pins the trip (silence after the turn is submitted and silen
 - [Per-request deadline on the JSON-RPC line transport](2026-09-15-jsonrpc-request-deadline.md) — the transport mechanism the handshake deadline arms.
 - [LLM stream content idle timeout](2026-09-15-llm-stream-content-idle-timeout.md) — the two-tier activity/content watchdog on the LLM adapters; the same "activity is not progress" distinction applied to subagent streams.
 - [Timeout deadline library](../architecture/2026-07-06-timeout-deadline-library.md) — home of the shared primitives this note deliberately does not reuse.
-- [Claude Code and Codex subagent backends](2026-08-04-claude-code-and-codex-subagent-backends.md) — the provider lifecycles these bounds cover.
+- [Claude Code and Codex subagent backends](../../archived/feature/2026-08-04-claude-code-and-codex-subagent-backends.md) — the provider lifecycles these bounds cover.
 - [Post-mortem 0005: Codex subagent handshake hang](../../../../docs/postmortem/0005-subagent-codex-handshake-hang.md) — the incident whose post-publication facet this note closes.
