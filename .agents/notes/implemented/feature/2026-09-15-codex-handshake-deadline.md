@@ -37,5 +37,5 @@ The wire spec pins the per-request deadline rejection on both handshake methods 
 ## Related
 
 - [Per-request deadline on the JSON-RPC line transport](2026-09-15-jsonrpc-request-deadline.md) — the transport mechanism this note arms.
-- [Claude Code and Codex subagent backends](2026-08-04-claude-code-and-codex-subagent-backends.md) — the provider lifecycle this deadline bounds.
+- [Claude Code and Codex subagent backends](../../archived/feature/2026-08-04-claude-code-and-codex-subagent-backends.md) — the provider lifecycle this deadline bounds.
 - [Post-mortem 0005: Codex subagent handshake hang](../../../../docs/postmortem/0005-subagent-codex-handshake-hang.md) — the incident that exposed the hole.

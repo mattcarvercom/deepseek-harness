@@ -29,6 +29,9 @@
 /deepseek-ai-dsh-session-projection-cache/use-this-package/reading-cached-values:
   en: e8dc676fbfe97c5b
   zh: 686837459289fd41
+/deepseek-ai-dsh-session-projection-cache/use-this-package/removing-a-session-s-row:
+  en: 95ccfd54de96cebd
+  zh: 8c463164093c300c
 /deepseek-ai-dsh-session-projection-cache/use-this-package/what-the-cache-guarantees:
   en: 6e4878de28ea113e
   zh: 6f940a2220585b5e
@@ -54,8 +57,8 @@
   en: d483aa4968fa1955
   zh: 90f8c38f978123d2
 /deepseek-ai-dsh-session-projection-cache/known-limitations-and-deferred-work:
-  en: 1c4efba49a67f7b9
-  zh: 494f1a6fa4207c3a
+  en: 892167648b1e2342
+  zh: 4aa694b4545ca003
 /deepseek-ai-dsh-session-projection-cache/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 3bb0c20c93f16f98

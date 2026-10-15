@@ -37,5 +37,5 @@ wire 规格固定两个握手方法上的每请求截止拒绝——携带 `meth
 ## 相关
 
 - [JSON-RPC 行传输的每请求截止时间](2026-09-15-jsonrpc-request-deadline.zh.md) — 本说明所装上的传输机制。
-- [Claude Code 与 Codex subagent 后端](2026-08-04-claude-code-and-codex-subagent-backends.zh.md) — 本截止期限所约束的提供方生命周期。
+- [Claude Code 与 Codex subagent 后端](../../archived/feature/2026-08-04-claude-code-and-codex-subagent-backends.md) — 本截止期限所约束的提供方生命周期。
 - [事故复盘（postmortem） 0005：Codex subagent 握手挂起](../../../../docs/postmortem/0005-subagent-codex-handshake-hang.zh.md) — 暴露该缺口的事故。

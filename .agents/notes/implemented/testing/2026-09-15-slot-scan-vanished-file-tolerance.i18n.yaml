@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-15-slot-scan-vanished-file-tolerance.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-09-15-slot-scan-vanished-file-tolerance.md
-2026-09-15-slot-scan-vanished-file-tolerance.md: e05d9f2528124dc3e9a80cbd7f0f90123b355b70
-2026-09-15-slot-scan-vanished-file-tolerance.zh.md: 0dd5290899d241a767febf533a645c0ab173df79
+/agent-note-the-slot-scan-s-tolerance-for-files-deleted-mid-scan:
+  en: 94c4766ab64d1c8f
+  zh: 90946b56c20fbe36
+/agent-note-the-slot-scan-s-tolerance-for-files-deleted-mid-scan/problem:
+  en: 9667d0502be6270b
+  zh: da8aca72f79c21e3
+/agent-note-the-slot-scan-s-tolerance-for-files-deleted-mid-scan/decision:
+  en: ca38a988e9d8381d
+  zh: 9bc2fbb5b9cc34a5
+/agent-note-the-slot-scan-s-tolerance-for-files-deleted-mid-scan/alternatives-considered:
+  en: 1864e2401cf45b27
+  zh: 61a9a8502c6fa213
+/agent-note-the-slot-scan-s-tolerance-for-files-deleted-mid-scan/consequences:
+  en: fd5473b71987fd2f
+  zh: 90ad9570f95f78e0
+/agent-note-the-slot-scan-s-tolerance-for-files-deleted-mid-scan/testing:
+  en: 4ab151e725f6e23d
+  zh: 2b1f279bed26d353
