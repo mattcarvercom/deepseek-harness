@@ -244,8 +244,8 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-api-session-controller`
 
-- `inject`: `agentDefaultModel` · `agents` · `attachments` · `fileUploads` · `fs` · `llm` · `remoteAccess` · `sessions` · `sessionProjections` · `sessionQuery` · `typert` · `typertGateway` · `workspaceRegistry`
-- `source`: [`packages/api/session-controller/src/index.ts:110`](../packages/api/session-controller/src/index.ts)
+- `inject`: `agentDefaultModel` · `agents` · `attachments` · `fileUploads` · `fs` · `llm` · `remoteAccess` · `sessions` · `sessionPersistence` · `sessionProjections` · `sessionProjectionCache` · `sessionQuery` · `typert` · `typertGateway` · `workspaceRegistry`
+- `source`: [`packages/api/session-controller/src/index.ts:113`](../packages/api/session-controller/src/index.ts)
 
 ```ts config-catalog
 /** Session Controller deployment policy. */
@@ -1757,7 +1757,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-host-frontend-static`
 
 - `inject`: `webServer` · `connection`
-- `source`: [`packages/host/frontend-static/src/index.ts:34`](../packages/host/frontend-static/src/index.ts)
+- `source`: [`packages/host/frontend-static/src/index.ts:35`](../packages/host/frontend-static/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: the dist anchor. */
@@ -1962,7 +1962,7 @@ export interface Config extends ProtocolConfig, ModelListingConfig {
 
 - `inject`: `llm`
 - `refs`: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`) · `Volatile` (`@deepseek-ai/cordis`)
-- `source`: [`packages/llm/llm-pi-ai/src/config.ts:222`](../packages/llm/llm-pi-ai/src/config.ts)
+- `source`: [`packages/llm/llm-pi-ai/src/config.ts:248`](../packages/llm/llm-pi-ai/src/config.ts)
 
 ```ts config-catalog
 /** Plugin configuration: the provider routes this instance owns. */
@@ -2052,12 +2052,25 @@ export interface PiAiProviderProfile {
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs?: number
   /**
+   * Maximum time without model content once a stream has started; content is a
+   * non-empty text or reasoning delta or a tool-call payload. Zero disables
+   * the bound for endpoints whose healthy state is a long silence.
+   */
+  streamContentIdleTimeoutMs?: number
+  /**
    * Maximum base64-encoded image payload per request. When a request's
    * accumulated images exceed it, the oldest images are replaced by text
    * placeholders until the request fits, so a long session keeps completing
    * requests instead of being rejected by a request-size cap.
    */
   maxRequestImageBytes?: number
+  /**
+   * Image occurrences one request may retain; the oldest beyond this count are
+   * durably offloaded to placeholder text and the request is retried. Lower it
+   * for providers that cap images per prompt (a vLLM deployment's
+   * `--limit-mm-per-prompt`); omission keeps the effectively unbounded default.
+   */
+  maxImagesPerRequest?: number
   /** Total-pixel budget for each deterministic inline request version. */
   requestImagePixelBudget?: number
   /**
@@ -3046,7 +3059,7 @@ export type SessionLogCompressionLevel = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
 
 ## `@deepseek-ai/dsh-session-persistence-jsonl`
 
-- `source`: [`packages/session/session-persistence-jsonl/src/index.ts:94`](../packages/session/session-persistence-jsonl/src/index.ts)
+- `source`: [`packages/session/session-persistence-jsonl/src/index.ts:95`](../packages/session/session-persistence-jsonl/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config for the JSONL backend's root, physical encoding, and listing concurrency. */
@@ -3624,7 +3637,7 @@ export type PermissionPolicy = 'allow' | 'reject'
 ## `@deepseek-ai/dsh-subagent-claude-code`
 
 - `inject`: `subagents` · `subprocess`
-- `source`: [`packages/subagent/subagent-claude-code/src/index.ts:38`](../packages/subagent/subagent-claude-code/src/index.ts)
+- `source`: [`packages/subagent/subagent-claude-code/src/index.ts:39`](../packages/subagent/subagent-claude-code/src/index.ts)
 
 ```ts config-catalog
 /** Deployment-owned model, permission, environment, and process-release settings. */
@@ -3647,6 +3660,12 @@ export interface Config {
   permissionMode?: ClaudeCodePermissionMode
   /** Grace in milliseconds between Claude Code managed-range termination tiers. */
   disposeGraceMs?: number
+  /**
+   * Silence bound in milliseconds for SDK stream frames after the query is
+   * published; a silent CLI fails the delegation at the deadline with
+   * category `transport`. `0` leaves the run unbounded.
+   */
+  runActivityTimeoutMs?: number
 }
 
 /** Profile-selectable non-interactive Claude Code permission mode. */
@@ -3660,7 +3679,7 @@ export type ClaudeCodePermissionMode = typeof CLAUDE_CODE_PERMISSION_MODES[numbe
 ## `@deepseek-ai/dsh-subagent-codex`
 
 - `inject`: `subagents` · `subprocess`
-- `source`: [`packages/subagent/subagent-codex/src/index.ts:36`](../packages/subagent/subagent-codex/src/index.ts)
+- `source`: [`packages/subagent/subagent-codex/src/index.ts:38`](../packages/subagent/subagent-codex/src/index.ts)
 
 ```ts config-catalog
 /** Deployment-owned model, permission, environment, and process-release settings. */
@@ -3678,6 +3697,19 @@ export interface Config {
   permissionMode?: CodexPermissionMode
   /** Grace in milliseconds between app-server managed-range termination tiers. */
   disposeGraceMs?: number
+  /**
+   * Deadline in milliseconds for the pre-publication handshake (`initialize`
+   * and `thread/start`); a silent app-server fails the delegation at the
+   * deadline with category `transport` instead of waiting indefinitely.
+   * `0` disables the deadline.
+   */
+  handshakeTimeoutMs?: number
+  /**
+   * Silence bound in milliseconds for protocol frames while the published
+   * turn is in flight; a silent app-server fails the delegation at the
+   * deadline with category `transport`. `0` leaves the turn unbounded.
+   */
+  runActivityTimeoutMs?: number
 }
 
 /** Profile-selectable non-interactive Codex permission mode. */

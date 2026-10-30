@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-14-overflow-recovery-retry-verification.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-14-overflow-recovery-retry-verification.md
-2026-09-14-overflow-recovery-retry-verification.md: 554071bdae2693bac6845b2d532cae81acc8e8d6
-2026-09-14-overflow-recovery-retry-verification.zh.md: f259c236e8727fd76266a96b6a868b2d40f5af70
+/agent-note-verify-context-overflow-compaction-actually-fits-before-retrying:
+  en: 66d08257005b7e72
+  zh: fac37294fdde29b6
+/agent-note-verify-context-overflow-compaction-actually-fits-before-retrying/problem:
+  en: 4f111c4e55bb1469
+  zh: c1122b61aed8d7bd
+/agent-note-verify-context-overflow-compaction-actually-fits-before-retrying/decision:
+  en: ead0a31e4e408de1
+  zh: a8ee02072b3a7a43
+/agent-note-verify-context-overflow-compaction-actually-fits-before-retrying/alternatives-considered:
+  en: 72f22d16211167a4
+  zh: 109eac275c22f976
+/agent-note-verify-context-overflow-compaction-actually-fits-before-retrying/consequences:
+  en: 418c99fa84422108
+  zh: 045d671c177b36d1
+/agent-note-verify-context-overflow-compaction-actually-fits-before-retrying/testing:
+  en: 921ae0104af0e87c
+  zh: 096475b4a1aca2b4

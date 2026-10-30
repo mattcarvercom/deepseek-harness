@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-06-web-session-deletion.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-06-web-session-deletion.md
-2026-09-06-web-session-deletion.md: a84f94f8a32624ccb9a0caa8f5d2eb60533dd053
-2026-09-06-web-session-deletion.zh.md: 6c8da170aad1b0cab536b93a45ed0adcc6061f84
+/agent-note-web-session-deletion-durable-unrecoverable:
+  en: 94260986435314f3
+  zh: 9f7315c9aecc3a26
+/agent-note-web-session-deletion-durable-unrecoverable/problem:
+  en: 26463c8e94b5ef68
+  zh: 52f2b74cb3be49ba
+/agent-note-web-session-deletion-durable-unrecoverable/decision:
+  en: da26da7bbfbc679d
+  zh: 1659851b495a4155
+/agent-note-web-session-deletion-durable-unrecoverable/alternatives-considered:
+  en: 6e46284b110763e1
+  zh: 14bb3a6155f07463
+/agent-note-web-session-deletion-durable-unrecoverable/consequences:
+  en: 974b7beb0aeb201d
+  zh: 730f6736ce392334
+/agent-note-web-session-deletion-durable-unrecoverable/testing:
+  en: fff2f116bb21dff1
+  zh: e576c7c78fec22f5
