@@ -1,6 +1,28 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 0006-vllm-stream-never-terminates.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/postmortem/0006-vllm-stream-never-terminates.md
-0006-vllm-stream-never-terminates.md: c62804b1e810e135e8a8b2043d849b580177d0ab
-0006-vllm-stream-never-terminates.zh.md: db1f2124e031073d9fe14ef5d780058b5a5b7686
+/post-mortem-0006-vllm-stream-that-never-terminates:
+  en: 0ad2b5e69d155fa3
+  zh: 51c6913b389bf0a1
+/post-mortem-0006-vllm-stream-that-never-terminates/executive-summary:
+  en: e8d267d8244ceaa2
+  zh: b04e7038521ec273
+/post-mortem-0006-vllm-stream-that-never-terminates/summary:
+  en: f01a70dd6749d773
+  zh: 920d74adb24ba265
+/post-mortem-0006-vllm-stream-that-never-terminates/impact:
+  en: e6b37c75fe0bfdc2
+  zh: 26c458f1e9f33580
+/post-mortem-0006-vllm-stream-that-never-terminates/root-cause:
+  en: 4303bc608439eb07
+  zh: 68a5b30f7a02a6a1
+/post-mortem-0006-vllm-stream-that-never-terminates/timeline:
+  en: ed80e6da8348c61a
+  zh: e36d5ec3c0e74b49
+/post-mortem-0006-vllm-stream-that-never-terminates/guardrails-added:
+  en: 53cf471b904e8ce0
+  zh: 275017ee1fbda787
+/post-mortem-0006-vllm-stream-that-never-terminates/lessons:
+  en: c576ad640e9c84e6
+  zh: 0b6f4d3001407e25

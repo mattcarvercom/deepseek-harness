@@ -21,8 +21,8 @@
   en: 6850d08bc091ad23
   zh: 2906e6cf1dfed6ce
 /deepseek-ai-dsh-llm-deepseek/use-this-package/minimal-configuration:
-  en: 027d877820d26c65
-  zh: 080705c5c20d1032
+  en: 883e67b12a53de63
+  zh: 1c2b77957da4470a
 /deepseek-ai-dsh-llm-deepseek/use-this-package/endpoint-and-wire-format:
   en: 2a634ead5b47fe97
   zh: 46f199ee79a8c5dc
@@ -33,23 +33,23 @@
   en: f20f2cfbb38e4ba9
   zh: c527b91c8b747886
 /deepseek-ai-dsh-llm-deepseek/use-this-package/dynamic-configuration:
-  en: 49290fc5647136b4
-  zh: 96fa9ce0f9e83c13
+  en: 642da8f60ec0ac98
+  zh: 8db5b15224ef0376
 /deepseek-ai-dsh-llm-deepseek/use-this-package/provider-specific-request-fields:
   en: f13f24b504dcfb50
   zh: 69b0ed9e2adf3394
 /deepseek-ai-dsh-llm-deepseek/use-this-package/failures-and-recovery:
-  en: 56c2ec70abc19cd0
-  zh: 7c9d176f24893500
+  en: 3b29763a2d53fcd4
+  zh: 91679fcfae314431
 /deepseek-ai-dsh-llm-deepseek/understand-the-implementation:
   en: 1598ac8a8bb9b6bf
   zh: fdd089c5ae7722cd
 /deepseek-ai-dsh-llm-deepseek/understand-the-implementation/design-philosophy:
-  en: 829203c4c282dc46
-  zh: e05dada4a1420a95
+  en: d5c25e8a8fb5ad41
+  zh: 767b42e9d3851279
 /deepseek-ai-dsh-llm-deepseek/understand-the-implementation/source-map:
-  en: 584698e2c7686997
-  zh: 2aed9608d5317d7b
+  en: de5f0c6364f0c707
+  zh: 2986db7d7003990a
 /deepseek-ai-dsh-llm-deepseek/understand-the-implementation/wire-flow:
   en: 9477d8af3d762450
   zh: 52a2967518509f94
